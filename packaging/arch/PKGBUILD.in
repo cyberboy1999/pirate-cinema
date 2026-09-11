@@ -10,7 +10,7 @@ provides=('pirate-cinema')
 conflicts=('pirate-cinema')
 options=('!strip')
 _archive="Pirate-Cinema-${pkgver}-arch-x64.tar.gz"
-source=("${_archive}::https://github.com/cyberboy1999/pirate-cinema/releases/download/v${pkgver}-arch/${_archive}")
+source=("${_archive}::https://github.com/cyberboy1999/pirate-cinema/releases/download/v${pkgver}/${_archive}")
 noextract=("${_archive}")
 sha256sums=('@SHA256@')
 

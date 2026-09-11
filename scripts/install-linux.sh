@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-VERSION=0.4.1
-TAG="v${VERSION}-linux"
+VERSION=0.4.4
+TAG="v${VERSION}"
 BASE="https://github.com/cyberboy1999/pirate-cinema/releases/download/${TAG}"
 
 [ "$(uname -m)" = "x86_64" ] || { echo "Pirate Cinema supports Linux x86_64 only." >&2; exit 1; }

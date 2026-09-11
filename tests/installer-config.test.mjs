@@ -21,7 +21,7 @@ test("release workflow verifies bundled binaries and publishes updater metadata"
 
 test("Linux release verifies packages and creates freedesktop shortcuts",()=>{
   const config=readFileSync("electron-builder-linux.yml","utf8");
-  const workflow=readFileSync(".github/workflows/release-linux.yml","utf8");
+  const workflow=readFileSync(".github/workflows/release.yml","utf8");
   const installer=readFileSync("scripts/install-linux.sh","utf8");
   assert.match(config,/target:\s*deb/);assert.match(config,/target:\s*rpm/);
   assert.match(config,/depends:\s*\[mpv, ffmpeg\]/);
@@ -32,12 +32,21 @@ test("Linux release verifies packages and creates freedesktop shortcuts",()=>{
 
 test("Arch release publishes a checksummed PKGBUILD with pacman dependencies",()=>{
   const config=readFileSync("electron-builder-arch.yml","utf8");
-  const workflow=readFileSync(".github/workflows/release-arch.yml","utf8");
+  const workflow=readFileSync(".github/workflows/release.yml","utf8");
   const pkgbuild=readFileSync("packaging/arch/PKGBUILD.in","utf8");
-  assert.match(config,/target:\s*tar\.gz/);assert.match(workflow,/Special for Arch Linux/);
+  assert.match(config,/target:\s*tar\.gz/);assert.match(workflow,/Build unified release/);
   assert.match(workflow,/tar -xzf/);assert.match(workflow,/s\/@SHA256@/);
   assert.match(pkgbuild,/depends=.*'mpv'.*'ffmpeg'/);assert.match(pkgbuild,/sha256sums=\('@SHA256@'\)/);
   assert.match(pkgbuild,/pirate-cinema\.desktop/);
   assert.match(pkgbuild,/chmod 755 .*TorrServer-linux-amd64/);
   assert.doesNotMatch(readFileSync("electron/main.mjs","utf8"),/chmodSync/);
+});
+
+test("unified release starts with empty user databases",()=>{
+  const windows=readFileSync("electron-builder.yml","utf8");
+  const linux=readFileSync("electron-builder-linux.yml","utf8");
+  const workflow=readFileSync(".github/workflows/release.yml","utf8");
+  for(const source of [windows,linux]){assert.doesNotMatch(source,/config\.db/);assert.doesNotMatch(source,/viewed\.json/)}
+  assert.doesNotMatch(workflow,/bootstrap\/resources\/torrserver\/\*/);
+  assert.match(workflow,/needs: \[windows, linux\]/);
 });

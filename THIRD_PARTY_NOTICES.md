@@ -1,6 +1,6 @@
 # Third-party notices
 
-Pirate Cinema 0.3.2 through 0.4.2 include and invoke third-party software. The notices
+Pirate Cinema 0.3.2 through 0.4.4 include and invoke third-party software. The notices
 below identify binaries distributed in the Windows and Linux installers; each
 component remains governed by its own license.
 
@@ -13,7 +13,7 @@ component remains governed by its own license.
 - Distributed file: `TorrServer-windows-amd64.exe`
 - SHA-256: `f05c13f218286866473cb4e83b081eecd4cde8dcc8faf5ede321bfeaa444b044`
 
-The Linux 0.4.1 packages contain the official `TorrServer-linux-amd64` binary
+The Linux 0.4.1 through 0.4.4 packages contain the official `TorrServer-linux-amd64` binary
 from MatriX.144.2 under the same GPL-3.0 license.
 
 - Source: https://github.com/YouROK/TorrServer/tree/MatriX.144.2

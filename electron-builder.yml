@@ -24,9 +24,7 @@ extraResources:
     to: torrserver
     filter:
       - TorrServer-windows-amd64.exe
-      - config.db
       - settings.json
-      - viewed.json
       - trackers.txt
       - rutor.ls
   - from: node_modules/ffmpeg-static/ffmpeg.exe

@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.4.3. The dedicated Arch Linux x86_64 release is tagged v0.4.3-arch and titled "Special for Arch Linux". It fixes packaged TorrServer startup by assigning executable permissions during package installation instead of trying to change files under `/opt` at application startup. DEB/RPM remain at v0.4.1-linux and Windows installers at v0.4.0.
+Release version: 0.4.4. One unified `v0.4.4` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and MPV over Windows named-pipe or Linux Unix-socket IPC.
 
@@ -110,15 +110,8 @@ verifies both SHA-256 hashes, builds both installer variants and publishes relea
 assets. Updating bundled runtime versions requires updating the bootstrap source
 and hashes together.
 
-`.github/workflows/release-linux.yml` handles `v*-linux` tags on Ubuntu. It
-verifies the official TorrServer MatriX.144.2 amd64 binary, runs tests and lint,
-builds DEB and RPM packages, creates SHA256SUMS and publishes the packages with
-`scripts/install-linux.sh`. The packages depend on system MPV and FFmpeg. The
-installer selects APT/DNF/YUM, verifies the package checksum and copies the
-freedesktop launcher to the application menu and, when present, the desktop.
-
-`.github/workflows/release-arch.yml` builds a Linux tarball for `v*-arch` tags,
-injects its SHA-256 into `packaging/arch/PKGBUILD.in`, validates the archive
-layout and publishes the resulting PKGBUILD. Pacman installs MPV, FFmpeg and
-Electron desktop-library dependencies; the package installs Pirate Cinema in
-`/opt/pirate-cinema` with a shared freedesktop launcher.
+The legacy suffix workflows remain only for historical release maintenance.
+Normal releases use a single plain version tag. Linux packages depend on system
+MPV and FFmpeg; Arch uses the generated PKGBUILD and installs under
+`/opt/pirate-cinema`. The shared install script verifies SHA-256 and creates
+freedesktop launchers for KDE, GNOME and XFCE.

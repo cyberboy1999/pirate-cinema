@@ -19,9 +19,7 @@ extraResources:
     to: torrserver
     filter:
       - TorrServer-linux-amd64
-      - config.db
       - settings.json
-      - viewed.json
       - trackers.txt
       - rutor.ls
 linux:

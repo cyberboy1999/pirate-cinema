@@ -1,4 +1,4 @@
-name: Build Windows release
+name: Build unified release
 
 on:
   push:
@@ -17,17 +17,17 @@ jobs:
         with: {version: 11.19.0}
       - uses: actions/setup-node@v4
         with: {node-version: 22, cache: pnpm}
-      - name: Restore pinned bundled runtimes
+      - name: Restore clean bundled runtimes
         shell: pwsh
         run: |
           Invoke-WebRequest 'https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.3.6/pirate-cinema-desktop-0.3.6-x64.nsis.7z' -OutFile runtime.7z
           7z x runtime.7z -obootstrap -y
           New-Item vendor/mpv,bin -ItemType Directory -Force | Out-Null
           Copy-Item bootstrap/resources/mpv/* vendor/mpv -Recurse -Force
-          Copy-Item bootstrap/resources/torrserver/* bin -Recurse -Force
+          foreach ($name in @('TorrServer-windows-amd64.exe','settings.json','trackers.txt','rutor.ls')) { Copy-Item "bootstrap/resources/torrserver/$name" bin -Force }
           if ((Get-FileHash bin/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne 'F05C13F218286866473CB4E83B081EECD4CDE8DCC8FAF5EDE321BFEAA444B044') { throw 'TorrServer hash mismatch' }
           if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
-          Remove-Item bootstrap -Recurse -Force
+          Remove-Item bootstrap,runtime.7z -Recurse -Force
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm run lint
@@ -41,9 +41,84 @@ jobs:
         env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
       - run: pnpm exec electron-builder --config electron-builder-web.yml --win nsis-web --publish never
         env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
-      - name: Publish release assets
-        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            release/Pirate-Cinema-Setup-*.exe
+            release/Pirate-Cinema-Setup-*.exe.blockmap
+            release/latest.yml
+            release-web/nsis-web/Pirate-Cinema-Web-Setup-*.exe
+            release-web/nsis-web/pirate-cinema-desktop-*-x64.nsis.7z
+
+  linux:
+    if: ${{ !endsWith(github.ref_name, '-linux') && !endsWith(github.ref_name, '-arch') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: {version: 11.19.0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: pnpm}
+      - name: Install packagers
+        run: sudo apt-get update && sudo apt-get install -y rpm p7zip-full
+      - name: Restore clean TorrServer runtime
+        run: |
+          curl -fL 'https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.4.0/pirate-cinema-desktop-0.4.0-x64.nsis.7z' -o runtime.7z
+          echo 'b624c8ad98957bf06e4815267c09d93ed4d7e94675708f01442410214a69a1db  runtime.7z' | sha256sum -c -
+          7z x runtime.7z -obootstrap -y >/dev/null
+          mkdir -p bin
+          cp bootstrap/resources/torrserver/{settings.json,trackers.txt,rutor.ls} bin/
+          curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.2/TorrServer-linux-amd64' -o bin/TorrServer-linux-amd64
+          echo '60c92e15ff2ac76d3dcebfe742ef2f0900905a6accef4329e7d3c66d8f0351dd  bin/TorrServer-linux-amd64' | sha256sum -c -
+          chmod 755 bin/TorrServer-linux-amd64 scripts/install-linux.sh
+          rm -rf bootstrap runtime.7z
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm run lint
+      - name: Validate tag version
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: node node_modules/vinext/dist/cli.js build
+      - run: pnpm exec electron-builder --config electron-builder-linux.yml --linux deb rpm --publish never
+      - run: pnpm exec electron-builder --config electron-builder-arch.yml --linux tar.gz --publish never
+      - name: Create Arch PKGBUILD and checksums
+        run: |
+          version=$(node -p "require('./package.json').version")
+          archive="release-arch/Pirate-Cinema-$version-arch-x64.tar.gz"
+          mkdir release-arch/verify
+          tar -xzf "$archive" -C release-arch/verify
+          test -n "$(find release-arch/verify -maxdepth 2 -type f -name pirate-cinema -print -quit)"
+          rm -rf release-arch/verify
+          hash=$(sha256sum "$archive" | cut -d' ' -f1)
+          sed -e "s/@VERSION@/$version/g" -e "s/@SHA256@/$hash/g" packaging/arch/PKGBUILD.in > release-arch/PKGBUILD
+          (cd release-linux && sha256sum *.deb *.rpm) > release-arch/SHA256SUMS
+          (cd release-arch && sha256sum "$(basename "$archive")") >> release-arch/SHA256SUMS
+          cp scripts/install-linux.sh release-arch/install-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: |
+            release-linux/*.deb
+            release-linux/*.rpm
+            release-arch/*.tar.gz
+            release-arch/PKGBUILD
+            release-arch/SHA256SUMS
+            release-arch/install-linux.sh
+
+  release:
+    if: ${{ !endsWith(github.ref_name, '-linux') && !endsWith(github.ref_name, '-arch') }}
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Publish unified release
         env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
         run: |
-          $version=(Get-Content package.json -Raw | ConvertFrom-Json).version
-          gh release create "v$version" "release/Pirate-Cinema-Setup-$version.exe" "release/Pirate-Cinema-Setup-$version.exe.blockmap" "release/latest.yml" "release-web/nsis-web/Pirate-Cinema-Web-Setup-$version.exe" "release-web/nsis-web/pirate-cinema-desktop-$version-x64.nsis.7z" THIRD_PARTY_NOTICES.md --generate-notes --latest
+          version=$(node -p "require('./package.json').version")
+          mkdir publish
+          find assets -type f -exec cp {} publish/ \;
+          gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema $version" --notes "Windows, Debian/Ubuntu, RPM-based and Arch Linux x86_64 builds. Fresh installations start with empty TorrServer and SQLite libraries. See README for installation instructions in Russian and English." --latest
