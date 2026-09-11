@@ -51,9 +51,6 @@ importers:
       '@next/eslint-plugin-next':
         specifier: 16.2.6
         version: 16.2.6
-      '@openai/sites-vite-plugin':
-        specifier: 0.1.0
-        version: 0.1.0(vite@8.0.13(@types/node@22.19.19)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12))
       '@tailwindcss/postcss':
         specifier: 4.2.1
         version: 4.2.1
@@ -1174,12 +1171,6 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
-
-  '@openai/sites-vite-plugin@0.1.0':
-    resolution: {integrity: sha512-TYi3j4R4u+yPFWNMlN4czpHEUze35Py4whlURKMwN8msOasxNXVhRl226KYRTuKj0LrdKFEDVfXHMrELB8aQ4w==}
-    engines: {node: '>=22.13.0'}
-    peerDependencies:
-      vite: ^8.0.0
 
   '@oxc-project/types@0.130.0':
     resolution: {integrity: sha512-ibD2usx9JRu7f5pu2tMKMI4cpA4NgXJQoYRP4pQ7Pxmn1l6k/53qWtQWZayhYy3X4QZkt90Ot+mJEaeXouio6Q==}
@@ -4868,10 +4859,6 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
-
-  '@openai/sites-vite-plugin@0.1.0(vite@8.0.13(@types/node@22.19.19)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12))':
-    dependencies:
-      vite: 8.0.13(@types/node@22.19.19)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)
 
   '@oxc-project/types@0.130.0': {}
 
