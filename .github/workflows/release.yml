@@ -26,6 +26,7 @@ jobs:
           Copy-Item bootstrap/resources/torrserver/* bin -Recurse -Force
           if ((Get-FileHash bin/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne 'F05C13F218286866473CB4E83B081EECD4CDE8DCC8FAF5EDE321BFEAA444B044') { throw 'TorrServer hash mismatch' }
           if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
+          Remove-Item bootstrap -Recurse -Force
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm run lint
