@@ -15,8 +15,14 @@ noextract=("${_archive}")
 sha256sums=('@SHA256@')
 
 package() {
+  local extracted="${srcdir}/pirate-cinema-extracted"
+  mkdir -p "${extracted}"
+  bsdtar -xf "${srcdir}/${_archive}" -C "${extracted}"
+  local executable
+  executable="$(find "${extracted}" -maxdepth 2 -type f -name pirate-cinema -print -quit)"
+  [[ -n "${executable}" ]] || return 1
   install -d "${pkgdir}/opt/pirate-cinema"
-  bsdtar -xf "${srcdir}/${_archive}" -C "${pkgdir}/opt/pirate-cinema"
+  cp -a "$(dirname "${executable}")/." "${pkgdir}/opt/pirate-cinema/"
   chmod 4755 "${pkgdir}/opt/pirate-cinema/chrome-sandbox"
   install -Dm644 "${pkgdir}/opt/pirate-cinema/resources/app/public/pirate-cinema-logo.png" "${pkgdir}/usr/share/pixmaps/pirate-cinema.png"
   install -d "${pkgdir}/usr/share/applications"

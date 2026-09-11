@@ -41,7 +41,10 @@ jobs:
           version=$(node -p "require('./package.json').version")
           archive="release-arch/Pirate-Cinema-${version}-arch-x64.tar.gz"
           test -f "$archive"
-          tar -tzf "$archive" | sed 's#^\./##' | grep -qx 'pirate-cinema'
+          mkdir release-arch/verify
+          tar -xzf "$archive" -C release-arch/verify
+          test -n "$(find release-arch/verify -maxdepth 2 -type f -name pirate-cinema -print -quit)"
+          rm -rf release-arch/verify
           hash=$(sha256sum "$archive" | cut -d' ' -f1)
           sed -e "s/@VERSION@/$version/g" -e "s/@SHA256@/$hash/g" packaging/arch/PKGBUILD.in > release-arch/PKGBUILD
           grep -q "$hash" release-arch/PKGBUILD

@@ -35,7 +35,7 @@ test("Arch release publishes a checksummed PKGBUILD with pacman dependencies",()
   const workflow=readFileSync(".github/workflows/release-arch.yml","utf8");
   const pkgbuild=readFileSync("packaging/arch/PKGBUILD.in","utf8");
   assert.match(config,/target:\s*tar\.gz/);assert.match(workflow,/Special for Arch Linux/);
-  assert.match(workflow,/tar -tzf/);assert.match(workflow,/s\/@SHA256@/);
+  assert.match(workflow,/tar -xzf/);assert.match(workflow,/s\/@SHA256@/);
   assert.match(pkgbuild,/depends=.*'mpv'.*'ffmpeg'/);assert.match(pkgbuild,/sha256sums=\('@SHA256@'\)/);
   assert.match(pkgbuild,/pirate-cinema\.desktop/);
 });
