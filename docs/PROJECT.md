@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.3.5. Installers: release/Pirate-Cinema-Setup-0.3.5.exe and release-web/nsis-web/Pirate-Cinema-Web-Setup-0.3.5.exe. The versioned NSIS package is published beside Web Setup in GitHub Release v0.3.5.
+Release version: 0.3.6. Installers: release/Pirate-Cinema-Setup-0.3.6.exe and release-web/nsis-web/Pirate-Cinema-Web-Setup-0.3.6.exe. The versioned NSIS package is published beside Web Setup in GitHub Release v0.3.6.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and bundled MPV over Windows named-pipe IPC.
 
@@ -71,7 +71,7 @@ the file launched, but cannot report its playback position back to Pirate Cinema
 
 electron-builder-web.yml extends the offline packaging configuration and uses
 the native nsis-web target. The small installer downloads the immutable x64
-NSIS application package from GitHub Release v0.3.5, then installs the complete
+NSIS application package from GitHub Release v0.3.6, then installs the complete
 prebuilt app and bundled MPV, TorrServer and FFmpeg under Pirate Cinema. No
 compilers, Node.js or package manager are installed on the user's computer.
 The offline packaging command remains unchanged.
@@ -80,3 +80,9 @@ The 0.3.3 Web Setup incorrectly used a release-directory URL and received HTTP
 404 on clean machines. Version 0.3.4 embeds the complete package asset URL.
 Always publish both the package and Web Setup; publish Offline Setup as the
 recommended option for networks where GitHub requires a VPN.
+
+Both NSIS installers are per-machine and request UAC before installation. The
+shared `build/installer.nsh` hook closes the Pirate Cinema window, waits for its
+owned local services to exit, then uses a product-name-scoped `taskkill` fallback
+before replacing files in Program Files. The application itself remains
+`asInvoker`; normal playback never requires administrator privileges.
