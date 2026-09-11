@@ -28,6 +28,23 @@ Setup requires access to the release asset for the entire installation.
 Nothing is compiled on the user's computer. Both installers deploy the
 prebuilt, version-pinned application package.
 
+## Linux
+
+Release 0.4.1 provides x86_64 packages for Debian/Ubuntu (`.deb`) and
+RPM-based distributions (`.rpm`). MPV and FFmpeg are installed through the
+system package manager; TorrServer is bundled and runs only for Pirate Cinema.
+
+The accompanying `install-linux.sh` detects the package family, verifies the
+download against `SHA256SUMS`, installs dependencies and creates a standard
+freedesktop launcher in the application menu. If the user's Desktop directory
+exists, it also creates a trusted desktop shortcut compatible with KDE, GNOME
+and XFCE.
+
+```sh
+chmod +x install-linux.sh
+./install-linux.sh
+```
+
 ## Maintenance
 
 The desktop Settings screen can run local system and playback diagnostics,

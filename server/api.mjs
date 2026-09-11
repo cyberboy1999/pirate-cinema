@@ -14,7 +14,7 @@ import { normalizeMagnetLink, normalizeSearchResult, normalizeTorrentFiles, Torr
 
 const apiPort=Number(process.env.TORR_LOCAL_API_PORT ?? 3001);
 const projectRoot=resolve(dirname(fileURLToPath(import.meta.url)),"..");
-const ffmpegPath=process.env.FFMPEG_PATH??bundledFfmpegPath;
+const ffmpegPath=[process.env.FFMPEG_PATH,process.platform==="win32"?bundledFfmpegPath:"/usr/bin/ffmpeg",bundledFfmpegPath].find(value=>value&&existsSync(value))??null;
 let dataDir=process.env.TORR_DATA_DIR ?? join(process.env.APPDATA ?? process.cwd(),"TorrServerDesktop");
 let posterDir=join(dataDir,"cache","posters");
 try{mkdirSync(posterDir,{recursive:true})}catch{dataDir=join(process.cwd(),"local-data");posterDir=join(dataDir,"cache","posters");mkdirSync(posterDir,{recursive:true})}
@@ -22,7 +22,7 @@ const configPath=join(dataDir,"config.json");
 
 const localConfig=readConfig();
 const torrServerUrl=process.env.TORRSERVER_URL ?? localConfig.torrServerUrl ?? "http://127.0.0.1:8090";
-const mpvPath=[process.env.MPV_PATH,join(projectRoot,"vendor","mpv","mpv.exe"),"C:\\Program Files\\mpv\\mpv.exe","C:\\Program Files (x86)\\mpv\\mpv.exe",join(process.env.USERPROFILE??"C:\\Users\\Public","scoop","apps","mpv","current","mpv.exe"),join(process.env.LOCALAPPDATA??"C:\\Users\\Public","Programs","mpv","mpv.exe"),"C:\\ProgramData\\chocolatey\\bin\\mpv.exe"].find(value=>value&&existsSync(value))??null;
+const mpvPath=[process.env.MPV_PATH,process.platform!=="win32"?"/usr/bin/mpv":null,join(projectRoot,"vendor","mpv","mpv.exe"),"C:\\Program Files\\mpv\\mpv.exe","C:\\Program Files (x86)\\mpv\\mpv.exe",join(process.env.USERPROFILE??"C:\\Users\\Public","scoop","apps","mpv","current","mpv.exe"),join(process.env.LOCALAPPDATA??"C:\\Users\\Public","Programs","mpv","mpv.exe"),"C:\\ProgramData\\chocolatey\\bin\\mpv.exe"].find(value=>value&&existsSync(value))??null;
 const client=new TorrServerClient(torrServerUrl,{username:process.env.TORRSERVER_USERNAME,password:process.env.TORRSERVER_PASSWORD});
 const db=new MediaDatabase(join(dataDir,"media.db"));
 const {service:metadata,mode:metadataMode}=createMetadataService();
@@ -108,8 +108,8 @@ const server=createServer(async(req,res)=>{
       if(body.torrServerUrl!==undefined){const nextUrl=new URL(body.torrServerUrl);if(!["http:","https:"].includes(nextUrl.protocol))throw new Error("Only HTTP(S) TorrServer addresses are allowed");next.torrServerUrl=nextUrl.toString().replace(/\/$/,"");restartRequired=next.torrServerUrl!==localConfig.torrServerUrl}
       if(body.language!==undefined){if(!["ru","en"].includes(body.language))return sendJson(res,400,{error:"Unsupported language"},origin);next.language=body.language}
       if(body.playerType!==undefined){if(!["mpv","external"].includes(body.playerType))return sendJson(res,400,{error:"Unsupported player"},origin);next.playerType=body.playerType}
-      if(body.playerPath!==undefined){const path=String(body.playerPath??"").trim();if(path&&(!/\.exe$/i.test(path)||!existsSync(path)))return sendJson(res,400,{error:"Выбранный EXE-файл плеера не найден"},origin);next.playerPath=path||null}
-      if(next.playerType==="external"&&!next.playerPath)return sendJson(res,400,{error:"Сначала выберите EXE-файл локального плеера"},origin);
+      if(body.playerPath!==undefined){const path=String(body.playerPath??"").trim();if(path&&(!existsSync(path)||(process.platform==="win32"&&!/\.exe$/i.test(path))))return sendJson(res,400,{error:"Выбранный файл плеера не найден"},origin);next.playerPath=path||null}
+      if(next.playerType==="external"&&!next.playerPath)return sendJson(res,400,{error:"Сначала выберите файл локального плеера"},origin);
       if(body.onboardingComplete!==undefined)next.onboardingComplete=Boolean(body.onboardingComplete);
       Object.assign(localConfig,next);saveConfig(localConfig);return sendJson(res,200,{saved:true,restartRequired,...appSettings()},origin);
     }

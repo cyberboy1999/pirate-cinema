@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   windows:
+    if: ${{ !endsWith(github.ref_name, '-linux') }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

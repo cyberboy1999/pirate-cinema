@@ -1,6 +1,6 @@
 {
   "name": "pirate-cinema-desktop",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Локальная медиатека и клиент TorrServer",
   "author": "Pirate Cinema",
   "main": "electron/main.mjs",
@@ -20,7 +20,8 @@
     "db:generate": "drizzle-kit generate",
     "desktop:start": "electron .",
     "desktop:package": "node node_modules/vinext/dist/cli.js build && electron-builder --win nsis",
-    "desktop:package:web": "node node_modules/vinext/dist/cli.js build && electron-builder --config electron-builder-web.yml --win nsis-web"
+    "desktop:package:web": "node node_modules/vinext/dist/cli.js build && electron-builder --config electron-builder-web.yml --win nsis-web",
+    "desktop:package:linux": "node node_modules/vinext/dist/cli.js build && electron-builder --config electron-builder-linux.yml --linux deb rpm"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

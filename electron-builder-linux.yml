@@ -1,0 +1,47 @@
+appId: ru.piratecinema.desktop
+productName: Pirate Cinema
+asar: false
+electronLanguages:
+  - en-US
+  - ru
+directories:
+  output: release-linux
+files:
+  - electron/**
+  - server/**
+  - dist/**
+  - public/**
+  - package.json
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+extraResources:
+  - from: bin
+    to: torrserver
+    filter:
+      - TorrServer-linux-amd64
+      - config.db
+      - settings.json
+      - viewed.json
+      - trackers.txt
+      - rutor.ls
+linux:
+  icon: build/icon.png
+  category: AudioVideo
+  executableName: pirate-cinema
+  maintainer: Pirate Cinema
+  synopsis: Local TorrServer media library
+  target:
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+  artifactName: Pirate-Cinema-${version}-linux-${arch}.${ext}
+  desktop:
+    entry:
+      Name: Pirate Cinema
+      Comment: Local TorrServer media library
+      Categories: AudioVideo;Player;
+deb:
+  depends: [mpv, ffmpeg]
+rpm:
+  depends: [mpv, ffmpeg]

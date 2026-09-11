@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
+import { existsSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+export function mpvLaunchOptions(platform, pipePath) {
+  const common=["--idle=yes","--force-window=immediate","--keep-open=no","--input-ipc-server="+pipePath,"--video-sync=audio"];
+  return platform==="win32"?[...common,"--vo=gpu","--gpu-api=opengl","--gpu-context=win","--hwdec=d3d11va-copy","--opengl-swapinterval=1","--priority=high"]:[...common,"--vo=gpu-next","--hwdec=auto-safe"];
+}
 
 export function sortMediaFiles(files) {
   const compare = new Intl.Collator("ru", { numeric: true, sensitivity: "base" }).compare;
@@ -25,9 +33,9 @@ export class PlaybackError extends Error {
 }
 
 export class MpvPlayer {
-  constructor({ db, client, executable, spawnProcess = spawn, connect = createConnection, focusWindow }) {
+  constructor({ db, client, executable, spawnProcess = spawn, connect = createConnection, focusWindow, platform = process.platform }) {
     this.db = db; this.client = client; this.executable = executable;
-    this.spawnProcess = spawnProcess; this.connect = connect;
+    this.spawnProcess = spawnProcess; this.connect = connect; this.platform = platform;
     this.focusWindow = focusWindow ?? ((pid) => {
       if (process.platform !== "win32" || !Number.isInteger(pid)) return;
       const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
@@ -138,14 +146,13 @@ export class MpvPlayer {
   async create() {
     if (!this.executable) throw new PlaybackError("Встроенный MPV не найден", 503);
     const id = String(process.pid) + "-" + (++this.counter);
-    const s = { id, pipePath: "\\\\.\\pipe\\pirate-cinema-mpv-" + id, socket: null, child: null,
+    const pipePath=this.platform==="win32"?"\\\\.\\pipe\\pirate-cinema-mpv-"+id:join(tmpdir(),"pirate-cinema-mpv-"+id+".sock");
+    const s = { id, pipePath, socket: null, child: null,
       requestId: 0, pending: new Map(), closed: false, marked: false, receiving: false,
       file: null, files: [], timecode: 0, duration: 0, lastSaved: 0, error: null };
     this.sessions.set(id, s);
     try {
-      const child = this.spawnProcess(this.executable, ["--idle=yes", "--force-window=immediate", "--keep-open=no",
-        "--input-ipc-server=" + s.pipePath, "--vo=gpu", "--gpu-api=opengl", "--gpu-context=win",
-        "--hwdec=d3d11va-copy", "--opengl-swapinterval=1", "--video-sync=audio", "--priority=high"],
+      const child = this.spawnProcess(this.executable, mpvLaunchOptions(this.platform,s.pipePath),
       { windowsHide: false, stdio: "ignore" });
       s.child = child;
       child.once("exit", () => this.dispose(s, false));
@@ -229,6 +236,7 @@ export class MpvPlayer {
       for (const p of s.pending.values()) { clearTimeout(p.timer); p.reject(new PlaybackError("MPV закрыт", 503)); }
       s.pending.clear(); s.socket?.destroy();
       if (kill && s.child && !s.child.killed) s.child.kill();
+      if(this.platform!=="win32"&&existsSync(s.pipePath))try{unlinkSync(s.pipePath)}catch{/* MPV may remove its own socket first. */}
       this.sessions.delete(s.id);
     }
   }

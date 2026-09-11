@@ -1,8 +1,8 @@
 # Pirate Cinema — project context
 
-Release version: 0.4.0. Installers: release/Pirate-Cinema-Setup-0.4.0.exe and release-web/nsis-web/Pirate-Cinema-Web-Setup-0.4.0.exe. The versioned NSIS package is published beside Web Setup in GitHub Release v0.4.0.
+Release version: 0.4.1. Linux x86_64 packages are published as DEB, RPM and a verified shell installer in GitHub Release v0.4.1-linux. Windows installers remain at v0.4.0.
 
-Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and bundled MPV over Windows named-pipe IPC.
+Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and MPV over Windows named-pipe or Linux Unix-socket IPC.
 
 - app/page.tsx: home, search and library.
 - app/Playback.tsx: movie detail page with cached description and file selection, explicit resume/start, per-file history actions and MPV window controls.
@@ -98,12 +98,21 @@ Electron creates timestamped backup folders containing `data`, TorrServer state
 and a versioned manifest. SQLite is checkpointed before copying. Restore requires
 an explicit native confirmation, replaces local state, then restarts the app.
 
-`electron-updater` checks the public GitHub release feed after startup, downloads
+On Windows, `electron-updater` checks the public GitHub release feed after startup, downloads
 updates in the background and waits for explicit restart or normal app exit to
-install. The offline NSIS build publishes `latest.yml` and its blockmap.
+install. DEB/RPM installations are updated through the distribution package
+manager or a newer release package. The offline NSIS build publishes `latest.yml`
+and its blockmap.
 
 `.github/workflows/release.yml` runs tests and lint for version tags, restores
 the pinned MPV and TorrServer payload from the public 0.3.6 bootstrap package,
 verifies both SHA-256 hashes, builds both installer variants and publishes release
 assets. Updating bundled runtime versions requires updating the bootstrap source
 and hashes together.
+
+`.github/workflows/release-linux.yml` handles `v*-linux` tags on Ubuntu. It
+verifies the official TorrServer MatriX.144.2 amd64 binary, runs tests and lint,
+builds DEB and RPM packages, creates SHA256SUMS and publishes the packages with
+`scripts/install-linux.sh`. The packages depend on system MPV and FFmpeg. The
+installer selects APT/DNF/YUM, verifies the package checksum and copies the
+freedesktop launcher to the application menu and, when present, the desktop.

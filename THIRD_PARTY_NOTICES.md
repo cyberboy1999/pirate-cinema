@@ -1,7 +1,7 @@
 # Third-party notices
 
-Pirate Cinema 0.3.2 through 0.4.0 include and invoke third-party software. The notices
-below identify the binaries distributed in the Windows installer; each
+Pirate Cinema 0.3.2 through 0.4.1 include and invoke third-party software. The notices
+below identify binaries distributed in the Windows and Linux installers; each
 component remains governed by its own license.
 
 ## TorrServer
@@ -12,6 +12,12 @@ component remains governed by its own license.
 - License text: https://github.com/YouROK/TorrServer/blob/MatriX.135/LICENSE
 - Distributed file: `TorrServer-windows-amd64.exe`
 - SHA-256: `f05c13f218286866473cb4e83b081eecd4cde8dcc8faf5ede321bfeaa444b044`
+
+The Linux 0.4.1 packages contain the official `TorrServer-linux-amd64` binary
+from MatriX.144.2 under the same GPL-3.0 license.
+
+- Source: https://github.com/YouROK/TorrServer/tree/MatriX.144.2
+- SHA-256: `60c92e15ff2ac76d3dcebfe742ef2f0900905a6accef4329e7d3c66d8f0351dd`
 
 ## mpv
 
@@ -28,6 +34,8 @@ The mpv binary statically includes separately licensed multimedia libraries.
 The build project above documents those components and its reproducible build
 configuration.
 
+Linux packages depend on the distribution-provided MPV instead of redistributing it.
+
 ## FFmpeg
 
 - Version: 6.0 essentials build from gyan.dev, supplied by `ffmpeg-static@5.2.0`
@@ -37,6 +45,9 @@ configuration.
 - Build information: https://www.gyan.dev/ffmpeg/builds/
 - Distributed file: `ffmpeg.exe`
 - SHA-256: `e9fd5e711debab9d680955fc1e38a2c1160fd280b144476cc3f62bc43ef49db1`
+
+Linux packages depend on the distribution-provided FFmpeg instead of
+redistributing it.
 
 ## Electron and JavaScript packages
 

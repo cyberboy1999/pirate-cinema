@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {EventEmitter} from "node:events";
 import {MediaDatabase} from "../server/database.mjs";
-import {MpvPlayer,sortMediaFiles,resumePosition} from "../server/mpv-player.mjs";
+import {MpvPlayer,mpvLaunchOptions,sortMediaFiles,resumePosition} from "../server/mpv-player.mjs";
 
 const files=[
   {id:19,path:"Show/S02/E01.mkv",name:"E01.mkv",season:2,episode:1},
@@ -45,6 +45,13 @@ test("media queue preserves true file IDs and naturally sorts seasons and episod
   assert.deepEqual(sortMediaFiles(collections).map(f=>f.id),[1,2,3]);
   assert.equal(resumePosition({playbackTimecode:950,playbackDuration:1000}),950);
   assert.equal(resumePosition({playbackTimecode:950},"start"),0);
+});
+
+test("MPV uses a Unix socket and portable video options on Linux",()=>{
+  const options=mpvLaunchOptions("linux","/tmp/pirate-cinema.sock");
+  assert.ok(options.includes("--input-ipc-server=/tmp/pirate-cinema.sock"));
+  assert.ok(options.includes("--hwdec=auto-safe"));
+  assert.ok(!options.some(value=>value.includes("d3d11")||value.includes("gpu-context=win")));
 });
 
 test("MPV IPC resumes, prevents duplicate windows, replaces explicitly and persists final position",async()=>{

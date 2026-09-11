@@ -43,6 +43,7 @@ yarn-error.log*
 /work/
 /release/
 /release-web/
+/release-linux/
 
 # Retired local MEX backup (includes its private graph and runtime DB).
 /docs/archive/
