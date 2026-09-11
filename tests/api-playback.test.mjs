@@ -32,7 +32,7 @@ test("local API exposes per-file progress, persists manual viewed changes and re
   });
   await new Promise(r=>torr.listen(0,"127.0.0.1",r));
   const child=spawn(process.execPath,["server/api.mjs"],{cwd:resolve("."),windowsHide:true,
-    env:{...process.env,TORR_LOCAL_API_PORT:"0",TORR_DATA_DIR:folder,TORRSERVER_URL:"http://127.0.0.1:"+torr.address().port,REMOTE_POSTERS:"0",TMDB_API_KEY:"",TMDB_READ_TOKEN:""},
+    env:{...process.env,TORR_LOCAL_API_PORT:"0",TORR_DATA_DIR:folder,TORRSERVER_URL:"http://127.0.0.1:"+torr.address().port,MPV_PATH:process.execPath,REMOTE_POSTERS:"0",TMDB_API_KEY:"",TMDB_READ_TOKEN:""},
     stdio:["ignore","pipe","pipe"],
   });
   const exited=once(child,"exit");let logs="";
