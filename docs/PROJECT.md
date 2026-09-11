@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.3.6. Installers: release/Pirate-Cinema-Setup-0.3.6.exe and release-web/nsis-web/Pirate-Cinema-Web-Setup-0.3.6.exe. The versioned NSIS package is published beside Web Setup in GitHub Release v0.3.6.
+Release version: 0.4.0. Installers: release/Pirate-Cinema-Setup-0.4.0.exe and release-web/nsis-web/Pirate-Cinema-Web-Setup-0.4.0.exe. The versioned NSIS package is published beside Web Setup in GitHub Release v0.4.0.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and bundled MPV over Windows named-pipe IPC.
 
@@ -21,7 +21,7 @@ MEX is retired. Historical notes and graph are archived under docs/archive/mex-2
 No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.
 
 THIRD_PARTY_NOTICES.md records the versions, licenses, source links and SHA-256
-hashes of the TorrServer, MPV and FFmpeg binaries distributed in releases 0.3.2 through 0.3.4.
+hashes of the TorrServer, MPV and FFmpeg binaries distributed in releases 0.3.2 through 0.4.0.
 Keep it updated whenever a bundled binary changes.
 
 ## Playback contract
@@ -71,7 +71,7 @@ the file launched, but cannot report its playback position back to Pirate Cinema
 
 electron-builder-web.yml extends the offline packaging configuration and uses
 the native nsis-web target. The small installer downloads the immutable x64
-NSIS application package from GitHub Release v0.3.6, then installs the complete
+NSIS application package from GitHub Release v0.4.0, then installs the complete
 prebuilt app and bundled MPV, TorrServer and FFmpeg under Pirate Cinema. No
 compilers, Node.js or package manager are installed on the user's computer.
 The offline packaging command remains unchanged.
@@ -86,3 +86,24 @@ shared `build/installer.nsh` hook closes the Pirate Cinema window, waits for its
 owned local services to exit, then uses a product-name-scoped `taskkill` fallback
 before replacing files in Program Files. The application itself remains
 `asInvoker`; normal playback never requires administrator privileges.
+
+## Maintenance and releases
+
+Settings exposes system checks for the API, TorrServer, MPV, FFmpeg, selected
+player and SQLite file. Each torrent file also has a playback diagnostic that
+checks the exact file index before suggesting a retry. Russian and English cover
+the shell, search, library, file picker, MPV controls and maintenance actions.
+
+Electron creates timestamped backup folders containing `data`, TorrServer state
+and a versioned manifest. SQLite is checkpointed before copying. Restore requires
+an explicit native confirmation, replaces local state, then restarts the app.
+
+`electron-updater` checks the public GitHub release feed after startup, downloads
+updates in the background and waits for explicit restart or normal app exit to
+install. The offline NSIS build publishes `latest.yml` and its blockmap.
+
+`.github/workflows/release.yml` runs tests and lint for version tags, restores
+the pinned MPV and TorrServer payload from the public 0.3.6 bootstrap package,
+verifies both SHA-256 hashes, builds both installer variants and publishes release
+assets. Updating bundled runtime versions requires updating the bootstrap source
+and hashes together.

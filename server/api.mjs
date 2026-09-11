@@ -85,6 +85,10 @@ const server=createServer(async(req,res)=>{
   if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-origin":origin,"access-control-allow-methods":"GET,POST,DELETE,OPTIONS","access-control-allow-headers":"content-type"});return res.end()}
   try{
     if(req.method==="GET"&&url.pathname==="/api/health")return sendJson(res,200,{ok:true,...state,database:join(dataDir,"media.db")},origin);
+    if(req.method==="POST"&&url.pathname==="/api/maintenance/checkpoint"){db.checkpoint();return sendJson(res,200,{saved:true},origin)}
+    if(req.method==="GET"&&url.pathname==="/api/diagnostics"){
+      const settings=appSettings();const checks=[{id:"api",ok:true,detail:`127.0.0.1:${apiPort}`},{id:"torrserver",ok:state.online,detail:state.online?state.serverVersion:"TorrServer не отвечает"},{id:"mpv",ok:Boolean(mpvPath&&existsSync(mpvPath)),detail:mpvPath??"MPV не найден"},{id:"ffmpeg",ok:Boolean(ffmpegPath&&existsSync(ffmpegPath)),detail:ffmpegPath??"FFmpeg не найден"},{id:"player",ok:settings.playerType==="mpv"||Boolean(settings.playerPath&&existsSync(settings.playerPath)),detail:settings.playerType==="mpv"?"Встроенный MPV":settings.playerPath??"Плеер не выбран"},{id:"database",ok:existsSync(join(dataDir,"media.db")),detail:join(dataDir,"media.db")}];return sendJson(res,200,{ok:checks.every(item=>item.ok),checks},origin)
+    }
     if(req.method==="GET"&&url.pathname==="/api/library")return sendJson(res,200,libraryPayload(),origin);
     if(req.method==="POST"&&url.pathname==="/api/sync"){
       const body=await readJson(req);
@@ -140,6 +144,10 @@ const server=createServer(async(req,res)=>{
       return sendJson(res,200,{sessions},origin);
     }
     const historyMatch=url.pathname.match(/^\/api\/torrents\/([a-f0-9]{40})\/files\/([0-9]+)\/history$/i);
+    const playbackDiagnosticMatch=url.pathname.match(/^\/api\/torrents\/([a-f0-9]{40})\/files\/([0-9]+)\/diagnostics$/i);
+    if(req.method==="GET"&&playbackDiagnosticMatch){
+      const hash=playbackDiagnosticMatch[1].toLowerCase(),index=Number(playbackDiagnosticMatch[2]);let files=[];let torrentError=null;try{files=(await torrentFiles(hash)).files}catch(error){torrentError=error instanceof Error?error.message:String(error)}const file=files.find(item=>item.id===index);const settings=appSettings();const checks=[{id:"torrserver",ok:state.online,detail:state.online?state.serverVersion:"Нет соединения"},{id:"torrent",ok:!torrentError,detail:torrentError??"Раздача доступна"},{id:"file",ok:Boolean(file),detail:file?`${file.name} · ${file.length} bytes`:"Файл не найден в раздаче"},{id:"player",ok:settings.playerType==="mpv"?Boolean(mpvPath&&existsSync(mpvPath)):Boolean(settings.playerPath&&existsSync(settings.playerPath)),detail:settings.playerType==="mpv"?(mpvPath??"MPV не найден"):(settings.playerPath??"Плеер не выбран")}];return sendJson(res,200,{ok:checks.every(item=>item.ok),checks,recommendation:!state.online?"Перезапустите TorrServer":torrentError?"Обновите раздачу и повторите":!file?"Выберите другой файл":"Основные компоненты готовы; проверьте наличие пиров и повторите запуск"},origin)
+    }
     if(req.method==="POST"&&historyMatch){
       const hash=historyMatch[1].toLowerCase(),index=Number(historyMatch[2]);const body=await readJson(req);
       if(!Number.isSafeInteger(index)||index<1)return sendJson(res,400,{error:"Некорректный индекс файла"},origin);

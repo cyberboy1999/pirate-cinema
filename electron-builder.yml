@@ -1,5 +1,9 @@
 appId: ru.piratecinema.desktop
 productName: Pirate Cinema
+publish:
+  provider: github
+  owner: cyberboy1999
+  repo: pirate-cinema
 asar: false
 electronLanguages:
   - en-US

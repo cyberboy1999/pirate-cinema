@@ -178,6 +178,7 @@ export class MediaDatabase {
 
   list() { return this.db.prepare("SELECT * FROM media_items ORDER BY added_at DESC").all().map(toMediaItem); }
   stats() { return this.db.prepare("SELECT COUNT(*) AS total, SUM(is_active) AS active, SUM(CASE WHEN playback_timecode > 0 AND is_watched=0 THEN 1 ELSE 0 END) AS continuing FROM media_items").get(); }
+  checkpoint() { this.db.exec("PRAGMA wal_checkpoint(FULL)"); }
   close() { this.db.close(); }
 }
 

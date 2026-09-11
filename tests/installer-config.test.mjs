@@ -10,3 +10,11 @@ test("both NSIS installers elevate before replacing locked application files",()
   assert.match(hook,/WM_CLOSE/);
   assert.match(hook,/taskkill\.exe.*Pirate Cinema\.exe/);
 });
+
+test("release workflow verifies bundled binaries and publishes updater metadata",()=>{
+  const config=readFileSync("electron-builder.yml","utf8");const workflow=readFileSync(".github/workflows/release.yml","utf8");
+  assert.match(config,/provider:\s*github/);
+  assert.match(workflow,/TorrServer hash mismatch/);
+  assert.match(workflow,/MPV hash mismatch/);
+  assert.match(workflow,/release\/latest\.yml/);
+});

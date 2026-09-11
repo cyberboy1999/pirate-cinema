@@ -52,6 +52,9 @@ test("local API exposes per-file progress, persists manual viewed changes and re
     const savedSettings=await (await post("/api/settings",{onboardingComplete:true,language:"en",playerType:"external",playerPath:process.execPath})).json();assert.equal(savedSettings.onboardingComplete,true);assert.equal(savedSettings.language,"en");assert.equal(savedSettings.playerPath,process.execPath);
     assert.equal((await post("/api/settings",{playerType:"mpv"})).status,200);
     const route="/api/torrents/"+hash+"/files";
+    const diagnostics=await (await fetch(base+"/api/diagnostics")).json();assert.equal(diagnostics.checks.some(item=>item.id==="torrserver"&&item.ok),true);
+    const playbackDiagnostics=await (await fetch(base+route+"/42/diagnostics")).json();assert.equal(playbackDiagnostics.checks.some(item=>item.id==="file"&&item.ok),true);
+    assert.equal((await post("/api/maintenance/checkpoint",{})).status,200);
     async function file(){return (await (await fetch(base+route)).json()).files[0]}
     assert.equal((await file()).id,42);
     assert.equal((await file()).progress,12);

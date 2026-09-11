@@ -1,0 +1,47 @@
+name: Build Windows release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: {version: 11.19.0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: pnpm}
+      - name: Restore pinned bundled runtimes
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.3.6/pirate-cinema-desktop-0.3.6-x64.nsis.7z' -OutFile runtime.7z
+          7z x runtime.7z -obootstrap -y
+          New-Item vendor/mpv,bin -ItemType Directory -Force | Out-Null
+          Copy-Item bootstrap/resources/mpv/* vendor/mpv -Recurse -Force
+          Copy-Item bootstrap/resources/torrserver/* bin -Recurse -Force
+          if ((Get-FileHash bin/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne 'F05C13F218286866473CB4E83B081EECD4CDE8DCC8FAF5EDE321BFEAA444B044') { throw 'TorrServer hash mismatch' }
+          if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm run lint
+      - name: Validate tag version
+        shell: pwsh
+        run: |
+          $version=(Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag does not match package version $version" }
+      - run: node node_modules/vinext/dist/cli.js build
+      - run: pnpm exec electron-builder --config electron-builder.yml --win nsis --publish never
+        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+      - run: pnpm exec electron-builder --config electron-builder-web.yml --win nsis-web --publish never
+        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+      - name: Publish release assets
+        shell: pwsh
+        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+        run: |
+          $version=(Get-Content package.json -Raw | ConvertFrom-Json).version
+          gh release create "v$version" "release/Pirate-Cinema-Setup-$version.exe" "release/Pirate-Cinema-Setup-$version.exe.blockmap" "release/latest.yml" "release-web/nsis-web/Pirate-Cinema-Web-Setup-$version.exe" "release-web/nsis-web/pirate-cinema-desktop-$version-x64.nsis.7z" THIRD_PARTY_NOTICES.md --generate-notes --latest

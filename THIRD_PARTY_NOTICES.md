@@ -1,6 +1,6 @@
 # Third-party notices
 
-Pirate Cinema 0.3.2 through 0.3.6 include and invoke third-party software. The notices
+Pirate Cinema 0.3.2 through 0.4.0 include and invoke third-party software. The notices
 below identify the binaries distributed in the Windows installer; each
 component remains governed by its own license.
 

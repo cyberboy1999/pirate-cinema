@@ -28,6 +28,13 @@ Setup requires access to the release asset for the entire installation.
 Nothing is compiled on the user's computer. Both installers deploy the
 prebuilt, version-pinned application package.
 
+## Maintenance
+
+The desktop Settings screen can run local system and playback diagnostics,
+create or restore a backup of the library and viewing history, and check GitHub
+Releases for updates. Updates download in the background and install only after
+the user confirms a restart or exits Pirate Cinema normally.
+
 ## Configuration
 
 Copy `.env.example` to `.env.local`. Secrets are intentionally excluded from Git.
