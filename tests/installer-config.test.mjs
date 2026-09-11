@@ -38,4 +38,6 @@ test("Arch release publishes a checksummed PKGBUILD with pacman dependencies",()
   assert.match(workflow,/tar -xzf/);assert.match(workflow,/s\/@SHA256@/);
   assert.match(pkgbuild,/depends=.*'mpv'.*'ffmpeg'/);assert.match(pkgbuild,/sha256sums=\('@SHA256@'\)/);
   assert.match(pkgbuild,/pirate-cinema\.desktop/);
+  assert.match(pkgbuild,/chmod 755 .*TorrServer-linux-amd64/);
+  assert.doesNotMatch(readFileSync("electron/main.mjs","utf8"),/chmodSync/);
 });

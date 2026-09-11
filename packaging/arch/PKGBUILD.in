@@ -24,6 +24,7 @@ package() {
   install -d "${pkgdir}/opt/pirate-cinema"
   cp -a "$(dirname "${executable}")/." "${pkgdir}/opt/pirate-cinema/"
   chmod 4755 "${pkgdir}/opt/pirate-cinema/chrome-sandbox"
+  chmod 755 "${pkgdir}/opt/pirate-cinema/resources/torrserver/TorrServer-linux-amd64"
   install -Dm644 "${pkgdir}/opt/pirate-cinema/resources/app/public/pirate-cinema-logo.png" "${pkgdir}/usr/share/pixmaps/pirate-cinema.png"
   install -d "${pkgdir}/usr/share/applications"
   printf '%s\n' '[Desktop Entry]' 'Name=Pirate Cinema' 'Comment=Local TorrServer media library' 'Exec=/opt/pirate-cinema/pirate-cinema %U' 'Icon=pirate-cinema' 'Terminal=false' 'Type=Application' 'Categories=AudioVideo;Player;' > "${pkgdir}/usr/share/applications/pirate-cinema.desktop"

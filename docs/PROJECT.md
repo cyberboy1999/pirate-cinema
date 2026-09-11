@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.4.2. The dedicated Arch Linux x86_64 release is tagged v0.4.2-arch and titled "Special for Arch Linux". DEB/RPM remain at v0.4.1-linux and Windows installers at v0.4.0.
+Release version: 0.4.3. The dedicated Arch Linux x86_64 release is tagged v0.4.3-arch and titled "Special for Arch Linux". It fixes packaged TorrServer startup by assigning executable permissions during package installation instead of trying to change files under `/opt` at application startup. DEB/RPM remain at v0.4.1-linux and Windows installers at v0.4.0.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and MPV over Windows named-pipe or Linux Unix-socket IPC.
 
