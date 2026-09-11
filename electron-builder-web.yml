@@ -1,0 +1,11 @@
+extends: ./electron-builder.yml
+directories:
+  output: release-web
+win:
+  target:
+    - target: nsis-web
+      arch:
+        - x64
+nsisWeb:
+  artifactName: Pirate-Cinema-Web-Setup-${version}.${ext}
+  appPackageUrl: https://github.com/cyberboy1999/pirate-cinema/releases/download/v${version}/

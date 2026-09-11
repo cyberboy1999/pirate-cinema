@@ -12,6 +12,8 @@ files:
   - dist/**
   - public/**
   - package.json
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
   - "!node_modules/ffmpeg-static/ffmpeg.exe"
 extraResources:
   - from: bin

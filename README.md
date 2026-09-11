@@ -15,6 +15,16 @@ Metadata is stored in `media.db` under `%APPDATA%\TorrServerDesktop`. When that 
 
 Third-party components and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+The Windows release provides two installation modes:
+
+- **Web Setup** downloads the complete versioned application package during
+  installation and installs MPV, TorrServer and FFmpeg inside Pirate Cinema.
+- **Offline Setup** already contains the same runtime components and works
+  without a network connection.
+
+Nothing is compiled on the user's computer. Both installers deploy the
+prebuilt, version-pinned application package.
+
 ## Configuration
 
 Copy `.env.example` to `.env.local`. Secrets are intentionally excluded from Git.

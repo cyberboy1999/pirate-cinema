@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.3.2. Windows installer: release/Pirate-Cinema-Setup-0.3.2.exe.
+Release version: 0.3.3. Web installer: release-web/Pirate-Cinema-Web-Setup-0.3.3.exe. Its versioned NSIS package is published beside it in GitHub Release v0.3.3. The offline 0.3.2 installer remains available.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and bundled MPV over Windows named-pipe IPC.
 
@@ -11,7 +11,7 @@ Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrSer
 - server/mpv-player.mjs: owned MPV sessions, JSON-line IPC, real-index queue and EOF-only optional auto-next.
 - server/database.mjs: media and per-file history. Viewed means launched once, not completed.
 - electron/main.mjs: local service lifecycle. Do not stop services not owned by the app.
-- Tests: pnpm test. Lint: pnpm run lint. Windows build: node node_modules/vinext/dist/cli.js build. Installer: pnpm run desktop:package.
+- Tests: pnpm test. Lint: pnpm run lint. Windows build: node node_modules/vinext/dist/cli.js build. Offline installer: pnpm run desktop:package. Web installer: pnpm run desktop:package:web.
 
 Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source is DietrichGebert/ponytail, commit 2ed6c52c9d7e5e56942508591085fd45dea277d3 (MIT). It is instruction-only: no runtime dependency, hooks, telemetry or code graph.
 
@@ -20,7 +20,7 @@ MEX is retired. Historical notes and graph are archived under docs/archive/mex-2
 No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.
 
 THIRD_PARTY_NOTICES.md records the versions, licenses, source links and SHA-256
-hashes of the TorrServer, MPV and FFmpeg binaries distributed in release 0.3.2.
+hashes of the TorrServer, MPV and FFmpeg binaries distributed in releases 0.3.2 and 0.3.3.
 Keep it updated whenever a bundled binary changes.
 
 ## Playback contract
@@ -52,3 +52,12 @@ Each search release has its own Add to TorrServer button. The API immediately in
 Version 0.3.2 prioritizes Russian Wikipedia descriptions independently of Cinemeta/TVmaze posters. server/wikipedia.mjs searches localized/original names, checks media type and film year, and follows English-to-Russian language links when necessary. No new dependencies or API keys. Wikipedia credit links are shown with descriptions.
 
 SQLite retains description source URLs and prevents an English fallback from replacing saved Russian text. Adding the source column invalidates old metadata timestamps once (without clearing descriptions or playback history). Open a card or run full sync to refresh existing descriptions. Settings displays the version imported from package.json.
+
+## Web installer
+
+electron-builder-web.yml extends the offline packaging configuration and uses
+the native nsis-web target. The small installer downloads the immutable x64
+NSIS application package from GitHub Release v0.3.3, then installs the complete
+prebuilt app and bundled MPV, TorrServer and FFmpeg under Pirate Cinema. No
+compilers, Node.js or package manager are installed on the user's computer.
+The offline packaging command remains unchanged.
