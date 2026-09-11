@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.3.3. Web installer: release-web/Pirate-Cinema-Web-Setup-0.3.3.exe. Its versioned NSIS package is published beside it in GitHub Release v0.3.3. The offline 0.3.2 installer remains available.
+Release version: 0.3.4. Installers: release/Pirate-Cinema-Setup-0.3.4.exe and release-web/nsis-web/Pirate-Cinema-Web-Setup-0.3.4.exe. The versioned NSIS package is published beside Web Setup in GitHub Release v0.3.4.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and bundled MPV over Windows named-pipe IPC.
 
@@ -20,7 +20,7 @@ MEX is retired. Historical notes and graph are archived under docs/archive/mex-2
 No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.
 
 THIRD_PARTY_NOTICES.md records the versions, licenses, source links and SHA-256
-hashes of the TorrServer, MPV and FFmpeg binaries distributed in releases 0.3.2 and 0.3.3.
+hashes of the TorrServer, MPV and FFmpeg binaries distributed in releases 0.3.2 through 0.3.4.
 Keep it updated whenever a bundled binary changes.
 
 ## Playback contract
@@ -57,7 +57,12 @@ SQLite retains description source URLs and prevents an English fallback from rep
 
 electron-builder-web.yml extends the offline packaging configuration and uses
 the native nsis-web target. The small installer downloads the immutable x64
-NSIS application package from GitHub Release v0.3.3, then installs the complete
+NSIS application package from GitHub Release v0.3.4, then installs the complete
 prebuilt app and bundled MPV, TorrServer and FFmpeg under Pirate Cinema. No
 compilers, Node.js or package manager are installed on the user's computer.
 The offline packaging command remains unchanged.
+
+The 0.3.3 Web Setup incorrectly used a release-directory URL and received HTTP
+404 on clean machines. Version 0.3.4 embeds the complete package asset URL.
+Always publish both the package and Web Setup; publish Offline Setup as the
+recommended option for networks where GitHub requires a VPN.

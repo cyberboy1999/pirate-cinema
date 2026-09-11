@@ -8,4 +8,4 @@ win:
         - x64
 nsisWeb:
   artifactName: Pirate-Cinema-Web-Setup-${version}.${ext}
-  appPackageUrl: https://github.com/cyberboy1999/pirate-cinema/releases/download/v${version}/
+  appPackageUrl: https://github.com/cyberboy1999/pirate-cinema/releases/download/v${version}/pirate-cinema-desktop-${version}-x64.nsis.7z

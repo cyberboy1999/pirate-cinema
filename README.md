@@ -22,6 +22,9 @@ The Windows release provides two installation modes:
 - **Offline Setup** already contains the same runtime components and works
   without a network connection.
 
+Use Offline Setup where GitHub downloads are blocked or require a VPN. Web
+Setup requires access to the release asset for the entire installation.
+
 Nothing is compiled on the user's computer. Both installers deploy the
 prebuilt, version-pinned application package.
 
