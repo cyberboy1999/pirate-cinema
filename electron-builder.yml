@@ -1,0 +1,44 @@
+appId: ru.piratecinema.desktop
+productName: Pirate Cinema
+asar: false
+electronLanguages:
+  - en-US
+  - ru
+directories:
+  output: release
+files:
+  - electron/**
+  - server/**
+  - dist/**
+  - public/**
+  - package.json
+  - "!node_modules/ffmpeg-static/ffmpeg.exe"
+extraResources:
+  - from: bin
+    to: torrserver
+    filter:
+      - TorrServer-windows-amd64.exe
+      - config.db
+      - settings.json
+      - viewed.json
+      - trackers.txt
+      - rutor.ls
+  - from: node_modules/ffmpeg-static/ffmpeg.exe
+    to: ffmpeg/ffmpeg.exe
+  - from: vendor/mpv
+    to: mpv
+    filter:
+      - "**/*"
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: Pirate-Cinema-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Pirate Cinema

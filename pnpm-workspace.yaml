@@ -1,0 +1,8 @@
+allowBuilds:
+  core-js: false
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+  ffmpeg-static: true
+  sharp: false
+  workerd: false
