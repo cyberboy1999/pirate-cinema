@@ -33,6 +33,7 @@ const librarySync=createLibrarySync({db,client,metadata,cachePoster,state,active
 
 function readConfig(){try{return JSON.parse(readFileSync(configPath,"utf8"))}catch{return {}}}
 function saveConfig(next){mkdirSync(dataDir,{recursive:true});writeFileSync(configPath,JSON.stringify(next,null,2),{encoding:"utf8",mode:0o600})}
+function appSettings(){return {onboardingComplete:Boolean(localConfig.onboardingComplete),language:localConfig.language==="en"?"en":"ru",playerType:localConfig.playerType==="external"?"external":"mpv",playerPath:localConfig.playerPath??null}}
 
 async function cachePoster(providerId,url){
   if(!providerId||!url||!/^https?:\/\//i.test(url))return null;
@@ -97,10 +98,16 @@ const server=createServer(async(req,res)=>{
       try{await librarySync.enrich(hash)}catch{warning="Сервис описаний временно недоступен"}
       return sendJson(res,200,{item:librarySync.item(hash),warning},origin);
     }
-    if(req.method==="GET"&&url.pathname==="/api/settings")return sendJson(res,200,{torrServerUrl:state.torrServerUrl,metadataMode,metadataConfigured:metadataMode==="tmdb",dataDir},origin);
+    if(req.method==="GET"&&url.pathname==="/api/settings")return sendJson(res,200,{torrServerUrl:state.torrServerUrl,metadataMode,metadataConfigured:metadataMode==="tmdb",dataDir,...appSettings()},origin);
     if(req.method==="POST"&&url.pathname==="/api/settings"){
-      const body=await readJson(req); const nextUrl=new URL(body.torrServerUrl); if(!["http:","https:"].includes(nextUrl.protocol))throw new Error("Only HTTP(S) TorrServer addresses are allowed");
-      saveConfig({...localConfig,torrServerUrl:nextUrl.toString().replace(/\/$/,"")});return sendJson(res,200,{saved:true,restartRequired:true},origin);
+      const body=await readJson(req);const next={...localConfig};let restartRequired=false;
+      if(body.torrServerUrl!==undefined){const nextUrl=new URL(body.torrServerUrl);if(!["http:","https:"].includes(nextUrl.protocol))throw new Error("Only HTTP(S) TorrServer addresses are allowed");next.torrServerUrl=nextUrl.toString().replace(/\/$/,"");restartRequired=next.torrServerUrl!==localConfig.torrServerUrl}
+      if(body.language!==undefined){if(!["ru","en"].includes(body.language))return sendJson(res,400,{error:"Unsupported language"},origin);next.language=body.language}
+      if(body.playerType!==undefined){if(!["mpv","external"].includes(body.playerType))return sendJson(res,400,{error:"Unsupported player"},origin);next.playerType=body.playerType}
+      if(body.playerPath!==undefined){const path=String(body.playerPath??"").trim();if(path&&(!/\.exe$/i.test(path)||!existsSync(path)))return sendJson(res,400,{error:"Выбранный EXE-файл плеера не найден"},origin);next.playerPath=path||null}
+      if(next.playerType==="external"&&!next.playerPath)return sendJson(res,400,{error:"Сначала выберите EXE-файл локального плеера"},origin);
+      if(body.onboardingComplete!==undefined)next.onboardingComplete=Boolean(body.onboardingComplete);
+      Object.assign(localConfig,next);saveConfig(localConfig);return sendJson(res,200,{saved:true,restartRequired,...appSettings()},origin);
     }
     const framePosterMatch=url.pathname.match(/^\/api\/posters\/frame\/([a-f0-9]{40})$/i);
     if(req.method==="GET"&&framePosterMatch){const hash=framePosterMatch[1].toLowerCase();try{const name=await generateFramePoster(hash);const path=join(posterDir,name);res.writeHead(200,{"content-type":"image/jpeg","cache-control":"public, max-age=31536000, immutable","access-control-allow-origin":origin});return res.end(readFileSync(path))}catch{const svg=posterPlaceholder(db.get(hash)?.title??db.get(hash)?.torrent_name??"Без названия",hash);res.writeHead(200,{"content-type":"image/svg+xml; charset=utf-8","cache-control":"public, max-age=3600","access-control-allow-origin":origin});return res.end(svg)}}
@@ -145,10 +152,17 @@ const server=createServer(async(req,res)=>{
     }
     const mpvMatch=url.pathname.match(/^\/api\/mpv\/([a-f0-9]{40})$/i);
     if(req.method==="POST"&&mpvMatch){
-      if(!state.online)return sendJson(res,409,{error:"TorrServer недоступен"},origin);if(!mpvPath)return sendJson(res,503,{error:"Встроенный MPV не найден. Проверьте файлы приложения или задайте MPV_PATH"},origin);
+      if(!state.online)return sendJson(res,409,{error:"TorrServer недоступен"},origin);
       const hash=mpvMatch[1].toLowerCase();const body=await readJson(req);const fileIndex=Number(body.fileIndex);
       if(!Number.isSafeInteger(fileIndex)||fileIndex<1)return sendJson(res,400,{error:"Некорректный индекс файла"},origin);
       const {files}=await torrentFiles(hash);
+      if(appSettings().playerType==="external"){
+        const executable=appSettings().playerPath;if(!executable||!existsSync(executable))return sendJson(res,503,{error:"Выбранный локальный плеер не найден. Измените его в настройках."},origin);
+        const file=files.find(item=>item.id===fileIndex);if(!file)return sendJson(res,404,{error:"Видеофайл не найден"},origin);
+        db.markFilePlayed(hash,{fileIndex,fileName:file.name,filePath:file.path});const child=spawn(executable,[client.streamUrl(hash,file.id,file.name)],{windowsHide:false,stdio:"ignore",detached:true});child.unref();
+        return sendJson(res,200,{launched:true,player:"external",playerName:basename(executable)},origin);
+      }
+      if(!mpvPath)return sendJson(res,503,{error:"Встроенный MPV не найден. Проверьте файлы приложения или задайте MPV_PATH"},origin);
       const session=await player.play({hash,files,fileIndex,mode:body.mode,existing:body.existing,sessionId:body.sessionId,autoNext:body.autoNext});
       return sendJson(res,200,{launched:true,player:"mpv",...session},origin);
     }

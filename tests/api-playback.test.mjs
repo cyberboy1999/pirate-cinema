@@ -47,6 +47,10 @@ test("local API exposes per-file progress, persists manual viewed changes and re
     const base="http://127.0.0.1:"+logs.match(/local-api.*127.0.0.1:(\d+)/)[1];
     async function post(path,body){return fetch(base+path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})}
     const sync=await post("/api/sync",{});assert.equal((await sync.json()).state.online,true);
+    const initialSettings=await (await fetch(base+"/api/settings")).json();assert.equal(initialSettings.onboardingComplete,false);assert.equal(initialSettings.playerType,"mpv");assert.equal(initialSettings.language,"ru");
+    assert.equal((await post("/api/settings",{playerType:"external",playerPath:"C:\\missing-player.exe"})).status,400);
+    const savedSettings=await (await post("/api/settings",{onboardingComplete:true,language:"en",playerType:"external",playerPath:process.execPath})).json();assert.equal(savedSettings.onboardingComplete,true);assert.equal(savedSettings.language,"en");assert.equal(savedSettings.playerPath,process.execPath);
+    assert.equal((await post("/api/settings",{playerType:"mpv"})).status,200);
     const route="/api/torrents/"+hash+"/files";
     async function file(){return (await (await fetch(base+route)).json()).files[0]}
     assert.equal((await file()).id,42);

@@ -48,7 +48,7 @@ export function MediaFilePicker({item,files,busy,error,onClose,onRetry,onRefresh
     setWorking(true);setFailure("");
     try{
       const payload=await request("/api/mpv/"+item.torrentHash,{fileIndex:file.id,mode,existing,sessionId,autoNext});
-      onLaunched(payload.focused?"Этот файл уже открыт — переключаюсь на MPV":"Файл передан в MPV");
+      onLaunched(payload.focused?"Этот файл уже открыт — переключаюсь на MPV":payload.player==="external"?`Файл передан в ${payload.playerName||"локальный плеер"}`:"Файл передан в MPV");
       onClose();
     }catch(error){
       if(error instanceof RequestError&&error.active.length)setChoice({file,mode,active:error.active});

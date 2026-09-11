@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.3.4. Installers: release/Pirate-Cinema-Setup-0.3.4.exe and release-web/nsis-web/Pirate-Cinema-Web-Setup-0.3.4.exe. The versioned NSIS package is published beside Web Setup in GitHub Release v0.3.4.
+Release version: 0.3.5. Installers: release/Pirate-Cinema-Setup-0.3.5.exe and release-web/nsis-web/Pirate-Cinema-Web-Setup-0.3.5.exe. The versioned NSIS package is published beside Web Setup in GitHub Release v0.3.5.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and bundled MPV over Windows named-pipe IPC.
 
@@ -11,6 +11,7 @@ Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrSer
 - server/mpv-player.mjs: owned MPV sessions, JSON-line IPC, real-index queue and EOF-only optional auto-next.
 - server/database.mjs: media and per-file history. Viewed means launched once, not completed.
 - electron/main.mjs: local service lifecycle. Do not stop services not owned by the app.
+- electron/preload.cjs: sandboxed bridge for the native external-player file picker.
 - Tests: pnpm test. Lint: pnpm run lint. Windows build: node node_modules/vinext/dist/cli.js build. Offline installer: pnpm run desktop:package. Web installer: pnpm run desktop:package:web.
 
 Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source is DietrichGebert/ponytail, commit 2ed6c52c9d7e5e56942508591085fd45dea277d3 (MIT). It is instruction-only: no runtime dependency, hooks, telemetry or code graph.
@@ -53,11 +54,24 @@ Version 0.3.2 prioritizes Russian Wikipedia descriptions independently of Cineme
 
 SQLite retains description source URLs and prevents an English fallback from replacing saved Russian text. Adding the source column invalidates old metadata timestamps once (without clearing descriptions or playback history). Open a card or run full sync to refresh existing descriptions. Settings displays the version imported from package.json.
 
+## First-run preferences
+
+`data/config.json` stores the completed welcome state, `ru`/`en` interface
+language and either bundled MPV or an explicitly selected local Windows player.
+The welcome screen is shown until valid preferences are saved; the same language
+and player controls remain available in Settings. Electron exposes only a native
+`.exe` picker through its sandboxed preload bridge. The local API validates the
+selected path before saving it.
+
+Bundled MPV remains the default and preserves named-pipe IPC progress tracking.
+An external player receives the exact selected TorrServer stream URL and marks
+the file launched, but cannot report its playback position back to Pirate Cinema.
+
 ## Web installer
 
 electron-builder-web.yml extends the offline packaging configuration and uses
 the native nsis-web target. The small installer downloads the immutable x64
-NSIS application package from GitHub Release v0.3.4, then installs the complete
+NSIS application package from GitHub Release v0.3.5, then installs the complete
 prebuilt app and bundled MPV, TorrServer and FFmpeg under Pirate Cinema. No
 compilers, Node.js or package manager are installed on the user's computer.
 The offline packaging command remains unchanged.
