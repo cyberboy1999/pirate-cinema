@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.4.1. Linux x86_64 packages are published as DEB, RPM and a verified shell installer in GitHub Release v0.4.1-linux. Windows installers remain at v0.4.0.
+Release version: 0.4.2. The dedicated Arch Linux x86_64 release is tagged v0.4.2-arch and titled "Special for Arch Linux". DEB/RPM remain at v0.4.1-linux and Windows installers at v0.4.0.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and MPV over Windows named-pipe or Linux Unix-socket IPC.
 
@@ -116,3 +116,9 @@ builds DEB and RPM packages, creates SHA256SUMS and publishes the packages with
 `scripts/install-linux.sh`. The packages depend on system MPV and FFmpeg. The
 installer selects APT/DNF/YUM, verifies the package checksum and copies the
 freedesktop launcher to the application menu and, when present, the desktop.
+
+`.github/workflows/release-arch.yml` builds a Linux tarball for `v*-arch` tags,
+injects its SHA-256 into `packaging/arch/PKGBUILD.in`, validates the archive
+layout and publishes the resulting PKGBUILD. Pacman installs MPV, FFmpeg and
+Electron desktop-library dependencies; the package installs Pirate Cinema in
+`/opt/pirate-cinema` with a shared freedesktop launcher.

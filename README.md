@@ -45,6 +45,11 @@ chmod +x install-linux.sh
 ./install-linux.sh
 ```
 
+Arch Linux uses the dedicated `v0.4.2-arch` release. Download its `PKGBUILD`
+into an empty directory and run `makepkg -si`; pacman resolves MPV, FFmpeg and
+the required desktop libraries. The installed freedesktop entry appears in the
+application menu in KDE, GNOME and XFCE.
+
 ## Maintenance
 
 The desktop Settings screen can run local system and playback diagnostics,

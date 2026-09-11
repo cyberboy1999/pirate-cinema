@@ -1,0 +1,52 @@
+name: Build Arch Linux release
+
+on:
+  push:
+    tags: ["v*-arch"]
+
+permissions:
+  contents: write
+
+jobs:
+  arch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: {version: 11.19.0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: pnpm}
+      - name: Restore TorrServer data and Linux runtime
+        shell: bash
+        run: |
+          curl -fL 'https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.4.0/pirate-cinema-desktop-0.4.0-x64.nsis.7z' -o runtime.7z
+          echo 'b624c8ad98957bf06e4815267c09d93ed4d7e94675708f01442410214a69a1db  runtime.7z' | sha256sum -c -
+          7z x runtime.7z -obootstrap -y >/dev/null
+          mkdir -p bin
+          cp bootstrap/resources/torrserver/{config.db,settings.json,viewed.json,trackers.txt,rutor.ls} bin/
+          curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.2/TorrServer-linux-amd64' -o bin/TorrServer-linux-amd64
+          echo '60c92e15ff2ac76d3dcebfe742ef2f0900905a6accef4329e7d3c66d8f0351dd  bin/TorrServer-linux-amd64' | sha256sum -c -
+          chmod 755 bin/TorrServer-linux-amd64
+          rm -rf bootstrap runtime.7z
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm run lint
+      - name: Validate Arch tag version
+        run: test "v$(node -p "require('./package.json').version")-arch" = "$GITHUB_REF_NAME"
+      - run: node node_modules/vinext/dist/cli.js build
+      - run: pnpm exec electron-builder --config electron-builder-arch.yml --linux tar.gz --publish never
+      - name: Create and validate PKGBUILD
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          archive="release-arch/Pirate-Cinema-${version}-arch-x64.tar.gz"
+          test -f "$archive"
+          tar -tzf "$archive" | sed 's#^\./##' | grep -qx 'pirate-cinema'
+          hash=$(sha256sum "$archive" | cut -d' ' -f1)
+          sed -e "s/@VERSION@/$version/g" -e "s/@SHA256@/$hash/g" packaging/arch/PKGBUILD.in > release-arch/PKGBUILD
+          grep -q "$hash" release-arch/PKGBUILD
+          sha256sum "$archive" > release-arch/SHA256SUMS
+      - name: Publish Arch Linux release
+        shell: bash
+        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+        run: gh release create "$GITHUB_REF_NAME" release-arch/*.tar.gz release-arch/PKGBUILD release-arch/SHA256SUMS THIRD_PARTY_NOTICES.md --title "Special for Arch Linux" --notes "Arch Linux x86_64 build with PKGBUILD, bundled TorrServer and pacman-managed MPV/FFmpeg dependencies."

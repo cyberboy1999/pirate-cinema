@@ -1,0 +1,24 @@
+pkgname=pirate-cinema-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Local TorrServer media library with MPV playback'
+arch=('x86_64')
+url='https://github.com/cyberboy1999/pirate-cinema'
+license=('GPL-3.0-only')
+depends=('mpv' 'ffmpeg' 'gtk3' 'nss' 'alsa-lib' 'libxss' 'libxtst' 'libxkbcommon' 'libxrandr' 'libxcomposite' 'libxdamage' 'libxfixes' 'mesa')
+provides=('pirate-cinema')
+conflicts=('pirate-cinema')
+options=('!strip')
+_archive="Pirate-Cinema-${pkgver}-arch-x64.tar.gz"
+source=("${_archive}::https://github.com/cyberboy1999/pirate-cinema/releases/download/v${pkgver}-arch/${_archive}")
+noextract=("${_archive}")
+sha256sums=('@SHA256@')
+
+package() {
+  install -d "${pkgdir}/opt/pirate-cinema"
+  bsdtar -xf "${srcdir}/${_archive}" -C "${pkgdir}/opt/pirate-cinema"
+  chmod 4755 "${pkgdir}/opt/pirate-cinema/chrome-sandbox"
+  install -Dm644 "${pkgdir}/opt/pirate-cinema/resources/app/public/pirate-cinema-logo.png" "${pkgdir}/usr/share/pixmaps/pirate-cinema.png"
+  install -d "${pkgdir}/usr/share/applications"
+  printf '%s\n' '[Desktop Entry]' 'Name=Pirate Cinema' 'Comment=Local TorrServer media library' 'Exec=/opt/pirate-cinema/pirate-cinema %U' 'Icon=pirate-cinema' 'Terminal=false' 'Type=Application' 'Categories=AudioVideo;Player;' > "${pkgdir}/usr/share/applications/pirate-cinema.desktop"
+}

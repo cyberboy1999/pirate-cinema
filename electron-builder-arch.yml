@@ -1,0 +1,8 @@
+extends: ./electron-builder-linux.yml
+directories:
+  output: release-arch
+linux:
+  target:
+    - target: tar.gz
+      arch: [x64]
+  artifactName: Pirate-Cinema-${version}-arch-${arch}.${ext}
