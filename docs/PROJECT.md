@@ -17,7 +17,11 @@ Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source i
 
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
-No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. GitHub remote is not configured; publishing requires a user-selected repository and permission.
+No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.
+
+THIRD_PARTY_NOTICES.md records the versions, licenses, source links and SHA-256
+hashes of the TorrServer, MPV and FFmpeg binaries distributed in release 0.3.2.
+Keep it updated whenever a bundled binary changes.
 
 ## Playback contract
 

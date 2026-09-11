@@ -13,6 +13,8 @@ Open `http://localhost:3000`. The integration API runs on `127.0.0.1:3001` and c
 
 Metadata is stored in `media.db` under `%APPDATA%\TorrServerDesktop`. When that location is unavailable, development falls back to `local-data/` in the project. Posters are cached beside the database.
 
+Third-party components and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Configuration
 
 Copy `.env.example` to `.env.local`. Secrets are intentionally excluded from Git.
