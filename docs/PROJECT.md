@@ -38,7 +38,7 @@ Keep it updated whenever a bundled binary changes.
 
 pnpm test covers SQLite migration, MPV IPC state transitions and isolated local HTTP API. Optional real-binary check: node scripts/check-mpv-ipc.mjs (generated local clip, headless bundled MPV, in-memory SQLite; no user media).
 
-The production build passes. A full tsc --noEmit currently also scans legacy Cloudflare files in db/ and worker/ and fails on their missing Worker types; the local application build does not use them.
+The production build and full TypeScript check use only the local Electron/vinext application. The retired Cloudflare Worker, D1/Drizzle example and hosting dependencies were removed after 0.4.4.
 
 ## Descriptions and full sync
 

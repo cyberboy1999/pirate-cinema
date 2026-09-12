@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname,resolve } from "node:path";
 import { loadLocalEnv } from "./load-env.mjs";
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"..");loadLocalEnv(root);
-const env={...process.env,WRANGLER_LOG_PATH:".wrangler/wrangler.log"};
+const env=process.env;
 const children=[];const torrServerUrl=env.TORRSERVER_URL??"http://127.0.0.1:8090";const torrServerExe=env.TORRSERVER_EXE?resolve(root,env.TORRSERVER_EXE):null;
 async function torrServerOnline(){try{const response=await fetch(`${torrServerUrl.replace(/\/$/,"")}/echo`,{signal:AbortSignal.timeout(1200)});return response.ok}catch{return false}}
 if(torrServerExe&&existsSync(torrServerExe)&&!await torrServerOnline()){
