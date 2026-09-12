@@ -64,6 +64,8 @@ test("MPV IPC resumes, prevents duplicate windows, replaces explicitly and persi
     assert.equal(first.resumeSeconds,120);
     assert.equal(f.commands.find(c=>c[0]==="loadfile")[4].start,"120");
     assert.equal(f.db.listFileHistory("series")[0].launchCount,2);
+    f.sockets[0].event({event:"property-change",name:"aid",data:2});
+    assert.equal(f.db.getAudioTrack("series"),2);
     f.sockets[0].event({event:"property-change",name:"duration",data:1000});
     f.sockets[0].event({event:"property-change",name:"time-pos",data:140});
     await assert.rejects(f.player.play({hash:"series",files,fileIndex:8}),e=>e.status===409&&e.active[0].id===first.id);
@@ -71,10 +73,12 @@ test("MPV IPC resumes, prevents duplicate windows, replaces explicitly and persi
     assert.equal(f.spawned,1);
     assert.equal(f.db.listFileHistory("series").find(h=>h.fileIndex===42).playbackTimecode,140);
     assert.equal(f.player.list()[0].fileIndex,8);
+    assert.equal(f.commands.filter(c=>c[0]==="loadfile").at(-1)[4].aid,"2");
     await f.player.play({hash:"series",files,fileIndex:19,existing:"new"});
     assert.equal(f.spawned,2);
     await assert.rejects(f.player.control(first.id,"next"),e=>e.status===409);
     assert.equal(f.player.list()[0].fileIndex,8);
+    assert.equal(f.commands.filter(c=>c[0]==="loadfile").at(-1)[4].aid,"2");
     f.sockets[0].event({event:"property-change",name:"time-pos",data:55});
     await f.player.control(first.id,"stop");
     assert.equal(f.db.listFileHistory("series").find(h=>h.fileIndex===8).playbackTimecode,55);

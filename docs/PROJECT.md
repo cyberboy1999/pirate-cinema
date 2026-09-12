@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.4.4. One unified `v0.4.4` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Release version: 0.5.0. One unified `v0.5.0` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and MPV over Windows named-pipe or Linux Unix-socket IPC.
 
@@ -115,3 +115,13 @@ Normal releases use a single plain version tag. Linux packages depend on system
 MPV and FFmpeg; Arch uses the generated PKGBUILD and installs under
 `/opt/pirate-cinema`. The shared install script verifies SHA-256 and creates
 freedesktop launchers for KDE, GNOME and XFCE.
+
+## Library experience in 0.5.0
+
+The home page shows up to six unfinished titles from SQLite before the popular catalogue. Continue Watching is based on saved playback position below 92%, independently of the launch-based Viewed marker.
+
+The library can be filtered by media type, Viewed state, year and genre, and sorted by added date, title or year. Multi-file torrents expose episode-name search, season filtering and a shortcut to the next unviewed file.
+
+Bundled MPV observes the active `aid` property over IPC. The selected positive audio-track ID is stored per torrent in `media_items.audio_track_id` and reused for subsequent files in that torrent.
+
+Electron owns a native system tray. Closing the main window hides it without stopping owned local services; double-click or the Open menu restores it, and only the tray Exit action or application shutdown terminates the children.

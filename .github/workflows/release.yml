@@ -121,4 +121,4 @@ jobs:
           version=$(node -p "require('./package.json').version")
           mkdir publish
           find assets -type f -exec cp {} publish/ \;
-          gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema $version" --notes "Windows, Debian/Ubuntu, RPM-based and Arch Linux x86_64 builds. Fresh installations start with empty TorrServer and SQLite libraries. See README for installation instructions in Russian and English." --latest
+          gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema $version" --notes "Adds Continue Watching, per-torrent MPV audio-track memory, season and episode tools, library filters, and system-tray background mode. Includes Windows x64 Offline/Web Setup, Debian/Ubuntu amd64, RPM x86_64 and Arch Linux x86_64 packages. Fresh installations start with empty TorrServer and SQLite libraries. See README for Russian and English installation instructions." --latest

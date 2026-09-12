@@ -67,6 +67,7 @@ export class MediaDatabase {
       if(columns.has("metadata_checked_at"))this.db.exec("UPDATE media_items SET metadata_checked_at=NULL");
     }
     if(!columns.has("metadata_checked_at"))this.db.exec("ALTER TABLE media_items ADD COLUMN metadata_checked_at TEXT");
+    if(!columns.has("audio_track_id"))this.db.exec("ALTER TABLE media_items ADD COLUMN audio_track_id INTEGER");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_media_items_provider ON media_items(metadata_provider,provider_id) WHERE provider_id IS NOT NULL;");
     const historyColumns=new Set(this.db.prepare("PRAGMA table_info(media_file_history)").all().map(row=>row.name));
     if(!historyColumns.has("playback_timecode"))this.db.exec("ALTER TABLE media_file_history ADD COLUMN playback_timecode INTEGER");
@@ -126,6 +127,9 @@ export class MediaDatabase {
     );
   }
 
+  getAudioTrack(hash) { return this.db.prepare("SELECT audio_track_id AS audioTrackId FROM media_items WHERE torrent_hash=?").get(hash)?.audioTrackId ?? null; }
+  saveAudioTrack(hash, audioTrackId) { if(Number.isSafeInteger(audioTrackId)&&audioTrackId>0)this.db.prepare("UPDATE media_items SET audio_track_id=? WHERE torrent_hash=?").run(audioTrackId,hash); }
+
   markFilePlayed(hash, file) {
     const now=new Date().toISOString();
     this.db.prepare(`
@@ -177,7 +181,7 @@ export class MediaDatabase {
   }
 
   list() { return this.db.prepare("SELECT * FROM media_items ORDER BY added_at DESC").all().map(toMediaItem); }
-  stats() { return this.db.prepare("SELECT COUNT(*) AS total, SUM(is_active) AS active, SUM(CASE WHEN playback_timecode > 0 AND is_watched=0 THEN 1 ELSE 0 END) AS continuing FROM media_items").get(); }
+  stats() { return this.db.prepare("SELECT COUNT(*) AS total, SUM(is_active) AS active, SUM(CASE WHEN playback_timecode > 0 AND (playback_duration IS NULL OR playback_duration=0 OR CAST(playback_timecode AS REAL)/playback_duration < 0.92) THEN 1 ELSE 0 END) AS continuing FROM media_items").get(); }
   checkpoint() { this.db.exec("PRAGMA wal_checkpoint(FULL)"); }
   close() { this.db.close(); }
 }

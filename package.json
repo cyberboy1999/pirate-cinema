@@ -1,6 +1,6 @@
 {
   "name": "pirate-cinema-desktop",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "Локальная медиатека и клиент TorrServer",
   "author": "Pirate Cinema",
   "main": "electron/main.mjs",

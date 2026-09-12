@@ -43,7 +43,7 @@ async function cachePoster(providerId,url){
 }
 
 async function synchronize(full=false){await librarySync.synchronize(full);return libraryPayload()}
-function libraryPayload(){const items=db.list();return {state:{...state},stats:db.stats(),items,continueWatching:items.filter((item)=>item.isStarted&&!item.isWatched).sort((a,b)=>String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt))),recentlyAdded:[...items].sort((a,b)=>String(b.addedAt).localeCompare(String(a.addedAt))).slice(0,18)}}
+function libraryPayload(){const items=db.list();return {state:{...state},stats:db.stats(),items,continueWatching:items.filter(item=>item.isStarted&&(item.progress===null||item.progress<92)).sort((a,b)=>String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt))),recentlyAdded:[...items].sort((a,b)=>String(b.addedAt).localeCompare(String(a.addedAt))).slice(0,18)}}
 async function metadataServiceFind(value){return metadata.findBestMatch(value)}
 
 function sendJson(res,status,payload,origin){res.writeHead(status,{"content-type":"application/json; charset=utf-8","access-control-allow-origin":origin,"cache-control":"no-store"});res.end(JSON.stringify(payload))}

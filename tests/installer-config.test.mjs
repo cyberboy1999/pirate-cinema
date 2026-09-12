@@ -50,3 +50,10 @@ test("unified release starts with empty user databases",()=>{
   assert.doesNotMatch(workflow,/bootstrap\/resources\/torrserver\/\*/);
   assert.match(workflow,/needs: \[windows, linux\]/);
 });
+
+test("Electron keeps the app available from the system tray",()=>{
+  const main=readFileSync("electron/main.mjs","utf8");
+  assert.match(main,/new Tray\(/);
+  assert.match(main,/mainWindow\.hide\(\)/);
+  assert.match(main,/label:"Выйти"/);
+});

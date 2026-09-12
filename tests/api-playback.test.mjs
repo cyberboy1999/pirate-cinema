@@ -59,6 +59,8 @@ test("local API exposes per-file progress, persists manual viewed changes and re
     assert.equal((await file()).id,42);
     assert.equal((await file()).progress,12);
     assert.equal((await file()).resumeSeconds,123);
+    const library=await (await fetch(base+"/api/library")).json();
+    assert.equal(library.continueWatching[0].torrentHash,hash);
     assert.equal((await post(route+"/42/history",{action:"viewed",value:false})).status,200);
     assert.equal((await file()).viewed,false);
     assert.equal((await post(route+"/42/history",{action:"resetPosition"})).status,200);

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION=0.4.4
+VERSION=0.5.0
 TAG="v${VERSION}"
 BASE="https://github.com/cyberboy1999/pirate-cinema/releases/download/${TAG}"
 

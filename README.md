@@ -14,6 +14,9 @@ Pirate Cinema — локальное настольное приложение �
 - выбор конкретного видеофайла или серии;
 - воспроизведение и перемотка в MPV;
 - сохранение позиции и отметки «Просмотрено» для каждого файла;
+- блок «Продолжить просмотр», фильтры медиатеки и улучшенный выбор серий;
+- запоминание аудиодорожки MPV отдельно для каждой раздачи;
+- фоновая работа через системный трей;
 - резервное копирование и восстановление локальных данных;
 - русский и английский интерфейс.
 
@@ -21,20 +24,20 @@ Pirate Cinema — локальное настольное приложение �
 
 ## Установка
 
-Готовые файлы находятся в [последнем релизе](https://github.com/cyberboy1999/pirate-cinema/releases/latest). Сборки 0.4.4 предназначены для 64-битных систем.
+Готовые файлы находятся в [последнем релизе](https://github.com/cyberboy1999/pirate-cinema/releases/latest). Сборки 0.5.0 предназначены для 64-битных систем.
 
 ### Windows 10/11
 
-`Pirate-Cinema-Setup-0.4.4.exe` — рекомендуемый автономный установщик со встроенными MPV, FFmpeg и TorrServer. Запустите файл, подтвердите запрос Windows UAC и следуйте мастеру.
+`Pirate-Cinema-Setup-0.5.0.exe` — рекомендуемый автономный установщик со встроенными MPV, FFmpeg и TorrServer. Запустите файл, подтвердите запрос Windows UAC и следуйте мастеру.
 
-`Pirate-Cinema-Web-Setup-0.4.4.exe` — небольшой веб-установщик. Во время установки ему нужен стабильный доступ к GitHub. Если GitHub доступен только через VPN, используйте автономный установщик.
+`Pirate-Cinema-Web-Setup-0.5.0.exe` — небольшой веб-установщик. Во время установки ему нужен стабильный доступ к GitHub. Если GitHub доступен только через VPN, используйте автономный установщик.
 
 ### Debian и Ubuntu
 
 Скачайте DEB-пакет и установите:
 
 ```sh
-sudo apt install ./Pirate-Cinema-0.4.4-linux-amd64.deb
+sudo apt install ./Pirate-Cinema-0.5.0-linux-amd64.deb
 ```
 
 MPV и FFmpeg будут установлены пакетным менеджером как зависимости.
@@ -42,17 +45,17 @@ MPV и FFmpeg будут установлены пакетным менедже�
 ### Fedora, RHEL и другие RPM-системы
 
 ```sh
-sudo dnf install ./Pirate-Cinema-0.4.4-linux-x86_64.rpm
+sudo dnf install ./Pirate-Cinema-0.5.0-linux-x86_64.rpm
 ```
 
-На системах с YUM используйте `sudo yum install ./Pirate-Cinema-0.4.4-linux-x86_64.rpm`. Файл `install-linux.sh` из релиза автоматически выбирает APT, DNF или YUM и создаёт ярлык для KDE, GNOME или XFCE.
+На системах с YUM используйте `sudo yum install ./Pirate-Cinema-0.5.0-linux-x86_64.rpm`. Файл `install-linux.sh` из релиза автоматически выбирает APT, DNF или YUM и создаёт ярлык для KDE, GNOME или XFCE.
 
 ### Arch Linux
 
 ```sh
 sudo pacman -S --needed base-devel
 mkdir pirate-cinema && cd pirate-cinema
-curl -LO https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.4.4/PKGBUILD
+curl -LO https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.5.0/PKGBUILD
 makepkg -si
 ```
 
@@ -94,6 +97,9 @@ Pirate Cinema is a local desktop application for searching, adding and streaming
 - movie, episode and exact-file selection;
 - MPV playback with seeking;
 - per-file resume position and watched state;
+- Continue Watching, library filters and improved episode selection;
+- a remembered MPV audio track for each torrent;
+- background operation from the system tray;
 - local backup and restore;
 - Russian and English interface.
 
@@ -101,18 +107,18 @@ User data stays on the computer. A fresh installation starts with empty TorrServ
 
 ### Installation
 
-Download version 0.4.4 from the [latest release](https://github.com/cyberboy1999/pirate-cinema/releases/latest). Packages target 64-bit systems.
+Download version 0.5.0 from the [latest release](https://github.com/cyberboy1999/pirate-cinema/releases/latest). Packages target 64-bit systems.
 
 #### Windows 10/11
 
-Use `Pirate-Cinema-Setup-0.4.4.exe` for the recommended offline installation. It includes MPV, FFmpeg and TorrServer. Run it, accept the Windows UAC prompt and follow the installer.
+Use `Pirate-Cinema-Setup-0.5.0.exe` for the recommended offline installation. It includes MPV, FFmpeg and TorrServer. Run it, accept the Windows UAC prompt and follow the installer.
 
-`Pirate-Cinema-Web-Setup-0.4.4.exe` is smaller but downloads the application package from GitHub. Use the offline installer when GitHub requires a VPN or the connection is unreliable.
+`Pirate-Cinema-Web-Setup-0.5.0.exe` is smaller but downloads the application package from GitHub. Use the offline installer when GitHub requires a VPN or the connection is unreliable.
 
 #### Debian and Ubuntu
 
 ```sh
-sudo apt install ./Pirate-Cinema-0.4.4-linux-amd64.deb
+sudo apt install ./Pirate-Cinema-0.5.0-linux-amd64.deb
 ```
 
 MPV and FFmpeg are installed as package dependencies.
@@ -120,7 +126,7 @@ MPV and FFmpeg are installed as package dependencies.
 #### Fedora, RHEL and other RPM systems
 
 ```sh
-sudo dnf install ./Pirate-Cinema-0.4.4-linux-x86_64.rpm
+sudo dnf install ./Pirate-Cinema-0.5.0-linux-x86_64.rpm
 ```
 
 Use YUM instead of DNF where required. The release also contains `install-linux.sh`, which selects APT, DNF or YUM and creates a KDE, GNOME or XFCE shortcut.
@@ -130,7 +136,7 @@ Use YUM instead of DNF where required. The release also contains `install-linux.
 ```sh
 sudo pacman -S --needed base-devel
 mkdir pirate-cinema && cd pirate-cinema
-curl -LO https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.4.4/PKGBUILD
+curl -LO https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.5.0/PKGBUILD
 makepkg -si
 ```
 

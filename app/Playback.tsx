@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect,useRef,useState} from "react";
+import {useEffect,useMemo,useRef,useState} from "react";
 import {Check,Play,X} from "@phosphor-icons/react";
 
 const API="http://127.0.0.1:3001";
@@ -34,6 +34,8 @@ export function MediaFilePicker({item,files,busy,error,language,onClose,onRetry,
   const [failure,setFailure]=useState("");
   const [diagnostic,setDiagnostic]=useState("");
   const [autoNext,setAutoNext]=useState(false);
+  const [fileQuery,setFileQuery]=useState("");
+  const [season,setSeason]=useState("all");
   useEffect(()=>{
     heading.current?.focus();
     const controller=new AbortController();
@@ -44,7 +46,10 @@ export function MediaFilePicker({item,files,busy,error,language,onClose,onRetry,
       .finally(()=>{if(!controller.signal.aborted)setDescriptionBusy(false)});
     return()=>controller.abort();
   },[item.torrentHash]);
-  const groups=files.reduce<Record<string,TorrentFile[]>>((result,file)=>{(result[group(file)]??=[]).push(file);return result},{});
+  const seasons=useMemo(()=>[...new Set(files.map(file=>file.season).filter((value):value is number=>value!==null))].sort((a,b)=>a-b),[files]);
+  const visibleFiles=files.filter(file=>(season==="all"||String(file.season)===season)&&(!fileQuery.trim()||file.name.toLocaleLowerCase(language).includes(fileQuery.trim().toLocaleLowerCase(language))));
+  const groups=visibleFiles.reduce<Record<string,TorrentFile[]>>((result,file)=>{const name=file.season!==null?(en?`Season ${file.season}`:`Сезон ${file.season}`):group(file);(result[name]??=[]).push(file);return result},{});
+  const nextUnviewed=files.find(file=>!file.viewed);
   async function play(file:TorrentFile,mode:"resume"|"start",existing="ask",sessionId?:string){
     if(working)return;
     setWorking(true);setFailure("");
@@ -79,6 +84,7 @@ export function MediaFilePicker({item,files,busy,error,language,onClose,onRetry,
     </div>
     <div className="file-dialog-body">
       <h3>{en?"Choose a file to play":"Выберите файл для воспроизведения"}</h3><p className="file-count">{files.length} {en?"video files · marked after the first launch":"видеофайлов · отметка появляется при первом открытии"}</p>
+      {files.length>1&&<div className="episode-tools"><input type="search" value={fileQuery} onChange={event=>setFileQuery(event.target.value)} placeholder={en?"Find an episode":"Найти серию"} aria-label={en?"Find an episode":"Найти серию"}/>{seasons.length>1&&<select value={season} onChange={event=>setSeason(event.target.value)} aria-label={en?"Season":"Сезон"}><option value="all">{en?"All seasons":"Все сезоны"}</option>{seasons.map(value=><option key={value} value={value}>{en?`Season ${value}`:`Сезон ${value}`}</option>)}</select>}{nextUnviewed&&<button disabled={working} onClick={()=>setChoice({file:nextUnviewed,mode:"resume",active:[]})}>{en?"Next unviewed":"Следующая непросмотренная"}</button>}</div>}
       {failure&&<p role="alert" className="playback-error">{failure}</p>}
       {diagnostic&&<pre role="status" className="playback-diagnostic">{diagnostic}</pre>}
       {busy?<p role="status">{en?"Loading file list…":"Загружаем список файлов…"}</p>:error?<div role="alert"><p>{error}</p><button onClick={onRetry}>{en?"Retry":"Повторить"}</button></div>:choice?<section className="play-choice" aria-label={en?"Playback options":"Варианты запуска"}>

@@ -98,6 +98,7 @@ export class MpvPlayer {
     if (event.event === "property-change" && s.receiving) {
       if (event.name === "time-pos" && Number.isFinite(event.data)) s.timecode = Math.max(0, event.data);
       if (event.name === "duration" && Number.isFinite(event.data)) s.duration = Math.max(0, event.data);
+      if (event.name === "aid" && Number.isSafeInteger(event.data) && s.hash) this.db.saveAudioTrack(s.hash, event.data);
       this.persist(s);
     }
     if (event.event === "end-file" && s.receiving) {
@@ -135,6 +136,7 @@ export class MpvPlayer {
         });
         await this.command(s, ["observe_property", 1, "time-pos"]);
         await this.command(s, ["observe_property", 2, "duration"]);
+        await this.command(s, ["observe_property", 3, "aid"]);
         return;
       } catch (error) {
         if (s.socket || attempt === 39) throw error;
@@ -171,8 +173,9 @@ export class MpvPlayer {
     Object.assign(s, { hash, files, file, timecode: resume, duration: Number(history?.playbackDuration) || 0,
       marked: false, receiving: false, loading: true, ended: false, error: null, autoNext });
     try {
-      await this.command(s, ["loadfile", this.client.streamUrl(hash, file.id, file.name), "replace", -1,
-        { start: String(resume), "force-media-title": file.name }]);
+      const audioTrack=this.db.getAudioTrack(hash);
+      const options={ start: String(resume), "force-media-title": file.name, ...(audioTrack?{aid:String(audioTrack)}:{}) };
+      await this.command(s, ["loadfile", this.client.streamUrl(hash, file.id, file.name), "replace", -1, options]);
     } catch (error) { s.loading = false; s.ended = true; s.error = error.message; throw error; }
     return { ...this.list().find(item => item.id === s.id), resumeSeconds: resume };
   }
