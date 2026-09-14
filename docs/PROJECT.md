@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release candidate: 0.5.5. Published pre-release: 0.5.3. The latest stable `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Release candidate: 0.5.6. Latest stable release: 0.5.5. Releases contain Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -156,3 +156,5 @@ Settings accepts one optional Prowlarr or Jackett Torznab URL and API key. Pirat
 Search results received from a Jackett aggregate Torznab URL are labelled `Jackett` plus the originating indexer name. Other Torznab-compatible services retain the generic `Torznab` label. Release 0.5.5 is stable and keeps bilingual release notes and documentation.
 
 Torznab sources are configured with `CatType: all`; TorrServer's default movie/TV category filter can otherwise hide valid Jackett results when an indexer uses different category mappings.
+
+Version 0.5.6 also accepts HTTP(S) torrent download links returned by Torznab providers, while continuing to reject unsupported URL schemes.
