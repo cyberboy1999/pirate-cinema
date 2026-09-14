@@ -12,7 +12,8 @@ export function createLibrarySync({db,client,metadata,cachePoster,state,activeHa
     if(!force&&existing.metadata_checked_at&&Date.now()-Date.parse(existing.metadata_checked_at)<86400000)return item(hash);
     const work=(async()=>{
       try{
-        const query=existing.metadata_query??existing.torrent_name;
+        const sourceYear=parseTorrentTitle(existing.torrent_name).year,manual=existing.metadata_query;
+        const query=manual&&!parseTorrentTitle(manual).year&&sourceYear?`${manual} ${sourceYear}`:manual??existing.torrent_name;
         const found=await metadata.findBestMatch(query,{refresh:force});
         const accepted=found&&found.confidence>=(found.provider==="tmdb"?.85:.58)?found:null;
         // Re-read after network I/O: sync or playback may have updated this card.

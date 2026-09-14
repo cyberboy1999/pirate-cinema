@@ -30,3 +30,4 @@ passed
 - The next control moved the shelf by 1232 px in browser QA; previous/next controls have localized accessible names.
 - Every library card exposes a keyboard-accessible metadata edit action, visually hidden until hover or focus on desktop.
 - No page errors were recorded. Result: `passed`.
+- The follow-up local installer replaces the prompt with a focusable in-app dialog that exposes its lookup progress and errors. Result: `passed`.

@@ -26,7 +26,7 @@ function rank(pages, aliases, year, series) {
     const original = intro.match(/(?:англ\.|English:)\s*([^;)]+)/i)?.[1]?.replace(/[«»"“”]/g,"").trim();
     const confidence = Math.max(...aliases.flatMap(alias => [title, original].filter(Boolean).map(name =>
       matchConfidence({title:alias,year:tv?null:year},{title:name,year:candidateYear,type:tv?"tvSeries":"movie"}))));
-    return confidence >= .78 ? [{page,title,year:candidateYear,type:tv?"tv":"movie",confidence}] : [];
+    return confidence >= .78 ? [{page,title,original,year:candidateYear,type:tv?"tv":"movie",confidence}] : [];
   }).sort((a,b)=>b.confidence-a.confidence);
 }
 
@@ -55,7 +55,7 @@ export async function findWikipedia(input, series=false) {
     }
   }
   if (!best) return null;
-  return {provider:"wikipedia",providerId:String(best.page.pageid),title:best.title,originalTitle:parsed.title,
+  return {provider:"wikipedia",providerId:String(best.page.pageid),title:best.title,originalTitle:best.original??parsed.title,
     year:best.year,type:best.type,posterUrl:best.page.thumbnail?.source??null,backdropUrl:null,runtimeSeconds:null,rating:null,genres:[],
     overview:best.page.extract,overviewSourceUrl:"https://ru.wikipedia.org/?curid="+best.page.pageid,gallery:[],confidence:best.confidence};
 }

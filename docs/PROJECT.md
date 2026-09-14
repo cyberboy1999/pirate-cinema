@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Pre-release version: 0.5.3. The latest published `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Local follow-up version: 0.5.4-local.1. Published pre-release: 0.5.3. The latest stable `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -140,5 +140,9 @@ POST `/api/torrents/add` now waits for the existing metadata enrichment path bef
 ## Metadata correction and home catalogue in 0.5.3
 
 Each library card has a compact title editor. The saved `metadata_query` survives TorrServer reconciliation and is used for forced Wikipedia/Cinemeta enrichment, so an incorrect release name no longer makes every full sync repeat the same failed lookup. Editing clears stale matched metadata before the fresh lookup.
+
+The local follow-up build replaces Electron's unreliable `window.prompt` editor with an in-app modal. It keeps the form open during lookup, shows validation/provider errors inline and closes only after the refreshed library has loaded.
+
+Poster matching also reuses the release year when a manual title omits it, preventing ambiguous remakes such as `Shogun` from selecting an older version. When Russian Wikipedia identifies a series but has no image, its English title is used for a bounded second Cinemeta lookup; the Cinemeta poster is merged with the Russian description even when a season year differs from the show's premiere year.
 
 The home shelf loads up to 30 current movies from Cinemeta's public top catalogue and falls back to the bundled list when the source is unavailable. The generic catalogue request contains no library data. Shelves longer than six cards scroll horizontally with accessible previous/next controls.

@@ -30,14 +30,15 @@ export class OpenMetadataService {
   async findBestMatch(input,{refresh=false}={}){
     if(refresh)this.cache.delete(input);
     if(this.cache.has(input))return this.cache.get(input);const parsed=parseTorrentTitle(input);const series=/(?:\bS\d{1,2}(?:E\d{1,3})?\b|\b\d{1,2}[xх]\d{1,3}\b|сезон|\[(?:S\d+|\d{2}-\d{2}\s+из))/i.test(input);
-    const [cinemeta,tvmaze,wikipedia]=await Promise.all([
+    let [cinemeta,tvmaze,wikipedia]=await Promise.all([
       this.findCinemeta(parsed,series?"series":"movie").catch(()=>null),
       this.findTvmaze(parsed).catch(()=>null),
       findWikipedia(input,series).catch(()=>null)
     ]);
+    if(!cinemeta&&wikipedia?.originalTitle&&wikipedia.originalTitle.toLocaleLowerCase()!==parsed.title.toLocaleLowerCase())cinemeta=await this.findCinemeta(parseTorrentTitle(wikipedia.originalTitle),wikipedia.type==="tv"?"series":"movie").catch(()=>null);
     let result=[cinemeta,tvmaze].filter(Boolean).sort((a,b)=>b.confidence-a.confidence)[0]??wikipedia??openMetadataOverride(parsed);
     if(wikipedia){
-      const sameWork=result?.confidence>=.78&&result.type===wikipedia.type&&(!result.year||!wikipedia.year||Math.abs(result.year-wikipedia.year)<=1);
+      const sameWork=result?.confidence>=.78&&result.type===wikipedia.type&&(result.type==="tv"||!result.year||!wikipedia.year||Math.abs(result.year-wikipedia.year)<=1);
       if(sameWork)result={...result,title:wikipedia.title,overview:wikipedia.overview,overviewSourceUrl:wikipedia.overviewSourceUrl};
       else result=wikipedia;
     }

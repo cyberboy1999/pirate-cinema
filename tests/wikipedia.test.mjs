@@ -60,6 +60,19 @@ test("recognizes animation series without confusing them with feature films",asy
   assert.equal((await findWikipedia("Смешарики",true)).type,"tv");
 });
 
+test("uses Wikipedia original title to recover a Cinemeta poster for localized series",async t=>{
+  const silo={pageid:9,title:"Укрытие (телесериал)",extract:"«Укрытие» (англ. Silo) — американский научно-фантастический телесериал, премьера которого состоялась в 2023 году."};
+  mock(t,url=>{
+    if(url.hostname==="ru.wikipedia.org")return {query:{pages:[silo]}};
+    if(url.pathname.includes("search=%D0%A3%D0%BA%D1%80%D1%8B%D1%82%D0%B8%D0%B5"))return {metas:[]};
+    if(url.pathname.includes("search=Silo"))return {metas:[{id:"tt14688458",name:"Silo",releaseInfo:"2023",poster:"https://example.org/silo.jpg"}]};
+    if(url.pathname.includes("/meta/"))return {meta:{id:"tt14688458",name:"Silo",year:"2023",poster:"https://example.org/silo.jpg"}};
+    return {metas:[]};
+  });
+  const result=await new OpenMetadataService().findBestMatch("Укрытие 2026");
+  assert.equal(result.posterUrl,"https://example.org/silo.jpg");assert.equal(result.overview,silo.extract);assert.equal(result.overviewSourceUrl,"https://ru.wikipedia.org/?curid=9");
+});
+
 test("SQLite preserves Russian description and source during English fallback",()=>{
   const db=new MediaDatabase(":memory:");
   try{
