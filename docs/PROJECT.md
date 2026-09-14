@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release version: 0.5.0. One unified `v0.5.0` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Release version: 0.5.1. One unified `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and MPV over Windows named-pipe or Linux Unix-socket IPC.
 
@@ -125,3 +125,6 @@ The library can be filtered by media type, Viewed state, year and genre, and sor
 Bundled MPV observes the active `aid` property over IPC. The selected positive audio-track ID is stored per torrent in `media_items.audio_track_id` and reused for subsequent files in that torrent.
 
 Electron owns a native system tray. Closing the main window hides it without stopping owned local services; double-click or the Open menu restores it, and only the tray Exit action or application shutdown terminates the children.
+## Playback choice layout in 0.5.1
+
+The normal file-launch confirmation uses one compact action row. Resume remains available when progress exists, the start-from-zero action is labelled Play, and Back to files stays in the same row. The existing-player conflict choices retain their vertical layout.

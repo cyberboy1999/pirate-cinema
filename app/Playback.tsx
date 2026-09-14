@@ -92,12 +92,11 @@ export function MediaFilePicker({item,files,busy,error,language,onClose,onRetry,
         {choice.active.length?<><p>{en?"MPV is already open. Replace a file in an existing window or open another one?":"MPV уже открыт. Заменить файл в одном из окон или открыть отдельное?"}</p>
           {choice.active.map(session=><button key={session.id} disabled={working} onClick={()=>void play(choice.file,choice.mode,"replace",session.id)}>{en?"Replace":"Заменить"}: {session.fileName||(en?"MPV window":"Окно MPV")}</button>)}
           <button disabled={working} onClick={()=>void play(choice.file,choice.mode,"new")}>{en?"Open another window":"Открыть отдельное окно"}</button>
+          <button disabled={working} onClick={()=>{setChoice(null);setFailure("")}}>{en?"Back to files":"Назад к списку"}</button>
         </>:<><p>{choice.file.resumeSeconds>0?(en?"Saved position: ":"Сохранённая позиция: ")+clock(choice.file.resumeSeconds):(en?"This file has not been started":"Этот файл ещё не начат")}</p>
-          {choice.file.resumeSeconds>0&&<button className="primary-action" disabled={working} onClick={()=>void play(choice.file,"resume")}>{en?"Resume at":"Продолжить с"} {clock(choice.file.resumeSeconds)}</button>}
-          <button disabled={working} onClick={()=>void play(choice.file,"start")}>{en?"Start from beginning":"Начать сначала"}</button>
+          <div className="play-choice-actions">{choice.file.resumeSeconds>0&&<button className="primary-action" disabled={working} onClick={()=>void play(choice.file,"resume")}>{en?"Resume at":"Продолжить с"} {clock(choice.file.resumeSeconds)}</button>}<button disabled={working} onClick={()=>void play(choice.file,"start")}>{en?"Play":"Воспроизвести"}</button><button disabled={working} onClick={()=>{setChoice(null);setFailure("")}}>{en?"Back to files":"Назад к списку"}</button></div>
         </>}
         <label className="autonext-option"><input type="checkbox" checked={autoNext} disabled={working} onChange={event=>setAutoNext(event.target.checked)}/>{en?"Automatically open the next file":"Автоматически открыть следующий файл после окончания"}</label>
-        <button disabled={working} onClick={()=>{setChoice(null);setFailure("")}}>{en?"Back to files":"Назад к списку"}</button>
         {working&&<p role="status">{en?"Sending command to MPV…":"Передаём команду MPV…"}</p>}
       </section>:files.length?Object.entries(groups).map(([name,items])=><section className="file-group" key={name}><h3>{name}</h3>{items.map(file=><article className="file-row" key={file.id}>
         <button className="file-open" disabled={working} onClick={()=>{setChoice({file,mode:"resume",active:[]});setFailure("")}}>
