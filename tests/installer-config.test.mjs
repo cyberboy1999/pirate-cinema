@@ -25,7 +25,7 @@ test("Linux release verifies packages and creates freedesktop shortcuts",()=>{
   const installer=readFileSync("scripts/install-linux.sh","utf8");
   assert.match(config,/target:\s*deb/);assert.match(config,/target:\s*rpm/);
   assert.match(config,/depends:\s*\[mpv, ffmpeg\]/);
-  assert.match(workflow,/60c92e15ff2ac76d3dcebfe742ef2f0900905a6accef4329e7d3c66d8f0351dd/);
+  assert.match(workflow,/8b61aa8e85eb6c5caee3b484160f27d82da28bc6b2f0d6703a8914293824afe0/);
   assert.match(workflow,/SHA256SUMS/);assert.match(installer,/sha256sum -c/);
   assert.match(installer,/xdg-user-dir DESKTOP/);
 });

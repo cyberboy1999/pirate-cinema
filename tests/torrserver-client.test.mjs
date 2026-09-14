@@ -15,6 +15,11 @@ test("removes a saved torrent through the MatriX API",async()=>{
   try{const address=server.address();const client=new TorrServerClient(`http://127.0.0.1:${address.port}`);await client.removeTorrent("abc123");assert.deepEqual(received,{action:"rem",hash:"abc123"})}finally{await new Promise(resolve=>server.close(resolve))}
 });
 
+test("configures and searches an optional Torznab indexer",async()=>{
+  let saved=null;const server=createServer(async(req,res)=>{const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=chunks.length?JSON.parse(Buffer.concat(chunks).toString("utf8")):{};res.setHeader("content-type","application/json");if(req.url==="/settings"&&body.action==="get")return res.end(JSON.stringify({CacheSize:64}));if(req.url==="/settings"&&body.action==="set"){saved=body.sets;return res.end("")}if(req.url?.startsWith("/torznab/search/"))return res.end(JSON.stringify([{Title:"Movie",Hash:"a".repeat(40)}]));res.statusCode=404;res.end("{}")});
+  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));try{const address=server.address();const client=new TorrServerClient(`http://127.0.0.1:${address.port}`);await client.configureTorznab({host:"http://127.0.0.1:9696/1",key:"secret"});assert.equal(saved.CacheSize,64);assert.equal(saved.EnableTorznabSearch,true);assert.equal(saved.TorznabUrls[0].Key,"secret");assert.equal((await client.searchTorznab("movie"))[0].Title,"Movie")}finally{await new Promise(resolve=>server.close(resolve))}
+});
+
 test("normalizes TorrServer search releases",()=>{
   const hash="a".repeat(40);const item=normalizeSearchResult({Title:"Movie.2024.2160p",Size:"18 GB",Seed:42,Peer:3,Magnet:`magnet:?xt=urn:btih:${hash}&amp;dn=Movie`,VideoQuality:305});
   assert.equal(item.quality,"2160p");assert.equal(item.seeders,42);assert.match(item.magnet,/^magnet:/);assert.equal(item.hash,hash);assert.doesNotMatch(item.magnet,/&amp;/);

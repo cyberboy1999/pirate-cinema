@@ -1,0 +1,19 @@
+.torznab-settings input {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #111;
+  color: var(--text);
+}
+
+.release-name em {
+  margin-right: 9px;
+  padding: 3px 6px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #bbb;
+  font-size: 9px;
+  font-style: normal;
+  text-transform: uppercase;
+}

@@ -3,7 +3,7 @@
 import {useEffect,useState} from "react";
 import {Check,Desktop,FolderOpen,Play} from "@phosphor-icons/react";
 
-export type Preferences={onboardingComplete:boolean;language:"ru"|"en";playerType:"mpv"|"external";playerPath:string|null};
+export type Preferences={onboardingComplete:boolean;language:"ru"|"en";playerType:"mpv"|"external";playerPath:string|null;torznabUrl?:string;torznabConfigured?:boolean;torznabApiKey?:string};
 
 async function chooseExecutable(){
   if(window.pirateCinema)return window.pirateCinema.choosePlayer();

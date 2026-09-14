@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Local follow-up version: 0.5.4-local.1. Published pre-release: 0.5.3. The latest stable `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Release candidate: 0.5.5. Published pre-release: 0.5.3. The latest stable `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -146,3 +146,11 @@ The local follow-up build replaces Electron's unreliable `window.prompt` editor 
 Poster matching also reuses the release year when a manual title omits it, preventing ambiguous remakes such as `Shogun` from selecting an older version. When Russian Wikipedia identifies a series but has no image, its English title is used for a bounded second Cinemeta lookup; the Cinemeta poster is merged with the Russian description even when a season year differs from the show's premiere year.
 
 The home shelf loads up to 30 current movies from Cinemeta's public top catalogue and falls back to the bundled list when the source is unavailable. The generic catalogue request contains no library data. Shelves longer than six cards scroll horizontally with accessible previous/next controls.
+
+## Optional Torznab search in the local follow-up
+
+Settings accepts one optional Prowlarr or Jackett Torznab URL and API key. Pirate Cinema applies it through TorrServer's settings API without bundling or starting another executable, masks the saved key in its own API responses, and merges deduplicated Torznab results with RuTor search. Clearing the integration disables Torznab without affecting the external indexer.
+
+## Jackett labelling in 0.5.5
+
+Search results received from a Jackett aggregate Torznab URL are labelled `Jackett` plus the originating indexer name. Other Torznab-compatible services retain the generic `Torznab` label. Release 0.5.5 is stable and keeps bilingual release notes and documentation.

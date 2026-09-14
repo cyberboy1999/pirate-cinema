@@ -24,8 +24,9 @@ jobs:
           7z x runtime.7z -obootstrap -y
           New-Item vendor/mpv,bin -ItemType Directory -Force | Out-Null
           Copy-Item bootstrap/resources/mpv/* vendor/mpv -Recurse -Force
-          foreach ($name in @('TorrServer-windows-amd64.exe','settings.json','trackers.txt','rutor.ls')) { Copy-Item "bootstrap/resources/torrserver/$name" bin -Force }
-          if ((Get-FileHash bin/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne 'F05C13F218286866473CB4E83B081EECD4CDE8DCC8FAF5EDE321BFEAA444B044') { throw 'TorrServer hash mismatch' }
+          foreach ($name in @('settings.json','trackers.txt','rutor.ls')) { Copy-Item "bootstrap/resources/torrserver/$name" bin -Force }
+          Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.3/TorrServer-windows-amd64.exe' -OutFile bin/TorrServer-windows-amd64.exe
+          if ((Get-FileHash bin/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne '0EC708B850F2C2DF92F7C6A324FB17558D969F4018BA0F44FAD0B75802D4BD4B') { throw 'TorrServer hash mismatch' }
           if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
           Remove-Item bootstrap,runtime.7z -Recurse -Force
       - run: pnpm install --frozen-lockfile
@@ -69,8 +70,8 @@ jobs:
           7z x runtime.7z -obootstrap -y >/dev/null
           mkdir -p bin
           cp bootstrap/resources/torrserver/{settings.json,trackers.txt,rutor.ls} bin/
-          curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.2/TorrServer-linux-amd64' -o bin/TorrServer-linux-amd64
-          echo '60c92e15ff2ac76d3dcebfe742ef2f0900905a6accef4329e7d3c66d8f0351dd  bin/TorrServer-linux-amd64' | sha256sum -c -
+          curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.3/TorrServer-linux-amd64' -o bin/TorrServer-linux-amd64
+          echo '8b61aa8e85eb6c5caee3b484160f27d82da28bc6b2f0d6703a8914293824afe0  bin/TorrServer-linux-amd64' | sha256sum -c -
           chmod 755 bin/TorrServer-linux-amd64 scripts/install-linux.sh
           rm -rf bootstrap runtime.7z
       - run: pnpm install --frozen-lockfile
@@ -121,4 +122,4 @@ jobs:
           version=$(node -p "require('./package.json').version")
           mkdir publish
           find assets -type f -exec cp {} publish/ \;
-          gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema $version — pre-release" --notes "Русский: редактор названия карточки повторно ищет постер и описание через Wikipedia/Cinemeta, а главная загружает актуальную подборку Cinemeta с горизонтальной прокруткой. В сборку входят автономный и веб-установщик Windows x64, пакеты Debian/Ubuntu amd64, RPM x86_64 и Arch Linux x86_64. English: the card title editor reruns poster and description lookup through Wikipedia/Cinemeta, while Home loads a current Cinemeta catalogue with horizontal navigation. Includes Windows x64 Offline/Web Setup, Debian/Ubuntu amd64, RPM x86_64 and Arch Linux x86_64 packages." --prerelease
+          gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema $version" --notes "Русский: добавлена опциональная интеграция Jackett/Prowlarr через Torznab без дополнительного процесса. Результаты Jackett отдельно помечаются вместе с названием индексера. Улучшены ручное исправление названия, поиск русских описаний и постеров, добавление magnet-ссылок и каталог главной страницы. В сборку входят автономный и веб-установщик Windows x64, пакеты Debian/Ubuntu amd64, RPM x86_64 и Arch Linux x86_64. English: optional Jackett/Prowlarr integration is available through Torznab without an extra bundled process. Jackett results are labelled separately with the indexer name. Manual title correction, Russian descriptions and poster lookup, magnet imports, and the Home catalogue are improved. Includes Windows x64 Offline/Web Setup, Debian/Ubuntu amd64, RPM x86_64 and Arch Linux x86_64 packages."

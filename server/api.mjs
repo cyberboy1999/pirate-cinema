@@ -26,7 +26,7 @@ const mpvPath=[process.env.MPV_PATH,process.platform!=="win32"?"/usr/bin/mpv":nu
 const client=new TorrServerClient(torrServerUrl,{username:process.env.TORRSERVER_USERNAME,password:process.env.TORRSERVER_PASSWORD});
 const db=new MediaDatabase(join(dataDir,"media.db"));
 const {service:metadata,mode:metadataMode}=createMetadataService();
-const state={online:false,syncing:false,lastSync:null,error:null,torrServerUrl,serverVersion:null,metadataMode,searchProviders:["TorrServer + Rutor"]};
+const state={online:false,syncing:false,lastSync:null,error:null,torrServerUrl,serverVersion:null,metadataMode,searchProviders:localConfig.torznabUrl?["Rutor","Torznab"]:["Rutor"]};
 const posterGeneration=new Map();
 const player = new MpvPlayer({ db, client, executable: mpvPath });
 const librarySync=createLibrarySync({db,client,metadata,cachePoster,state,activeHashes:()=>player.list().map(s=>s.hash)});
@@ -106,16 +106,17 @@ const server=createServer(async(req,res)=>{
     }
     const metadataMatch=url.pathname.match(/^\/api\/torrents\/([a-f0-9]{40})\/metadata$/i);
     if(req.method==="POST"&&metadataMatch){const hash=metadataMatch[1].toLowerCase();const body=await readJson(req);const title=String(body.title??"").replace(/\s+/g," ").trim();if(title.length<2||title.length>200)return sendJson(res,400,{error:"Название должно содержать от 2 до 200 символов"},origin);if(!db.setMetadataQuery(hash,title))return sendJson(res,404,{error:"Карточка не найдена"},origin);let warning=null;try{await librarySync.enrich(hash,true)}catch{warning="Сервис описаний временно недоступен"}return sendJson(res,200,{item:librarySync.item(hash),warning},origin)}
-    if(req.method==="GET"&&url.pathname==="/api/settings")return sendJson(res,200,{torrServerUrl:state.torrServerUrl,metadataMode,metadataConfigured:metadataMode==="tmdb",dataDir,...appSettings()},origin);
+    if(req.method==="GET"&&url.pathname==="/api/settings")return sendJson(res,200,{torrServerUrl:state.torrServerUrl,metadataMode,metadataConfigured:metadataMode==="tmdb",dataDir,torznabUrl:localConfig.torznabUrl??"",torznabConfigured:Boolean(localConfig.torznabUrl&&localConfig.torznabApiKey),...appSettings()},origin);
     if(req.method==="POST"&&url.pathname==="/api/settings"){
       const body=await readJson(req);const next={...localConfig};let restartRequired=false;
       if(body.torrServerUrl!==undefined){const nextUrl=new URL(body.torrServerUrl);if(!["http:","https:"].includes(nextUrl.protocol))throw new Error("Only HTTP(S) TorrServer addresses are allowed");next.torrServerUrl=nextUrl.toString().replace(/\/$/,"");restartRequired=next.torrServerUrl!==localConfig.torrServerUrl}
       if(body.language!==undefined){if(!["ru","en"].includes(body.language))return sendJson(res,400,{error:"Unsupported language"},origin);next.language=body.language}
       if(body.playerType!==undefined){if(!["mpv","external"].includes(body.playerType))return sendJson(res,400,{error:"Unsupported player"},origin);next.playerType=body.playerType}
       if(body.playerPath!==undefined){const path=String(body.playerPath??"").trim();if(path&&(!existsSync(path)||(process.platform==="win32"&&!/\.exe$/i.test(path))))return sendJson(res,400,{error:"Выбранный файл плеера не найден"},origin);next.playerPath=path||null}
+      if(body.torznabUrl!==undefined||body.torznabApiKey!==undefined){const host=String(body.torznabUrl??localConfig.torznabUrl??"").trim();const key=String(body.torznabApiKey??"").trim()||(host===localConfig.torznabUrl?localConfig.torznabApiKey:"");if(Boolean(host)!==Boolean(key))return sendJson(res,400,{error:"Для Torznab нужны URL и API-ключ"},origin);if(host){const parsed=new URL(host);if(!["http:","https:"].includes(parsed.protocol))return sendJson(res,400,{error:"Torznab URL должен использовать HTTP(S)"},origin)}await client.configureTorznab({host,key});next.torznabUrl=host;next.torznabApiKey=key;state.searchProviders=host?["Rutor","Torznab"]:["Rutor"]}
       if(next.playerType==="external"&&!next.playerPath)return sendJson(res,400,{error:"Сначала выберите файл локального плеера"},origin);
       if(body.onboardingComplete!==undefined)next.onboardingComplete=Boolean(body.onboardingComplete);
-      Object.assign(localConfig,next);saveConfig(localConfig);return sendJson(res,200,{saved:true,restartRequired,...appSettings()},origin);
+      Object.assign(localConfig,next);saveConfig(localConfig);return sendJson(res,200,{saved:true,restartRequired,torznabUrl:localConfig.torznabUrl??"",torznabConfigured:Boolean(localConfig.torznabUrl&&localConfig.torznabApiKey),...appSettings()},origin);
     }
     const framePosterMatch=url.pathname.match(/^\/api\/posters\/frame\/([a-f0-9]{40})$/i);
     if(req.method==="GET"&&framePosterMatch){const hash=framePosterMatch[1].toLowerCase();try{const name=await generateFramePoster(hash);const path=join(posterDir,name);res.writeHead(200,{"content-type":"image/jpeg","cache-control":"public, max-age=31536000, immutable","access-control-allow-origin":origin});return res.end(readFileSync(path))}catch{const svg=posterPlaceholder(db.get(hash)?.title??db.get(hash)?.torrent_name??"Без названия",hash);res.writeHead(200,{"content-type":"image/svg+xml; charset=utf-8","cache-control":"public, max-age=3600","access-control-allow-origin":origin});return res.end(svg)}}
@@ -183,8 +184,8 @@ const server=createServer(async(req,res)=>{
     }
     if(req.method==="GET"&&url.pathname==="/api/search"){
       const query=(url.searchParams.get("q")??"").trim();if(query.length<2)return sendJson(res,400,{error:"Введите минимум 2 символа"},origin);
-      const [torrServerSettled,details]=await Promise.all([client.searchTorrents(query).then(value=>({online:true,value})).catch(()=>({online:false,value:[]})),metadataServiceFind(query).catch(()=>null)]);const torrServerItems=torrServerSettled.value.map(raw=>({...normalizeSearchResult(raw),source:"TorrServer"})).filter(item=>item.magnet);
-      return sendJson(res,200,{query,metadata:details,results:torrServerItems,providers:[{name:"TorrServer",online:torrServerSettled.online,count:torrServerItems.length}],cached:false},origin);
+      const [rutor,torznab,details]=await Promise.all([client.searchTorrents(query).then(value=>({online:true,value})).catch(()=>({online:false,value:[]})),localConfig.torznabUrl?client.searchTorznab(query).then(value=>({online:true,value})).catch(()=>({online:false,value:[]})):Promise.resolve({online:false,value:[]}),metadataServiceFind(query).catch(()=>null)]);const rutorItems=rutor.value.map(raw=>({...normalizeSearchResult(raw),source:"Rutor"})).filter(item=>item.magnet);const torznabSource=/\/api\/v2\.0\/indexers\//i.test(localConfig.torznabUrl??"")?"Jackett":"Torznab";const torznabItems=torznab.value.map(raw=>({...normalizeSearchResult(raw),source:torznabSource})).filter(item=>item.magnet);const results=[...rutorItems,...torznabItems].filter((item,index,all)=>all.findIndex(other=>other.hash===item.hash)===index);
+      return sendJson(res,200,{query,metadata:details,results,providers:[{name:"Rutor",online:rutor.online,count:rutorItems.length},...(localConfig.torznabUrl?[{name:"Torznab",online:torznab.online,count:torznabItems.length}]:[])],cached:false},origin);
     }
     if(req.method==="POST"&&url.pathname==="/api/torrents/add"){
       if(!state.online)return sendJson(res,409,{error:"TorrServer недоступен"},origin);const body=await readJson(req);
