@@ -154,3 +154,5 @@ Settings accepts one optional Prowlarr or Jackett Torznab URL and API key. Pirat
 ## Jackett labelling in 0.5.5
 
 Search results received from a Jackett aggregate Torznab URL are labelled `Jackett` plus the originating indexer name. Other Torznab-compatible services retain the generic `Torznab` label. Release 0.5.5 is stable and keeps bilingual release notes and documentation.
+
+Torznab sources are configured with `CatType: all`; TorrServer's default movie/TV category filter can otherwise hide valid Jackett results when an indexer uses different category mappings.

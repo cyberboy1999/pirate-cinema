@@ -17,7 +17,7 @@ test("removes a saved torrent through the MatriX API",async()=>{
 
 test("configures and searches an optional Torznab indexer",async()=>{
   let saved=null;const server=createServer(async(req,res)=>{const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=chunks.length?JSON.parse(Buffer.concat(chunks).toString("utf8")):{};res.setHeader("content-type","application/json");if(req.url==="/settings"&&body.action==="get")return res.end(JSON.stringify({CacheSize:64}));if(req.url==="/settings"&&body.action==="set"){saved=body.sets;return res.end("")}if(req.url?.startsWith("/torznab/search/"))return res.end(JSON.stringify([{Title:"Movie",Hash:"a".repeat(40)}]));res.statusCode=404;res.end("{}")});
-  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));try{const address=server.address();const client=new TorrServerClient(`http://127.0.0.1:${address.port}`);await client.configureTorznab({host:"http://127.0.0.1:9696/1",key:"secret"});assert.equal(saved.CacheSize,64);assert.equal(saved.EnableTorznabSearch,true);assert.equal(saved.TorznabUrls[0].Key,"secret");assert.equal((await client.searchTorznab("movie"))[0].Title,"Movie")}finally{await new Promise(resolve=>server.close(resolve))}
+  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));try{const address=server.address();const client=new TorrServerClient(`http://127.0.0.1:${address.port}`);await client.configureTorznab({host:"http://127.0.0.1:9696/1",key:"secret"});assert.equal(saved.CacheSize,64);assert.equal(saved.EnableTorznabSearch,true);assert.equal(saved.TorznabUrls[0].Key,"secret");assert.equal(saved.TorznabUrls[0].CatType,"all");assert.equal((await client.searchTorznab("movie"))[0].Title,"Movie")}finally{await new Promise(resolve=>server.close(resolve))}
 });
 
 test("normalizes TorrServer search releases",()=>{
@@ -30,6 +30,11 @@ test("builds a magnet when search returns only an info hash",()=>{
   assert.equal(item.hash,hash);assert.equal(item.magnet,`magnet:?xt=urn:btih:${hash}`);
 });
 
+test("keeps Torznab torrent download links",()=>{
+  const link="http://127.0.0.1:9117/dl/indexer/?path=abc";const item=normalizeSearchResult({Title:"Torrent link",Link:link,Tracker:"Jackett"});
+  assert.equal(item.magnet,link);assert.equal(item.hash,"");
+});
+
 test("normalizes hex and Base32 magnet info hashes",()=>{
   const hex="abcdef0123456789abcdef0123456789abcdef01";const normalized=normalizeMagnetLink(`  "magnet:?xt=urn:btih:${hex.toUpperCase()}&amp;dn=Test%20Movie"  `);
   assert.equal(normalized.hash,hex);assert.equal(normalized.title,"Test Movie");assert.equal(extractInfoHash(`magnet:?xt=urn:btih:${"A".repeat(32)}`),"0".repeat(40));
@@ -40,6 +45,11 @@ test("adds a normalized magnet and reuses an existing torrent",async()=>{
   const hash="b".repeat(40);let addBody=null;let listed=[];const server=createServer(async(req,res)=>{const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=chunks.length?JSON.parse(Buffer.concat(chunks).toString("utf8")):{};res.setHeader("content-type","application/json");if(body.action==="list")return res.end(JSON.stringify(listed));if(body.action==="add"){addBody=body;listed=[{hash,title:body.title}];return res.end(JSON.stringify({Hash:hash}))}res.statusCode=404;res.end("{}")});
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
   try{const address=server.address();const client=new TorrServerClient(`http://127.0.0.1:${address.port}`);const first=await client.addTorrent({magnet:`magnet:?xt=urn:btih:${hash}&amp;dn=Movie`,title:"Movie"});assert.equal(first.hash,hash);assert.equal(first.alreadyExists,false);assert.equal(addBody.action,"add");assert.equal(addBody.save_to_db,true);assert.doesNotMatch(addBody.link,/&amp;/);const second=await client.addTorrent({magnet:`magnet:?xt=urn:btih:${hash}`,title:"Movie"});assert.equal(second.alreadyExists,true)}finally{await new Promise(resolve=>server.close(resolve))}
+});
+
+test("adds a Torznab HTTP torrent link",async()=>{
+  let addBody=null;const hash="d".repeat(40);const server=createServer(async(req,res)=>{const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=JSON.parse(Buffer.concat(chunks).toString("utf8"));res.setHeader("content-type","application/json");if(body.action==="list")return res.end("[]");addBody=body;res.end(JSON.stringify({Hash:hash}))});
+  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));try{const client=new TorrServerClient(`http://127.0.0.1:${server.address().port}`);const link="http://127.0.0.1:9117/dl/indexer/?path=abc";const result=await client.addTorrent({magnet:link,title:"Movie"});assert.equal(addBody.link,link);assert.equal(result.hash,hash)}finally{await new Promise(resolve=>server.close(resolve))}
 });
 
 test("treats unavailable viewed history as empty on healthy MatriX servers",async()=>{
