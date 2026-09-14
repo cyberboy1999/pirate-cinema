@@ -190,7 +190,8 @@ const server=createServer(async(req,res)=>{
         const parsed=parseTorrentTitle(title);
         db.upsert({torrentHash:added.hash,torrentName:title,title:localizedTorrentTitle(title)??parsed.title,year:parsed.year,posterUrl:body.poster??null});
       }
-      return sendJson(res,200,{added:true,alreadyExists:added.alreadyExists,hash:added.hash,title,item:librarySync.item(added.hash)},origin);
+      const item=await librarySync.enrich(added.hash,true).catch(()=>librarySync.item(added.hash));
+      return sendJson(res,200,{added:true,alreadyExists:added.alreadyExists,hash:added.hash,title,item},origin);
     }
     return sendJson(res,404,{error:"Not found"},origin);
   }catch(error){const aborted=error?.name==="AbortError";const rejected=/^TorrServer (?:400|409|500)$/.test(error?.message??"");const message=aborted||rejected?"TorrServer ещё получает данные раздачи. Проверьте наличие пиров и повторите через несколько секунд.":error.message;return sendJson(res,error.status??(aborted?504:rejected?425:400),{error:message,active:error.active},origin)}

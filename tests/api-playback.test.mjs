@@ -74,8 +74,10 @@ test("local API exposes per-file progress, persists manual viewed changes and re
     const detail=await (await fetch(base+"/api/torrents/"+hash+"/details")).json();
     assert.equal(detail.item.torrentHash,hash);
     assert.equal(typeof detail.item.overview,"string");
-    const added=await (await post("/api/torrents/add",{magnet:"magnet:?xt=urn:btih:"+"e".repeat(40),title:"New Movie"})).json();
+    const added=await (await post("/api/torrents/add",{magnet:"magnet:?xt=urn:btih:"+"e".repeat(40)+"&dn=New%20Movie%202024"})).json();
     assert.equal(added.item.torrentHash,"e".repeat(40));
+    assert.equal(added.item.title,"New Movie");
+    assert.equal(added.item.year,2024);
     assert.equal(added.alreadyExists,false);
     const repeated=await (await post("/api/torrents/add",{magnet:"magnet:?xt=urn:btih:"+"e".repeat(40),title:"New Movie"})).json();
     assert.equal(repeated.alreadyExists,true);assert.equal(addedCount,1);

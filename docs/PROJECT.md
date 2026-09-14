@@ -1,6 +1,8 @@
 # Pirate Cinema — project context
 
-Release version: 0.5.1. One unified `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Pre-release version: 0.5.2. The latest published `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+
+The `v0.5.2` tag is intentionally published as a GitHub pre-release. Change the release workflow back to a stable/latest release before the next production tag.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and MPV over Windows named-pipe or Linux Unix-socket IPC.
 
@@ -128,3 +130,9 @@ Electron owns a native system tray. Closing the main window hides it without sto
 ## Playback choice layout in 0.5.1
 
 The normal file-launch confirmation uses one compact action row. Resume remains available when progress exists, the start-from-zero action is labelled Play, and Back to files stays in the same row. The existing-player conflict choices retain their vertical layout.
+
+## Home and magnet additions in 0.5.2
+
+The home screen uses the selected cinematic direction: one large Continue Watching item, followed by a compact six-title popular shelf. The shell uses a narrower rail, compact search, inline TorrServer state, one sans-serif family and monochrome tokens; green is reserved for online and success states.
+
+POST `/api/torrents/add` now waits for the existing metadata enrichment path before returning. A magnet `dn` value is parsed into a clean title and year immediately, and configured metadata providers can return the poster and description in the same response instead of waiting for the next library sync.
