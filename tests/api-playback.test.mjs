@@ -74,6 +74,10 @@ test("local API exposes per-file progress, persists manual viewed changes and re
     const detail=await (await fetch(base+"/api/torrents/"+hash+"/details")).json();
     assert.equal(detail.item.torrentHash,hash);
     assert.equal(typeof detail.item.overview,"string");
+    const renamed=await (await post("/api/torrents/"+hash+"/metadata",{title:"Correct Movie 2024"})).json();
+    assert.equal(renamed.item.title,"Correct Movie 2024");
+    assert.equal((await (await fetch(base+"/api/library")).json()).items.find(item=>item.torrentHash===hash).title,"Correct Movie 2024");
+    assert.equal((await post("/api/torrents/"+hash+"/metadata",{title:"x"})).status,400);
     const added=await (await post("/api/torrents/add",{magnet:"magnet:?xt=urn:btih:"+"e".repeat(40)+"&dn=New%20Movie%202024"})).json();
     assert.equal(added.item.torrentHash,"e".repeat(40));
     assert.equal(added.item.title,"New Movie");

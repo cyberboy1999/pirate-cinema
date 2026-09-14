@@ -45,6 +45,7 @@ async function cachePoster(providerId,url){
 async function synchronize(full=false){await librarySync.synchronize(full);return libraryPayload()}
 function libraryPayload(){const items=db.list();return {state:{...state},stats:db.stats(),items,continueWatching:items.filter(item=>item.isStarted&&(item.progress===null||item.progress<92)).sort((a,b)=>String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt))),recentlyAdded:[...items].sort((a,b)=>String(b.addedAt).localeCompare(String(a.addedAt))).slice(0,18)}}
 async function metadataServiceFind(value){return metadata.findBestMatch(value)}
+async function homeCatalog(){const response=await fetch("https://v3-cinemeta.strem.io/catalog/movie/top.json",{headers:{accept:"application/json"},signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error(`Cinemeta ${response.status}`);return ((await response.json()).metas??[]).slice(0,30).map((item,index)=>({rank:index+1,imdbId:String(item.imdb_id??item.id),title:item.name??item.title,originalTitle:item.name??item.title,year:Number(String(item.releaseInfo??item.year??"").match(/(?:19|20)\d{2}/)?.[0])||null,rating:Number(item.imdbRating)||null,posterUrl:item.poster??null}))}
 
 function sendJson(res,status,payload,origin){res.writeHead(status,{"content-type":"application/json; charset=utf-8","access-control-allow-origin":origin,"cache-control":"no-store"});res.end(JSON.stringify(payload))}
 async function readJson(req){const chunks=[];for await(const chunk of req)chunks.push(chunk);return chunks.length?JSON.parse(Buffer.concat(chunks).toString("utf8")):{} }
@@ -90,6 +91,7 @@ const server=createServer(async(req,res)=>{
       const settings=appSettings();const checks=[{id:"api",ok:true,detail:`127.0.0.1:${apiPort}`},{id:"torrserver",ok:state.online,detail:state.online?state.serverVersion:"TorrServer не отвечает"},{id:"mpv",ok:Boolean(mpvPath&&existsSync(mpvPath)),detail:mpvPath??"MPV не найден"},{id:"ffmpeg",ok:Boolean(ffmpegPath&&existsSync(ffmpegPath)),detail:ffmpegPath??"FFmpeg не найден"},{id:"player",ok:settings.playerType==="mpv"||Boolean(settings.playerPath&&existsSync(settings.playerPath)),detail:settings.playerType==="mpv"?"Встроенный MPV":settings.playerPath??"Плеер не выбран"},{id:"database",ok:existsSync(join(dataDir,"media.db")),detail:join(dataDir,"media.db")}];return sendJson(res,200,{ok:checks.every(item=>item.ok),checks},origin)
     }
     if(req.method==="GET"&&url.pathname==="/api/library")return sendJson(res,200,libraryPayload(),origin);
+    if(req.method==="GET"&&url.pathname==="/api/catalog/home"){try{return sendJson(res,200,{source:"Cinemeta",items:await homeCatalog()},origin)}catch{return sendJson(res,503,{error:"Каталог Cinemeta временно недоступен"},origin)}}
     if(req.method==="POST"&&url.pathname==="/api/sync"){
       const body=await readJson(req);
       return sendJson(res,200,await synchronize(body.full!==false),origin);
@@ -102,6 +104,8 @@ const server=createServer(async(req,res)=>{
       try{await librarySync.enrich(hash)}catch{warning="Сервис описаний временно недоступен"}
       return sendJson(res,200,{item:librarySync.item(hash),warning},origin);
     }
+    const metadataMatch=url.pathname.match(/^\/api\/torrents\/([a-f0-9]{40})\/metadata$/i);
+    if(req.method==="POST"&&metadataMatch){const hash=metadataMatch[1].toLowerCase();const body=await readJson(req);const title=String(body.title??"").replace(/\s+/g," ").trim();if(title.length<2||title.length>200)return sendJson(res,400,{error:"Название должно содержать от 2 до 200 символов"},origin);if(!db.setMetadataQuery(hash,title))return sendJson(res,404,{error:"Карточка не найдена"},origin);let warning=null;try{await librarySync.enrich(hash,true)}catch{warning="Сервис описаний временно недоступен"}return sendJson(res,200,{item:librarySync.item(hash),warning},origin)}
     if(req.method==="GET"&&url.pathname==="/api/settings")return sendJson(res,200,{torrServerUrl:state.torrServerUrl,metadataMode,metadataConfigured:metadataMode==="tmdb",dataDir,...appSettings()},origin);
     if(req.method==="POST"&&url.pathname==="/api/settings"){
       const body=await readJson(req);const next={...localConfig};let restartRequired=false;

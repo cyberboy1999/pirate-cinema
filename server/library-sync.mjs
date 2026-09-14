@@ -12,7 +12,8 @@ export function createLibrarySync({db,client,metadata,cachePoster,state,activeHa
     if(!force&&existing.metadata_checked_at&&Date.now()-Date.parse(existing.metadata_checked_at)<86400000)return item(hash);
     const work=(async()=>{
       try{
-        const found=await metadata.findBestMatch(existing.torrent_name,{refresh:force});
+        const query=existing.metadata_query??existing.torrent_name;
+        const found=await metadata.findBestMatch(query,{refresh:force});
         const accepted=found&&found.confidence>=(found.provider==="tmdb"?.85:.58)?found:null;
         // Re-read after network I/O: sync or playback may have updated this card.
         const current=item(hash);
@@ -21,7 +22,7 @@ export function createLibrarySync({db,client,metadata,cachePoster,state,activeHa
           const posterPath=accepted.posterUrl?await cachePoster(accepted.provider+"-"+accepted.providerId,accepted.posterUrl):null;
           if(!db.get(hash))return null;
           db.upsert({...current,metadataProvider:accepted.provider,providerId:accepted.providerId,
-            title:localizedTorrentTitle(current.torrentName)??accepted.title??current.title,
+            title:current.metadataQuery??accepted.title??localizedTorrentTitle(current.torrentName)??current.title,
             originalTitle:accepted.originalTitle,year:accepted.year??current.year,mediaType:accepted.type??current.mediaType,
             posterUrl:accepted.posterUrl??current.posterUrl,posterPath:posterPath??db.get(hash).poster_path,
             runtimeSeconds:accepted.runtimeSeconds??current.runtimeSeconds,rating:accepted.rating??current.rating,
@@ -59,7 +60,7 @@ export function createLibrarySync({db,client,metadata,cachePoster,state,activeHa
         for(const torrent of torrents){
           const existing=item(torrent.hash),parsed=parseTorrentTitle(torrent.name);
           db.upsert({...existing,torrentHash:torrent.hash,torrentName:torrent.name,
-            title:localizedTorrentTitle(torrent.name)??existing?.title??parsed.title,
+            title:existing?.metadataQuery??localizedTorrentTitle(torrent.name)??existing?.title??parsed.title,
             year:existing?.year??parsed.year,mediaType:existing?.mediaType??"unknown",
             posterUrl:existing?.posterUrl??torrent.poster,posterPath:db.get(torrent.hash)?.poster_path,
             addedAt:existing?.addedAt??torrent.addedAt,torrentStatus:torrent.status,

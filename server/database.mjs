@@ -68,6 +68,7 @@ export class MediaDatabase {
     }
     if(!columns.has("metadata_checked_at"))this.db.exec("ALTER TABLE media_items ADD COLUMN metadata_checked_at TEXT");
     if(!columns.has("audio_track_id"))this.db.exec("ALTER TABLE media_items ADD COLUMN audio_track_id INTEGER");
+    if(!columns.has("metadata_query"))this.db.exec("ALTER TABLE media_items ADD COLUMN metadata_query TEXT");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_media_items_provider ON media_items(metadata_provider,provider_id) WHERE provider_id IS NOT NULL;");
     const historyColumns=new Set(this.db.prepare("PRAGMA table_info(media_file_history)").all().map(row=>row.name));
     if(!historyColumns.has("playback_timecode"))this.db.exec("ALTER TABLE media_file_history ADD COLUMN playback_timecode INTEGER");
@@ -160,6 +161,11 @@ export class MediaDatabase {
       .run(replace?overview.trim():current?.overview??null,replace?sourceUrl:current?.overview_source_url??null,new Date().toISOString(),hash);
   }
 
+  setMetadataQuery(hash, query) {
+    const parsed=String(query).trim();
+    return this.db.prepare(`UPDATE media_items SET metadata_query=?,title=?,original_title=NULL,year=NULL,media_type='unknown',poster_url=NULL,poster_path=NULL,runtime_seconds=NULL,rating=NULL,genres_json='[]',match_confidence=0,metadata_provider=NULL,provider_id=NULL,overview=NULL,overview_source_url=NULL,metadata_checked_at=NULL WHERE torrent_hash=?`).run(parsed,parsed,hash).changes;
+  }
+
   resetFileProgress(hash, fileIndex) {
     const latest = this.listFileHistory(hash)[0];
     this.db.prepare("UPDATE media_file_history SET playback_timecode=0 WHERE torrent_hash=? AND file_index=?").run(hash, fileIndex);
@@ -189,7 +195,7 @@ export class MediaDatabase {
 function toMediaItem(row) {
   const progress = row.playback_duration > 0 ? Math.max(0, Math.min(100, Math.round(row.playback_timecode / row.playback_duration * 100))) : null;
   return {
-    torrentHash:row.torrent_hash,torrentName:row.torrent_name,metadataProvider:row.metadata_provider,providerId:row.provider_id,title:row.title,
+    torrentHash:row.torrent_hash,torrentName:row.torrent_name,metadataQuery:row.metadata_query,metadataProvider:row.metadata_provider,providerId:row.provider_id,title:row.title,
     originalTitle:row.original_title,year:row.year,mediaType:row.media_type,posterUrl:row.poster_url,
     posterPath:row.poster_path ? `/api/posters/${encodeURIComponent(row.poster_path)}` : null,
     runtimeSeconds:row.runtime_seconds,rating:row.rating,genres:JSON.parse(row.genres_json || "[]"),overview:row.overview??"",overviewSourceUrl:row.overview_source_url??null,

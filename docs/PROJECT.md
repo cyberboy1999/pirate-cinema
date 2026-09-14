@@ -1,8 +1,8 @@
 # Pirate Cinema — project context
 
-Pre-release version: 0.5.2. The latest published `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Pre-release version: 0.5.3. The latest published `v0.5.1` release contains Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
-The `v0.5.2` tag is intentionally published as a GitHub pre-release. Change the release workflow back to a stable/latest release before the next production tag.
+The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
 Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrServer (8090), SQLite via node:sqlite and MPV over Windows named-pipe or Linux Unix-socket IPC.
 
@@ -136,3 +136,9 @@ The normal file-launch confirmation uses one compact action row. Resume remains 
 The home screen uses the selected cinematic direction: one large Continue Watching item, followed by a compact six-title popular shelf. The shell uses a narrower rail, compact search, inline TorrServer state, one sans-serif family and monochrome tokens; green is reserved for online and success states.
 
 POST `/api/torrents/add` now waits for the existing metadata enrichment path before returning. A magnet `dn` value is parsed into a clean title and year immediately, and configured metadata providers can return the poster and description in the same response instead of waiting for the next library sync.
+
+## Metadata correction and home catalogue in 0.5.3
+
+Each library card has a compact title editor. The saved `metadata_query` survives TorrServer reconciliation and is used for forced Wikipedia/Cinemeta enrichment, so an incorrect release name no longer makes every full sync repeat the same failed lookup. Editing clears stale matched metadata before the fresh lookup.
+
+The home shelf loads up to 30 current movies from Cinemeta's public top catalogue and falls back to the bundled list when the source is unavailable. The generic catalogue request contains no library data. Shelves longer than six cards scroll horizontally with accessible previous/next controls.

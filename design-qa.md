@@ -23,3 +23,10 @@ The final full-view comparison has no open P0, P1, or P2 issues. The shell, spac
 ## Result
 
 passed
+
+## 0.5.3 extension
+
+- The Cinemeta shelf keeps six cards visible at 1440×1024 and scrolls horizontally when more results are available.
+- The next control moved the shelf by 1232 px in browser QA; previous/next controls have localized accessible names.
+- Every library card exposes a keyboard-accessible metadata edit action, visually hidden until hover or focus on desktop.
+- No page errors were recorded. Result: `passed`.

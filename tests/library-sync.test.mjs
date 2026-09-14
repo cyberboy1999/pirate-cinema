@@ -52,3 +52,15 @@ test("manual full sync waits for background sync and then refreshes all metadata
     assert.equal(sync.item(hash).overview,"Description");
   }finally{db.close()}
 });
+
+test("manual metadata query survives sync and drives enrichment",async()=>{
+  const db=new MediaDatabase(":memory:"),hash="d".repeat(40),queries=[];
+  const sync=createLibrarySync({db,state:{},cachePoster:async()=>"manual.jpg",
+    client:{echo:async()=>"MatriX",listTorrents:async()=>[{hash,title:"Bad.Release.Name.2160p"}],listViewed:async()=>[]},
+    metadata:{findBestMatch:async title=>{queries.push(title);return {confidence:1,provider:"cinemeta",providerId:"tt1",title:"Dune",year:2021,posterUrl:"https://example.invalid/dune.jpg",overview:"Description"}}}});
+  try{
+    await sync.synchronize();db.setMetadataQuery(hash,"Dune 2021");await sync.enrich(hash,true);await sync.synchronize(true);
+    assert.deepEqual(queries,["Bad.Release.Name.2160p","Dune 2021","Dune 2021"]);
+    assert.equal(sync.item(hash).title,"Dune 2021");assert.equal(sync.item(hash).overview,"Description");assert.equal(sync.item(hash).posterPath,"/api/posters/manual.jpg");
+  }finally{db.close()}
+});
