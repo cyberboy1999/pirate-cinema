@@ -46,6 +46,7 @@ yarn-error.log*
 /release-linux/
 /release-arch/
 /release-local/
+/release-fix/
 /local-builds/
 /artifacts/
 
