@@ -9,7 +9,7 @@ import bundledFfmpegPath from "ffmpeg-static";
 import { MediaDatabase } from "./database.mjs";
 import { createLibrarySync } from "./library-sync.mjs";
 import { createMetadataService } from "./metadata-service.mjs";
-import { localizedTorrentTitle, parseTorrentTitle } from "./title-parser.mjs";
+import { localizedTorrentTitle, normalizeTitle, parseTorrentTitle } from "./title-parser.mjs";
 import { normalizeMagnetLink, normalizeSearchResult, normalizeTorrentFiles, TorrServerClient } from "./torrserver-client.mjs";
 
 const apiPort=Number(process.env.TORR_LOCAL_API_PORT ?? 3001);
@@ -190,9 +190,10 @@ const server=createServer(async(req,res)=>{
     if(req.method==="POST"&&url.pathname==="/api/torrents/add"){
       if(!state.online)return sendJson(res,409,{error:"TorrServer недоступен"},origin);const body=await readJson(req);
       const normalized=normalizeMagnetLink(body.magnet);const title=String(body.title||normalized.title||"Magnet-раздача").trim();
+      const parsed=parseTorrentTitle(title);const duplicate=body.allowDuplicate!==true&&db.list().find(item=>item.torrentHash!==normalized.hash&&[item.metadataQuery,item.title,item.originalTitle,parseTorrentTitle(item.torrentName).title].filter(Boolean).some(value=>normalizeTitle(value)===parsed.normalizedTitle)&&(!parsed.year||!item.year||parsed.year===item.year));
+      if(duplicate)return sendJson(res,409,{duplicate:true,item:duplicate,error:`«${duplicate.title}» уже есть в медиатеке`},origin);
       const added=await client.addTorrent({magnet:normalized.magnet,title,poster:body.poster??null,category:body.category??""});
       if(!db.get(added.hash)){
-        const parsed=parseTorrentTitle(title);
         db.upsert({torrentHash:added.hash,torrentName:title,title:localizedTorrentTitle(title)??parsed.title,year:parsed.year,posterUrl:body.poster??null});
       }
       const item=await librarySync.enrich(added.hash,true).catch(()=>librarySync.item(added.hash));

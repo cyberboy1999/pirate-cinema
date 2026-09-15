@@ -23,7 +23,7 @@ test("local API exposes per-file progress, persists manual viewed changes and re
     const body=chunks.length?JSON.parse(Buffer.concat(chunks).toString()):{};
     if(req.url==="/torrents"&&body.action==="add"){
       addedCount++;
-      const addedHash="e".repeat(40);
+      const addedHash=String(body.link).match(/btih%3A([a-f0-9]{40})|btih:([a-f0-9]{40})/i)?.slice(1).find(Boolean)?.toLowerCase()??"e".repeat(40);
       torrents.push({hash:addedHash,title:body.title});
       res.setHeader("content-type","application/json");return res.end(JSON.stringify({hash:addedHash}));
     }
@@ -78,13 +78,16 @@ test("local API exposes per-file progress, persists manual viewed changes and re
     assert.equal(renamed.item.title,"Correct Movie 2024");
     assert.equal((await (await fetch(base+"/api/library")).json()).items.find(item=>item.torrentHash===hash).title,"Correct Movie 2024");
     assert.equal((await post("/api/torrents/"+hash+"/metadata",{title:"x"})).status,400);
+    const duplicate=await post("/api/torrents/add",{magnet:"magnet:?xt=urn:btih:"+"f".repeat(40),title:"Test"});
+    assert.equal(duplicate.status,409);assert.equal((await duplicate.json()).duplicate,true);assert.equal(addedCount,0);
+    const allowed=await post("/api/torrents/add",{magnet:"magnet:?xt=urn:btih:"+"f".repeat(40),title:"Test",allowDuplicate:true});assert.equal(allowed.status,200);assert.equal(addedCount,1);
     const added=await (await post("/api/torrents/add",{magnet:"magnet:?xt=urn:btih:"+"e".repeat(40)+"&dn=New%20Movie%202024"})).json();
     assert.equal(added.item.torrentHash,"e".repeat(40));
     assert.equal(added.item.title,"New Movie");
     assert.equal(added.item.year,2024);
     assert.equal(added.alreadyExists,false);
     const repeated=await (await post("/api/torrents/add",{magnet:"magnet:?xt=urn:btih:"+"e".repeat(40),title:"New Movie"})).json();
-    assert.equal(repeated.alreadyExists,true);assert.equal(addedCount,1);
+    assert.equal(repeated.alreadyExists,true);assert.equal(addedCount,2);
     assert.deepEqual((await (await fetch(base+"/api/mpv/sessions")).json()).sessions,[]);
   }finally{
     child.kill();await exited;

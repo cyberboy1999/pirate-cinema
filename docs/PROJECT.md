@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Release candidate: 0.5.6. Latest stable release: 0.5.5. Releases contain Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest stable release: 0.5.7. Releases contain Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -54,7 +54,7 @@ Each search release has its own Add to TorrServer button. The API immediately in
 
 Version 0.3.2 prioritizes Russian Wikipedia descriptions independently of Cinemeta/TVmaze posters. server/wikipedia.mjs searches localized/original names, checks media type and film year, and follows English-to-Russian language links when necessary. No new dependencies or API keys. Wikipedia credit links are shown with descriptions.
 
-SQLite retains description source URLs and prevents an English fallback from replacing saved Russian text. Adding the source column invalidates old metadata timestamps once (without clearing descriptions or playback history). Open a card or run full sync to refresh existing descriptions. Settings displays the version imported from package.json.
+SQLite retains description source URLs and prevents an English fallback from replacing saved Russian text. Adding the source column invalidates old metadata timestamps once (without clearing descriptions or playback history). Open a card or run full sync to refresh existing descriptions. Settings and the native window title display the version imported from package.json/Electron app metadata.
 
 ## First-run preferences
 
@@ -158,3 +158,7 @@ Search results received from a Jackett aggregate Torznab URL are labelled `Jacke
 Torznab sources are configured with `CatType: all`; TorrServer's default movie/TV category filter can otherwise hide valid Jackett results when an indexer uses different category mappings.
 
 Version 0.5.6 also accepts HTTP(S) torrent download links returned by Torznab providers, while continuing to reject unsupported URL schemes.
+
+## Next episode and duplicate protection
+
+For a continuing series, the home hero fetches the existing sorted file list and names the first unviewed episode; movies never trigger episode lookup. Adding a different info hash with the same normalized title and compatible year requires explicit confirmation, while re-adding the exact same hash reuses the saved TorrServer item without a duplicate prompt.
