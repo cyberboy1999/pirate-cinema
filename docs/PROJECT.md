@@ -162,3 +162,5 @@ Version 0.5.6 also accepts HTTP(S) torrent download links returned by Torznab pr
 ## Next episode and duplicate protection
 
 For a continuing series, the home hero fetches the existing sorted file list and names the first unviewed episode; movies never trigger episode lookup. Adding a different info hash with the same normalized title and compatible year requires explicit confirmation, while re-adding the exact same hash reuses the saved TorrServer item without a duplicate prompt.
+
+The empty-library state must keep `nextResult` nullable. The home overview only reads its file after confirming that a result exists and belongs to the featured torrent; this prevents a clean installation from failing its initial render.
