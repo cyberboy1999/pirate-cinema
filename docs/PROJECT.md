@@ -164,3 +164,7 @@ Version 0.5.6 also accepts HTTP(S) torrent download links returned by Torznab pr
 For a continuing series, the home hero fetches the existing sorted file list and names the first unviewed episode; movies never trigger episode lookup. Adding a different info hash with the same normalized title and compatible year requires explicit confirmation, while re-adding the exact same hash reuses the saved TorrServer item without a duplicate prompt.
 
 The empty-library state must keep `nextResult` nullable. The home overview only reads its file after confirming that a result exists and belongs to the featured torrent; this prevents a clean installation from failing its initial render.
+
+## Android web prototype
+
+`/mobile` is an isolated, mock-data web prototype for the future Android client. It explores the utility-first mobile layout, a configurable external TorrServer endpoint, library/search flows, magnet entry, file selection and mpv-android as the recommended external player with the Android system chooser as fallback. It does not call the desktop API or alter the production Electron interface.
