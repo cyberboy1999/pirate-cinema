@@ -3,3 +3,6 @@
 .overlay{background:transparent}
 .backdrop{position:absolute;inset:0;border:0;background:#000a}
 .sheet{z-index:1}
+.status .offline{background:#777}
+.empty{padding:36px 12px;text-align:center;color:#777}
+.error{position:absolute;z-index:10;left:24px;right:24px;bottom:94px;background:#3a1717;color:#ffb5b5;padding:13px 15px;border:1px solid #6c2a2a;border-radius:13px;display:flex;align-items:center;gap:8px;font-weight:700;box-shadow:0 15px 50px #000}

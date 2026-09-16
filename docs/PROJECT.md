@@ -167,4 +167,4 @@ The empty-library state must keep `nextResult` nullable. The home overview only 
 
 ## Android web prototype
 
-`/mobile` is an isolated, mock-data web prototype for the future Android client. It explores the utility-first mobile layout, a configurable external TorrServer endpoint, library/search flows, magnet entry, file selection and mpv-android as the recommended external player with the Android system chooser as fallback. It does not call the desktop API or alter the production Electron interface.
+`/mobile` is an isolated minimum viable client for the future Android application. It connects directly to a configurable TorrServer endpoint (default `http://127.0.0.1:8090`), lists saved torrents, searches, adds magnet links, reads video files and hands the selected stream to mpv-android or the system player. The endpoint is stored only in browser localStorage. It does not call the desktop API, use SQLite or alter the production Electron interface.
