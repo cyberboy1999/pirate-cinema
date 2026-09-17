@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pirate Cinema</string>
+    <string name="title_activity_main">Pirate Cinema</string>
+    <string name="package_name">com.piratecinema.app</string>
+    <string name="custom_url_scheme">com.piratecinema.app</string>
+</resources>

@@ -165,6 +165,12 @@ For a continuing series, the home hero fetches the existing sorted file list and
 
 The empty-library state must keep `nextResult` nullable. The home overview only reads its file after confirming that a result exists and belongs to the featured torrent; this prevents a clean installation from failing its initial render.
 
-## Android web prototype
+## Android application
 
-`/mobile` is an isolated minimum viable client for the future Android application. It connects directly to a configurable TorrServer endpoint (default `http://127.0.0.1:8090`), lists saved torrents, searches, adds magnet links, reads video files and hands the selected stream to mpv-android or the system player. The endpoint is stored only in browser localStorage. It does not call the desktop API, use SQLite or alter the production Electron interface.
+The mobile client is packaged as a native Android application with Capacitor while reusing the isolated `/mobile` React interface. It connects directly to a configurable TorrServer endpoint (default `http://127.0.0.1:8090`), lists saved torrents, searches, adds magnet links and reads video files. A small native `ExternalPlayer` plugin opens the exact HTTP stream in mpv-android and falls back to Android's app chooser when mpv is unavailable.
+
+Android permits cleartext traffic because a device-local TorrServer normally uses HTTP. The endpoint is stored only in WebView localStorage; this first APK does not call the desktop API, use SQLite or alter the Electron application. Build the web bundle with `pnpm run mobile:build`, synchronize it with `pnpm run android:sync`, and create a debug APK with `pnpm run android:apk`. The Android build requires JDK 21 and Android SDK 36; generated APKs remain ignored by Git.
+
+The Android shell separates Home, RuTor Search, Library and Settings. Home contains TorrServer state, onboarding/quick actions and recent saved items without duplicating the library filter. Search verifies `EnableRutorSearch` through TorrServer's settings API and enables it while preserving every other setting. Search and library filters use an in-app Russian/English keyboard and suppress the Android IME. The selected mpv/system-player preference is saved in WebView localStorage; the native plugin targets `is.xyz.mpv.MPVActivity` explicitly and uses the Android chooser as fallback.
+
+Android playback history uses mpv-android's documented Activity Result contract. The native bridge launches mpv for a result, receives the final `position` and `duration` in milliseconds, and supplies `position` on the next resume launch. Per-torrent/file records are stored in WebView localStorage, drive progress bars and the Home Continue Watching card, and expose explicit Continue/Start-over actions. Players chosen through the generic Android chooser may not return progress; mpv-android is the supported exact-history path.

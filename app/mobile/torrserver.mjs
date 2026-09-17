@@ -1,5 +1,13 @@
 const VIDEO=/\.(?:mkv|mp4|avi|mov|m4v|webm|ts|m2ts)$/i;
 
+export function enableRutorSearch(settings){return settings?.EnableRutorSearch?null:{...(settings??{}),EnableRutorSearch:true}}
+
+export function playbackHistoryEntry(previous,result,media,now=new Date().toISOString()){
+  if(!result?.ok&&!Number.isFinite(result?.positionMs))return previous??null;
+  const completed=Boolean(result.completed),durationMs=Math.max(0,Math.floor(Number(result.durationMs)||Number(previous?.durationMs)||0));
+  return {...previous,...media,positionMs:completed?0:Math.max(0,Math.floor(Number(result.positionMs)||0)),durationMs,completed,lastPlayedAt:now};
+}
+
 export function torrentFiles(raw){
   let data=raw?.data;
   if(typeof data==="string")try{data=JSON.parse(data)}catch{data={}}
