@@ -43,8 +43,9 @@ jobs:
           Copy-Item vendor/mpv/* stage/mpv -Recurse
           Copy-Item desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe stage/torrserver/
           Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md stage/
-          & "$env:ProgramFiles(x86)\NSIS\makensis.exe" "/DAPP_SOURCE=$pwd\stage" "/DAPP_OUTPUT=$pwd\Pirate-Cinema-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/installer.nsi
-          & "$env:ProgramFiles(x86)\NSIS\makensis.exe" "/DWEB_OUTPUT=$pwd\Pirate-Cinema-Web-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/web-installer.nsi
+          $makensis="${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          & $makensis "/DAPP_SOURCE=$pwd\stage" "/DAPP_OUTPUT=$pwd\Pirate-Cinema-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/installer.nsi
+          & $makensis "/DWEB_OUTPUT=$pwd\Pirate-Cinema-Web-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/web-installer.nsi
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
