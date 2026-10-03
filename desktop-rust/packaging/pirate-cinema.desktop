@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Pirate Cinema
+Name[ru]=Pirate Cinema
+Comment=Local TorrServer media library
+Comment[ru]=Локальная медиатека TorrServer
+Exec=/opt/pirate-cinema/pirate-cinema %U
+Icon=pirate-cinema
+Terminal=false
+Categories=AudioVideo;Video;
+MimeType=x-scheme-handler/magnet;
+StartupWMClass=Pirate Cinema

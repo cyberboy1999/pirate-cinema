@@ -48,6 +48,8 @@ yarn-error.log*
 /release-arch/
 /release-local/
 /release-fix/
+/desktop-rust/target/
+/desktop-rust/vendor/torrserver/
 /local-builds/
 /artifacts/
 
@@ -59,3 +61,5 @@ yarn-error.log*
 /vendor/mpv/
 /bin/
 /.openai/
+# Local desktop visual QA captures
+desktop-rust/design-qa-*.png

@@ -57,6 +57,15 @@ redistributing it.
 - JavaScript package names, versions and resolved sources are recorded in
   `package.json` and `pnpm-lock.yaml`. Their own license terms apply.
 
+## Rust desktop packages
+
+The production Rust desktop package versions and sources are recorded in
+`desktop-rust/Cargo.lock`. Its principal libraries are Dioxus Desktop,
+rusqlite/SQLite, ureq, image, rfd and tray-icon/muda. These packages are
+distributed under their respective MIT, Apache-2.0 or SQLite public-domain
+terms; their upstream license metadata is retained in the Cargo registry and
+linked from `desktop-rust/Cargo.lock`.
+
 ## Ponytail
 
 - Instruction package by Dietrich Gebert, commit

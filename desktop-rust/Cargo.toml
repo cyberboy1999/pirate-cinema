@@ -1,0 +1,24 @@
+[package]
+name = "pirate-cinema-core"
+version = "0.6.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+base64 = "0.22"
+dioxus = { version = "0.7.0", features = ["desktop"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
+rusqlite = { version = "0.40.2", features = ["backup", "bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt"] }
+tray-icon = "0.25.1"
+ureq = { version = "3.0.12", default-features = false, features = ["json", "rustls"] }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "pirate-cinema"
+path = "src/bin/dioxus.rs"

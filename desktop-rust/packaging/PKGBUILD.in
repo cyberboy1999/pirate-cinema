@@ -1,0 +1,15 @@
+pkgname=pirate-cinema
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Local TorrServer media library written in Rust'
+arch=('x86_64')
+url='https://github.com/cyberboy1999/pirate-cinema'
+license=('GPL-3.0-only')
+depends=('mpv' 'gtk3' 'libayatana-appindicator' 'xdotool')
+source=("Pirate-Cinema-${pkgver}-linux-x86_64.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cp -a "$srcdir/opt" "$pkgdir/"
+  cp -a "$srcdir/usr" "$pkgdir/"
+}
