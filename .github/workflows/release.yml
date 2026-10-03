@@ -1,6 +1,7 @@
-name: Build unified release
+name: Build Pirate Cinema release
 
 on:
+  workflow_dispatch:
   push:
     tags: ["v*"]
 
@@ -9,117 +10,79 @@ permissions:
 
 jobs:
   windows:
-    if: ${{ !endsWith(github.ref_name, '-linux') && !endsWith(github.ref_name, '-arch') }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: {version: 11.19.0}
-      - uses: actions/setup-node@v4
-        with: {node-version: 22, cache: pnpm}
-      - name: Restore clean bundled runtimes
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Restore verified runtimes
         shell: pwsh
         run: |
           Invoke-WebRequest 'https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.3.6/pirate-cinema-desktop-0.3.6-x64.nsis.7z' -OutFile runtime.7z
           7z x runtime.7z -obootstrap -y
-          New-Item vendor/mpv,bin -ItemType Directory -Force | Out-Null
+          New-Item vendor/mpv,desktop-rust/vendor/torrserver -ItemType Directory -Force | Out-Null
           Copy-Item bootstrap/resources/mpv/* vendor/mpv -Recurse -Force
-          foreach ($name in @('settings.json','trackers.txt','rutor.ls')) { Copy-Item "bootstrap/resources/torrserver/$name" bin -Force }
-          Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.3/TorrServer-windows-amd64.exe' -OutFile bin/TorrServer-windows-amd64.exe
-          if ((Get-FileHash bin/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne '0EC708B850F2C2DF92F7C6A324FB17558D969F4018BA0F44FAD0B75802D4BD4B') { throw 'TorrServer hash mismatch' }
+          Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.3/TorrServer-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe
+          if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne '0EC708B850F2C2DF92F7C6A324FB17558D969F4018BA0F44FAD0B75802D4BD4B') { throw 'TorrServer hash mismatch' }
           if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
-          Remove-Item bootstrap,runtime.7z -Recurse -Force
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-      - run: pnpm run lint
-      - name: Validate tag version
+      - run: cargo test --manifest-path desktop-rust/Cargo.toml
+      - run: cargo clippy --manifest-path desktop-rust/Cargo.toml --all-targets -- -D warnings
+      - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
+      - name: Build production NSIS installer
         shell: pwsh
         run: |
-          $version=(Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag does not match package version $version" }
-      - run: node node_modules/vinext/dist/cli.js build
-      - run: pnpm exec electron-builder --config electron-builder.yml --win nsis --publish never
-        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
-      - run: pnpm exec electron-builder --config electron-builder-web.yml --win nsis-web --publish never
-        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+          choco install nsis -y --no-progress
+          $version=(Select-String desktop-rust/Cargo.toml -Pattern '^version = "(.+)"$').Matches.Groups[1].Value
+          New-Item stage/mpv,stage/torrserver -ItemType Directory -Force | Out-Null
+          Copy-Item desktop-rust/target/release/pirate-cinema.exe stage/
+          Copy-Item vendor/mpv/* stage/mpv -Recurse
+          Copy-Item desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe stage/torrserver/
+          Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md stage/
+          & "$env:ProgramFiles(x86)\NSIS\makensis.exe" "/DAPP_SOURCE=$pwd\stage" "/DAPP_OUTPUT=$pwd\Pirate-Cinema-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/installer.nsi
+          & "$env:ProgramFiles(x86)\NSIS\makensis.exe" "/DWEB_OUTPUT=$pwd\Pirate-Cinema-Web-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/web-installer.nsi
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
           path: |
-            release/Pirate-Cinema-Setup-*.exe
-            release/Pirate-Cinema-Setup-*.exe.blockmap
-            release/latest.yml
-            release-web/nsis-web/Pirate-Cinema-Web-Setup-*.exe
-            release-web/nsis-web/pirate-cinema-desktop-*-x64.nsis.7z
+            Pirate-Cinema-Setup-*-win-x64.exe
+            Pirate-Cinema-Web-Setup-*-win-x64.exe
 
   linux:
-    if: ${{ !endsWith(github.ref_name, '-linux') && !endsWith(github.ref_name, '-arch') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: {version: 11.19.0}
-      - uses: actions/setup-node@v4
-        with: {node-version: 22, cache: pnpm}
-      - name: Install packagers
-        run: sudo apt-get update && sudo apt-get install -y rpm p7zip-full
-      - name: Restore clean TorrServer runtime
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build and package dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev rpm mpv
+      - name: Restore verified TorrServer
         run: |
-          curl -fL 'https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.4.0/pirate-cinema-desktop-0.4.0-x64.nsis.7z' -o runtime.7z
-          echo 'b624c8ad98957bf06e4815267c09d93ed4d7e94675708f01442410214a69a1db  runtime.7z' | sha256sum -c -
-          7z x runtime.7z -obootstrap -y >/dev/null
-          mkdir -p bin
-          cp bootstrap/resources/torrserver/{settings.json,trackers.txt,rutor.ls} bin/
-          curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.3/TorrServer-linux-amd64' -o bin/TorrServer-linux-amd64
-          echo '8b61aa8e85eb6c5caee3b484160f27d82da28bc6b2f0d6703a8914293824afe0  bin/TorrServer-linux-amd64' | sha256sum -c -
-          chmod 755 bin/TorrServer-linux-amd64 scripts/install-linux.sh
-          rm -rf bootstrap runtime.7z
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-      - run: pnpm run lint
-      - name: Validate tag version
-        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
-      - run: node node_modules/vinext/dist/cli.js build
-      - run: pnpm exec electron-builder --config electron-builder-linux.yml --linux deb rpm --publish never
-      - run: pnpm exec electron-builder --config electron-builder-arch.yml --linux tar.gz --publish never
-      - name: Create Arch PKGBUILD and checksums
+          mkdir -p desktop-rust/vendor/torrserver
+          curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.3/TorrServer-linux-amd64' -o desktop-rust/vendor/torrserver/TorrServer-linux-amd64
+          echo '8b61aa8e85eb6c5caee3b484160f27d82da28bc6b2f0d6703a8914293824afe0  desktop-rust/vendor/torrserver/TorrServer-linux-amd64' | sha256sum -c -
+          chmod 755 desktop-rust/vendor/torrserver/TorrServer-linux-amd64 desktop-rust/packaging/*.sh
+      - run: cargo test --manifest-path desktop-rust/Cargo.toml
+      - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
+      - name: Build Linux packages
         run: |
-          version=$(node -p "require('./package.json').version")
-          archive="release-arch/Pirate-Cinema-$version-arch-x64.tar.gz"
-          mkdir release-arch/verify
-          tar -xzf "$archive" -C release-arch/verify
-          test -n "$(find release-arch/verify -maxdepth 2 -type f -name pirate-cinema -print -quit)"
-          rm -rf release-arch/verify
-          hash=$(sha256sum "$archive" | cut -d' ' -f1)
-          sed -e "s/@VERSION@/$version/g" -e "s/@SHA256@/$hash/g" packaging/arch/PKGBUILD.in > release-arch/PKGBUILD
-          (cd release-linux && sha256sum *.deb *.rpm) > release-arch/SHA256SUMS
-          (cd release-arch && sha256sum "$(basename "$archive")") >> release-arch/SHA256SUMS
-          cp scripts/install-linux.sh release-arch/install-linux.sh
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)
+          mkdir -p release-linux
+          desktop-rust/packaging/build-linux.sh "$version" desktop-rust/target/release/pirate-cinema desktop-rust/vendor/torrserver/TorrServer-linux-amd64 release-linux
+          (cd release-linux && sha256sum *.deb *.rpm *.tar.gz > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: linux-release
-          path: |
-            release-linux/*.deb
-            release-linux/*.rpm
-            release-arch/*.tar.gz
-            release-arch/PKGBUILD
-            release-arch/SHA256SUMS
-            release-arch/install-linux.sh
+          path: release-linux/*
 
   release:
-    if: ${{ !endsWith(github.ref_name, '-linux') && !endsWith(github.ref_name, '-arch') }}
+    if: startsWith(github.ref, 'refs/tags/')
     needs: [windows, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          path: assets
+          path: publish
           merge-multiple: true
-      - name: Publish unified release
-        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
-        run: |
-          version=$(node -p "require('./package.json').version")
-          mkdir publish
-          find assets -type f -exec cp {} publish/ \;
-          gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema $version" --notes "Русский: исправлен запуск приложения с пустой медиатекой — главная страница больше не завершается ошибкой локального сервиса. В сборку входят TorrServer MatriX.144.3, автономный и веб-установщик Windows x64, пакеты Debian/Ubuntu amd64, RPM x86_64 и Arch Linux x86_64. English: fixed startup with an empty media library—the Home page no longer fails with a local-service error. Includes TorrServer MatriX.144.3, Windows x64 Offline/Web Setup, Debian/Ubuntu amd64, RPM x86_64 and Arch Linux x86_64 packages."
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema ${GITHUB_REF_NAME#v}" --notes-file docs/RELEASE_0.6.0.md
