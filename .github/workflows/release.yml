@@ -14,6 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version=(Select-String desktop-rust/Cargo.toml -Pattern '^version = "(.+)"$').Matches.Groups[1].Value
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag does not match Cargo version $version" }
       - name: Restore verified runtimes
         shell: pwsh
         run: |
@@ -51,6 +57,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)" = "$GITHUB_REF_NAME"
       - name: Install build and package dependencies
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev rpm mpv
       - name: Restore verified TorrServer
