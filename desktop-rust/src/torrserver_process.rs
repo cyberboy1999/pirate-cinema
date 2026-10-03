@@ -49,21 +49,11 @@ impl TorrServerProcess {
                     )
                 })?;
         }
-        let mut command = Command::new(executable);
-        command
-            .current_dir(data_dir)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
+        let mut command = launch_command(executable, data_dir);
         let mut child = command
             .spawn()
             .map_err(|error| format!("Не удалось запустить TorrServer: {error}"))?;
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + Duration::from_secs(60);
         while Instant::now() < deadline {
             if probe(endpoint) {
                 if let Err(error) = enable_rutor_search(endpoint, data_dir) {
@@ -80,12 +70,29 @@ impl TorrServerProcess {
         }
         let _ = child.kill();
         let _ = child.wait();
-        Err("TorrServer не ответил за 30 секунд".into())
+        Err("TorrServer не ответил за 60 секунд".into())
     }
 
     pub fn owns_process(&self) -> bool {
         self.child.is_some()
     }
+}
+
+fn launch_command(executable: &Path, data_dir: &Path) -> Command {
+    let mut command = Command::new(executable);
+    command
+        .args(["--ip", "127.0.0.1", "--port", "8090", "--path"])
+        .arg(data_dir)
+        .current_dir(data_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    command
 }
 
 fn enable_rutor_search(endpoint: &str, data_dir: &Path) -> Result<(), String> {
@@ -200,6 +207,26 @@ pub fn default_data_dir() -> Result<PathBuf, String> {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
+
+    #[test]
+    fn bundled_server_receives_explicit_network_and_data_arguments() {
+        let command = launch_command(Path::new("TorrServer"), Path::new("profile/torrserver"));
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arguments,
+            [
+                "--ip",
+                "127.0.0.1",
+                "--port",
+                "8090",
+                "--path",
+                "profile/torrserver"
+            ]
+        );
+    }
 
     #[test]
     fn reuses_running_server_without_starting_or_stopping_it() {

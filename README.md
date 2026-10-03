@@ -2,7 +2,7 @@
 
 **Русский** · [English](#english)
 
-![Главный экран Pirate Cinema 0.6.1](docs/images/pirate-cinema-rust-home.png)
+![Главный экран Pirate Cinema 0.6.2](docs/images/pirate-cinema-rust-home.png)
 
 Pirate Cinema — локальное настольное приложение на Rust для поиска, добавления и просмотра раздач через TorrServer. Видео открывается в MPV, а история каждого файла хранится локально в SQLite.
 
@@ -20,24 +20,24 @@ Pirate Cinema — локальное настольное приложение �
 
 Все пользовательские данные остаются на компьютере. Pirate Cinema обращается к Cinemeta, Wikipedia и TVmaze только за общедоступными названиями, описаниями и изображениями; история просмотра им не передаётся.
 
-## Установка 0.6.1
+## Установка 0.6.2
 
 Готовые пакеты находятся в [последнем релизе](https://github.com/cyberboy1999/pirate-cinema/releases/latest). Все сборки предназначены для 64-битных систем.
 
 ### Windows 10/11
 
-Скачайте автономный `Pirate-Cinema-Setup-0.6.1-win-x64.exe` или небольшой `Pirate-Cinema-Web-Setup-0.6.1-win-x64.exe`. Web-установщик загружает автономный пакет с GitHub, поэтому требует доступ к GitHub на протяжении установки. Установщик обновляет существующую Rust-версию или заменяет Electron 0.5.8, сохраняя пользовательские данные.
+Скачайте автономный `Pirate-Cinema-Setup-0.6.2-win-x64.exe` или небольшой `Pirate-Cinema-Web-Setup-0.6.2-win-x64.exe`. Web-установщик загружает автономный пакет с GitHub, поэтому требует доступ к GitHub на протяжении установки. Установщик обновляет существующую Rust-версию или заменяет Electron 0.5.8, сохраняя пользовательские данные.
 
 ### Debian и Ubuntu
 
 ```sh
-sudo apt install ./Pirate-Cinema-0.6.1-linux-amd64.deb
+sudo apt install ./Pirate-Cinema-0.6.2-linux-amd64.deb
 ```
 
 ### Fedora, RHEL и другие RPM-системы
 
 ```sh
-sudo dnf install ./Pirate-Cinema-0.6.1-linux-x86_64.rpm
+sudo dnf install ./Pirate-Cinema-0.6.2-linux-x86_64.rpm
 ```
 
 ### Arch Linux
@@ -81,24 +81,24 @@ Pirate Cinema is a local Rust desktop application for searching, adding, and str
 
 Playback history stays on the computer. Cinemeta, Wikipedia, and TVmaze receive only public metadata queries, never the local history database.
 
-### Installing 0.6.1
+### Installing 0.6.2
 
 Download packages from the [latest release](https://github.com/cyberboy1999/pirate-cinema/releases/latest). Builds target 64-bit systems.
 
 #### Windows 10/11
 
-Run the offline `Pirate-Cinema-Setup-0.6.1-win-x64.exe` or the small `Pirate-Cinema-Web-Setup-0.6.1-win-x64.exe`. The web installer downloads the offline package from GitHub and therefore needs GitHub access during installation. It updates an existing Rust installation or replaces Electron 0.5.8 while preserving user data.
+Run the offline `Pirate-Cinema-Setup-0.6.2-win-x64.exe` or the small `Pirate-Cinema-Web-Setup-0.6.2-win-x64.exe`. The web installer downloads the offline package from GitHub and therefore needs GitHub access during installation. It updates an existing Rust installation or replaces Electron 0.5.8 while preserving user data.
 
 #### Debian and Ubuntu
 
 ```sh
-sudo apt install ./Pirate-Cinema-0.6.1-linux-amd64.deb
+sudo apt install ./Pirate-Cinema-0.6.2-linux-amd64.deb
 ```
 
 #### Fedora, RHEL, and other RPM systems
 
 ```sh
-sudo dnf install ./Pirate-Cinema-0.6.1-linux-x86_64.rpm
+sudo dnf install ./Pirate-Cinema-0.6.2-linux-x86_64.rpm
 ```
 
 #### Arch Linux

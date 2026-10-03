@@ -24,6 +24,7 @@ static STARTUP_MAGNET: OnceLock<String> = OnceLock::new();
 static INITIAL_PREFERENCES: OnceLock<Preferences> = OnceLock::new();
 static TORRSERVER_PROCESS: OnceLock<Mutex<Option<TorrServerProcess>>> = OnceLock::new();
 static STARTUP_MIGRATION_ERROR: OnceLock<String> = OnceLock::new();
+static STARTUP_TORRSERVER_ERROR: OnceLock<String> = OnceLock::new();
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const APP_ICON: &[u8] = include_bytes!("../../../public/favicon.png");
 const HOME_ICON: &[u8] = include_bytes!(
@@ -76,6 +77,8 @@ button { color: inherit; cursor: pointer; }
 .launch-button{background:#fff;color:#080808}
 .status { justify-self:end; display:flex;align-items:center;gap:8px;white-space: nowrap; color: #73d99a; font-size: 14px; }
 .status img{width:21px;height:21px;object-fit:contain;filter:invert(78%) sepia(29%) saturate(725%) hue-rotate(91deg);}
+.status.offline{color:#ef6464}
+.status.offline img{filter:invert(48%) sepia(92%) saturate(1088%) hue-rotate(323deg) brightness(100%)}
 .page { margin-top: 48px; }
 .eyebrow { color: #747474; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
 h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
@@ -220,12 +223,17 @@ fn main() {
         std::env::var("TORRSERVER_URL").unwrap_or_else(|_| preferences.torrserver_url.clone());
     preferences.torrserver_url = endpoint.clone();
     let _ = INITIAL_PREFERENCES.set(preferences);
-    let owned_server = bundled_torrserver()
+    let owned_server = match bundled_torrserver()
         .and_then(|executable| default_data_dir().map(|data_dir| (executable, data_dir)))
         .and_then(|(executable, data_dir)| {
             TorrServerProcess::connect_or_start(&endpoint, &executable, &data_dir)
-        })
-        .ok();
+        }) {
+        Ok(process) => Some(process),
+        Err(error) => {
+            let _ = STARTUP_TORRSERVER_ERROR.set(error);
+            None
+        }
+    };
     let _ = TORRSERVER_PROCESS.set(Mutex::new(owned_server));
     let window_icon =
         dioxus::desktop::icon_from_memory::<dioxus::desktop::tao::window::Icon>(APP_ICON).ok();
@@ -810,7 +818,7 @@ fn App() -> Element {
                         }
                         button { r#type: "submit", disabled: busy(), if busy() { "…" } else { {language().pick("Найти", "Find")} } }
                     }
-                    div { class: "status",
+                    div { class: if server.read().version.is_empty() { "status offline" } else { "status" },
                         img { src: "{online_icon}", alt: "" }
                         if server.read().version.is_empty() { {language().pick("TorrServer офлайн", "TorrServer offline")} } else { "TorrServer · {server.read().version}" }
                     }
@@ -1711,7 +1719,7 @@ fn refresh_server(
             Ok(Err(error)) => ServerState {
                 version: String::new(),
                 torrents: Vec::new(),
-                error,
+                error: STARTUP_TORRSERVER_ERROR.get().cloned().unwrap_or(error),
             },
             Err(error) => ServerState {
                 version: String::new(),
