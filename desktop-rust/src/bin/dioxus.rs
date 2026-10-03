@@ -1240,6 +1240,7 @@ fn Detail(
     seasons.sort_unstable();
     seasons.dedup();
     let files_empty = files.is_empty();
+    let has_next_file = files.len() > 1;
     let visible_files = files
         .into_iter()
         .filter(|item| {
@@ -1287,7 +1288,7 @@ fn Detail(
                 }
             }
             h2 { {language.pick("Выберите файл", "Choose a file")} }
-            if media_type.as_deref() == Some("series") { label { class: "auto-next", input { r#type: "checkbox", checked: auto_next(), onchange: move |event| auto_next.set(event.checked()) } {language.pick(" Автоматически открыть следующий файл после окончания", " Play the next file automatically after completion")} } }
+            if has_next_file { label { class: "auto-next", input { r#type: "checkbox", checked: auto_next(), onchange: move |event| auto_next.set(event.checked()) } {language.pick(" Автопереход к следующей серии", " Play the next episode automatically")} } }
             if media_type.as_deref() == Some("series") {
                 if let Some(next) = visible_files.iter().find(|item| !item.viewed) {
                     button { class: "primary", style: "min-height:42px; margin-bottom:16px", onclick: { let file = next.file.clone(); move |_| on_play.call((file.clone(), true, auto_next())) }, if language == Language::Russian { "Следующая непросмотренная: {next.file.name}" } else { "Next unwatched: {next.file.name}" } }

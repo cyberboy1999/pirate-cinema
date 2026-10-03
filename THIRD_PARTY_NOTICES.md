@@ -1,23 +1,23 @@
 # Third-party notices
 
-Pirate Cinema 0.3.2 through 0.5.6 includes and invokes third-party software. The notices
+Pirate Cinema 0.3.2 through 0.6.0 includes and invokes third-party software. The notices
 below identify binaries distributed in the Windows and Linux installers; each
 component remains governed by its own license.
 
 ## TorrServer
 
-- Version: MatriX.144.3
+- Version: MatriX.144
 - License: GNU General Public License v3.0
-- Project and source: https://github.com/YouROK/TorrServer/tree/MatriX.144.3
-- License text: https://github.com/YouROK/TorrServer/blob/MatriX.144.3/LICENSE
+- Project and source: https://github.com/YouROK/TorrServer/tree/MatriX.144
+- License text: https://github.com/YouROK/TorrServer/blob/MatriX.144/LICENSE
 - Distributed file: `TorrServer-windows-amd64.exe`
-- SHA-256: `0ec708b850f2c2df92f7c6a324fb17558d969f4018ba0f44fad0b75802d4bd4b`
+- SHA-256: `3b68ba9409c009628bbf747a14c13f2da4254389264a0b3903e581e897492569`
 
-The Linux 0.5.5 and 0.5.6 packages contain the official `TorrServer-linux-amd64` binary
-from MatriX.144.3 under the same GPL-3.0 license.
+The Linux packages contain the official `TorrServer-linux-amd64` binary from the
+same release under GPL-3.0.
 
-- Source: https://github.com/YouROK/TorrServer/tree/MatriX.144.3
-- SHA-256: `8b61aa8e85eb6c5caee3b484160f27d82da28bc6b2f0d6703a8914293824afe0`
+- Source: https://github.com/YouROK/TorrServer/tree/MatriX.144
+- SHA-256: `e93e3c3b85932eed4c98b61785fabe6379b1ee10d91998729cbdea3384af5f9d`
 
 ## mpv
 

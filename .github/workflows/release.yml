@@ -27,8 +27,8 @@ jobs:
           7z x runtime.7z -obootstrap -y
           New-Item vendor/mpv,desktop-rust/vendor/torrserver -ItemType Directory -Force | Out-Null
           Copy-Item bootstrap/resources/mpv/* vendor/mpv -Recurse -Force
-          Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.3/TorrServer-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe
-          if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne '0EC708B850F2C2DF92F7C6A324FB17558D969F4018BA0F44FAD0B75802D4BD4B') { throw 'TorrServer hash mismatch' }
+          Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe
+          if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne '3B68BA9409C009628BBF747A14C13F2DA4254389264A0B3903E581E897492569') { throw 'TorrServer hash mismatch' }
           if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
       - run: cargo test --manifest-path desktop-rust/Cargo.toml
       - run: cargo clippy --manifest-path desktop-rust/Cargo.toml --all-targets -- -D warnings
@@ -65,8 +65,8 @@ jobs:
       - name: Restore verified TorrServer
         run: |
           mkdir -p desktop-rust/vendor/torrserver
-          curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144.3/TorrServer-linux-amd64' -o desktop-rust/vendor/torrserver/TorrServer-linux-amd64
-          echo '8b61aa8e85eb6c5caee3b484160f27d82da28bc6b2f0d6703a8914293824afe0  desktop-rust/vendor/torrserver/TorrServer-linux-amd64' | sha256sum -c -
+          curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-linux-amd64' -o desktop-rust/vendor/torrserver/TorrServer-linux-amd64
+          echo 'e93e3c3b85932eed4c98b61785fabe6379b1ee10d91998729cbdea3384af5f9d  desktop-rust/vendor/torrserver/TorrServer-linux-amd64' | sha256sum -c -
           chmod 755 desktop-rust/vendor/torrserver/TorrServer-linux-amd64 desktop-rust/packaging/*.sh
       - run: cargo test --manifest-path desktop-rust/Cargo.toml
       - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
