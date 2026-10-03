@@ -9,14 +9,14 @@ Unicode true
   !error "Pass /DAPP_ICON=... with the application icon"
 !endif
 
-Name "Pirate Cinema 0.6.2 Web Installer"
+Name "Pirate Cinema 0.6.3 Web Installer"
 OutFile "${WEB_OUTPUT}"
 RequestExecutionLevel user
 Icon "${APP_ICON}"
-VIProductVersion "0.6.2.0"
+VIProductVersion "0.6.3.0"
 VIAddVersionKey "ProductName" "Pirate Cinema Web Installer"
 VIAddVersionKey "FileDescription" "Pirate Cinema web installer"
-VIAddVersionKey "FileVersion" "0.6.2.0"
+VIAddVersionKey "FileVersion" "0.6.3.0"
 VIAddVersionKey "LegalCopyright" "Pirate Cinema contributors"
 ShowInstDetails nevershow
 
@@ -26,9 +26,9 @@ ShowInstDetails nevershow
 !insertmacro MUI_LANGUAGE "English"
 
 Section "Pirate Cinema"
-  StrCpy $0 "$TEMP\Pirate-Cinema-Setup-0.6.2-win-x64.exe"
+  StrCpy $0 "$TEMP\Pirate-Cinema-Setup-0.6.3-win-x64.exe"
   Delete "$0"
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ProgressPreference=''SilentlyContinue''; Invoke-WebRequest -UseBasicParsing -Uri ''https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.6.2/Pirate-Cinema-Setup-0.6.2-win-x64.exe'' -OutFile ''$0''"'
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ProgressPreference=''SilentlyContinue''; Invoke-WebRequest -UseBasicParsing -Uri ''https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.6.3/Pirate-Cinema-Setup-0.6.3-win-x64.exe'' -OutFile ''$0''"'
   Pop $1
   Pop $2
   ${If} $1 != 0

@@ -20,13 +20,15 @@ Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source i
 
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
-## Rust desktop 0.6.2
+## Rust desktop 0.6.3
 
 `desktop-rust/` is the production desktop application. Dioxus provides the Rust UI; TorrServer ownership, MPV IPC, SQLite history, metadata, backup/restore, updates and tray integration are implemented in Rust. The release replaces Electron program files and performs a one-time, non-destructive import of the Electron 0.5.8 profile. Windows ships offline and web NSIS installers; Linux ships DEB, RPM, a portable archive/install script and an Arch PKGBUILD. The retired egui application is not built or packaged.
 
 The auto-next switch is available for every multi-file torrent, regardless of its saved movie/series classification.
 
 The file-card `Запустить` action uses a solid white treatment so it remains distinct from metadata and secondary controls.
+
+Release 0.6.3 fixes the file-card CSS cascade: the specific launch-button rule follows the generic file-button rule, so both its normal and hover states remain visibly white.
 
 The bundled TorrServer starts with explicit loopback IP, port 8090 and profile path arguments, so its database location no longer depends on inherited process state. Startup failures retain their concrete error in the UI, and the offline status uses a red indicator.
 

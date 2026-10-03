@@ -74,7 +74,6 @@ button { color: inherit; cursor: pointer; }
 .search input { min-width: 0; flex: 1; border: 0; outline: 0; color: white; background: transparent; }
 .search button, .primary { border: 0; border-radius: 9px; padding: 0 18px; background: #ededed; color: #080808; font-weight: 700; transition:background .15s,transform .15s; }
 .search button:hover,.primary:hover{background:#fff}.search button:active,.primary:active{transform:translateY(1px)}
-.launch-button{background:#fff;color:#080808}
 .status { justify-self:end; display:flex;align-items:center;gap:8px;white-space: nowrap; color: #73d99a; font-size: 14px; }
 .status img{width:21px;height:21px;object-fit:contain;filter:invert(78%) sepia(29%) saturate(725%) hue-rotate(91deg);}
 .status.offline{color:#ef6464}
@@ -107,6 +106,8 @@ h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
 .result span, .result small { color: #888; }
 .secondary, .result button, .file button { min-height: 42px; border: 1px solid #303030; border-radius: 9px; padding: 0 16px; background: #191919; font-weight:600; transition:background .15s,border-color .15s; }
 .secondary:hover,.result button:hover,.file button:hover{background:#242424;border-color:#555}
+.file button.launch-button{background:#fff;color:#080808;border-color:#fff}
+.file button.launch-button:hover{background:#e5e5e5;border-color:#e5e5e5}
 button:disabled{cursor:not-allowed;opacity:.48;transform:none!important}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #ddd;outline-offset:2px}
 .detail-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 28px; }
