@@ -73,6 +73,7 @@ button { color: inherit; cursor: pointer; }
 .search input { min-width: 0; flex: 1; border: 0; outline: 0; color: white; background: transparent; }
 .search button, .primary { border: 0; border-radius: 9px; padding: 0 18px; background: #ededed; color: #080808; font-weight: 700; transition:background .15s,transform .15s; }
 .search button:hover,.primary:hover{background:#fff}.search button:active,.primary:active{transform:translateY(1px)}
+.launch-button{background:#fff;color:#080808}
 .status { justify-self:end; display:flex;align-items:center;gap:8px;white-space: nowrap; color: #73d99a; font-size: 14px; }
 .status img{width:21px;height:21px;object-fit:contain;filter:invert(78%) sepia(29%) saturate(725%) hue-rotate(91deg);}
 .page { margin-top: 48px; }
@@ -1314,7 +1315,7 @@ fn Detail(
                     for item in visible_files {
                         article { class: "file",
                             div { strong { title: "{item.file.path}", "{item.file.name}" } small { if item.position > 0 { if language == Language::Russian { "Сохранено: {clock(item.position)} / {clock(item.duration)}" } else { "Saved: {clock(item.position)} / {clock(item.duration)}" } } else if item.viewed { {language.pick("Просмотрено", "Viewed")} } else { {language.pick("Не запускался", "Not started")} } } }
-                            button { class: "primary", onclick: { let file = item.file.clone(); move |_| on_play.call((file.clone(), true, auto_next())) }, {language.pick("Запустить", "Play")} }
+                            button { class: "primary launch-button", onclick: { let file = item.file.clone(); move |_| on_play.call((file.clone(), true, auto_next())) }, {language.pick("Запустить", "Play")} }
                         }
                     }
                 }

@@ -20,11 +20,13 @@ Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source i
 
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
-## Rust desktop 0.6.0
+## Rust desktop 0.6.1
 
 `desktop-rust/` is the production desktop application. Dioxus provides the Rust UI; TorrServer ownership, MPV IPC, SQLite history, metadata, backup/restore, updates and tray integration are implemented in Rust. The release replaces Electron program files and performs a one-time, non-destructive import of the Electron 0.5.8 profile. Windows ships offline and web NSIS installers; Linux ships DEB, RPM, a portable archive/install script and an Arch PKGBUILD. The retired egui application is not built or packaged.
 
 The auto-next switch is available for every multi-file torrent, regardless of its saved movie/series classification.
+
+The file-card `Запустить` action uses a solid white treatment so it remains distinct from metadata and secondary controls.
 
 No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.
 
