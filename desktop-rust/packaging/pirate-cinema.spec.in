@@ -3,7 +3,7 @@ Version: @VERSION@
 Release: 1%{?dist}
 Summary: Local TorrServer media library written in Rust
 License: GPL-3.0-only
-Requires: mpv, gtk3, libayatana-appindicator, xdotool
+Requires: mpv, gtk3, webkit2gtk4.1, libayatana-appindicator, xdotool
 Source0: pirate-cinema.tar.gz
 
 %description

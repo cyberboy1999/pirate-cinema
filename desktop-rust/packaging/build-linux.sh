@@ -24,7 +24,7 @@ Version: $version
 Section: video
 Priority: optional
 Architecture: amd64
-Depends: mpv, libgtk-3-0, libayatana-appindicator3-1, libxdo3
+Depends: mpv, libgtk-3-0, libwebkit2gtk-4.1-0, libayatana-appindicator3-1, libxdo3
 Maintainer: Pirate Cinema contributors
 Description: Local TorrServer media library written in Rust
 EOF

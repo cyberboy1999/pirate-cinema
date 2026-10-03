@@ -224,18 +224,26 @@ fn main() {
         std::env::var("TORRSERVER_URL").unwrap_or_else(|_| preferences.torrserver_url.clone());
     preferences.torrserver_url = endpoint.clone();
     let _ = INITIAL_PREFERENCES.set(preferences);
-    let owned_server = match bundled_torrserver()
-        .and_then(|executable| default_data_dir().map(|data_dir| (executable, data_dir)))
-        .and_then(|(executable, data_dir)| {
-            TorrServerProcess::connect_or_start(&endpoint, &executable, &data_dir)
-        }) {
-        Ok(process) => Some(process),
-        Err(error) => {
-            let _ = STARTUP_TORRSERVER_ERROR.set(error);
-            None
+    let _ = TORRSERVER_PROCESS.set(Mutex::new(None));
+    std::thread::spawn(move || {
+        let result = bundled_torrserver()
+            .and_then(|executable| default_data_dir().map(|data_dir| (executable, data_dir)))
+            .and_then(|(executable, data_dir)| {
+                TorrServerProcess::connect_or_start(&endpoint, &executable, &data_dir)
+            });
+        match result {
+            Ok(process) => {
+                if let Some(state) = TORRSERVER_PROCESS.get() {
+                    if let Ok(mut owned) = state.lock() {
+                        *owned = Some(process);
+                    }
+                }
+            }
+            Err(error) => {
+                let _ = STARTUP_TORRSERVER_ERROR.set(error);
+            }
         }
-    };
-    let _ = TORRSERVER_PROCESS.set(Mutex::new(owned_server));
+    });
     let window_icon =
         dioxus::desktop::icon_from_memory::<dioxus::desktop::tao::window::Icon>(APP_ICON).ok();
     dioxus::LaunchBuilder::desktop()
@@ -364,8 +372,17 @@ fn App() -> Element {
         }
     });
 
+    use_future(move || async move {
+        for _ in 0..20 {
+            if !server.read().version.is_empty() {
+                break;
+            }
+            refresh_server(endpoint(), busy, server, cards, recent);
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+    });
+
     use_effect(move || {
-        refresh_server(endpoint(), busy, server, cards, recent);
         if let Some(cache) = popular_cache_dir() {
             let saved = catalog::cached_popular(&cache);
             if !saved.is_empty() {
