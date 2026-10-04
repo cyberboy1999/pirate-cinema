@@ -36,6 +36,8 @@ The release workflow compiles the application natively in a fresh Arch Linux con
 
 Linux CI also creates one x86_64 AppImage with Pirate Cinema, TorrServer and the required `libxdo.so.3` compatibility library using checksum-verified linuxdeploy and appimagetool binaries. It deliberately uses the distribution's MPV and complete GTK/WebKitGTK 4.1 stack because WebKit helper paths and GLib symbols differ between Debian and Arch. The same Arch smoke job must keep both the native Arch build and AppImage processes alive for twenty seconds. DEB, RPM and PKGBUILD remain available until the AppImage has passed real desktop testing.
 
+AppImage runtime dependencies are documented beside the Arch installation instructions. Failure to initialize the optional Linux tray must not panic the Dioxus tree; the window remains usable and closes normally when no tray provider is available.
+
 The bundled TorrServer starts with explicit loopback IP, port 8090 and profile path arguments, so its database location no longer depends on inherited process state. Startup failures retain their concrete error in the UI, and the offline status uses a red indicator.
 
 No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.

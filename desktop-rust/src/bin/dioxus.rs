@@ -278,22 +278,18 @@ fn App() -> Element {
         let menu = tray_icon::menu::Menu::new();
         let open = tray_icon::menu::MenuItem::with_id("open", "Открыть Pirate Cinema", true, None);
         let exit = tray_icon::menu::MenuItem::with_id("exit", "Выход", true, None);
-        menu.append_items(&[&open, &exit])
-            .expect("tray menu must be available");
-        let decoded = image::load_from_memory(APP_ICON)
-            .expect("bundled tray icon must decode")
-            .into_rgba8();
+        menu.append_items(&[&open, &exit]).ok()?;
+        let decoded = image::load_from_memory(APP_ICON).ok()?.into_rgba8();
         let (width, height) = decoded.dimensions();
-        let icon = tray_icon::Icon::from_rgba(decoded.into_raw(), width, height)
-            .expect("bundled tray icon must be valid");
-        TrayState(
+        let icon = tray_icon::Icon::from_rgba(decoded.into_raw(), width, height).ok()?;
+        Some(TrayState(
             tray_icon::TrayIconBuilder::new()
                 .with_menu(Box::new(menu))
                 .with_tooltip("Pirate Cinema")
                 .with_icon(icon)
                 .build()
-                .expect("tray icon must be available"),
-        )
+                .ok()?,
+        ))
     });
     use_future({
         let desktop = desktop.clone();
@@ -301,6 +297,10 @@ fn App() -> Element {
             let desktop = desktop.clone();
             let tray = tray.clone();
             async move {
+                let Some(tray) = tray.as_ref() else {
+                    desktop.set_close_behavior(dioxus::desktop::WindowCloseBehaviour::WindowCloses);
+                    return;
+                };
                 let _keep_alive = &tray.0;
                 loop {
                     while let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {

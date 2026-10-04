@@ -44,6 +44,13 @@ sudo dnf install ./Pirate-Cinema-*-linux-x86_64.rpm
 
 Скачайте `PKGBUILD` и архив из одного релиза, затем выполните `makepkg -si`. MPV и системные библиотеки устанавливаются пакетным менеджером.
 
+Для AppImage установите системные компоненты, затем разрешите запуск файла:
+
+```sh
+sudo pacman -S --needed mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
+chmod +x Pirate-Cinema-*-x86_64.AppImage
+```
+
 ## Данные и миграция
 
 Основной профиль Rust хранится в `%LOCALAPPDATA%\Pirate Cinema` на Windows и в `$XDG_DATA_HOME/Pirate Cinema` на Linux. При первом запуске выполняется одноразовый импорт из прежней Electron-версии и предыдущего Rust-прототипа. Импорт добавляет только отсутствующие записи и не изменяет исходные базы.
@@ -104,6 +111,13 @@ sudo dnf install ./Pirate-Cinema-*-linux-x86_64.rpm
 #### Arch Linux
 
 Download the `PKGBUILD` and source archive from the same release, then run `makepkg -si`.
+
+For the AppImage, install its system runtime and make the file executable:
+
+```sh
+sudo pacman -S --needed mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
+chmod +x Pirate-Cinema-*-x86_64.AppImage
+```
 
 ### Data migration
 
