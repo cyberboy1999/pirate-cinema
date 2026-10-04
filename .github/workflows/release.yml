@@ -133,4 +133,4 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema ${GITHUB_REF_NAME#v} — Windows Fix" --notes-file docs/RELEASE_0.6.8.md
+        run: gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema ${GITHUB_REF_NAME#v}" --notes-file docs/RELEASE_0.7.0.md

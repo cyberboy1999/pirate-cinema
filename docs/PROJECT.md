@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Latest stable release: 0.6.8. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest stable release: 0.6.8. The next completed feature release is 0.7.0. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -20,7 +20,7 @@ Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source i
 
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
-## Rust desktop 0.6.8
+## Rust desktop
 
 `desktop-rust/` is the production desktop application. Dioxus provides the Rust UI; TorrServer ownership, MPV IPC, SQLite history, metadata, backup/restore, updates and tray integration are implemented in Rust. The release replaces Electron program files and performs a one-time, non-destructive import of the Electron 0.5.8 profile. Windows ships one offline NSIS installer; Linux ships one x86_64 AppImage. The retired egui application is not built or packaged.
 
@@ -39,6 +39,10 @@ Linux release packaging pins appimagetool 1.9.1 and verifies its published SHA-2
 Newly added torrents are classified locally as a movie or series from their title and real TorrServer video-file list, then immediately enter the existing metadata/poster pipeline. Mixed releases expose movie/episode grouping plus season and episode selectors; files retain their original TorrServer IDs and are ordered by group, season, episode and path.
 
 Series navigation treats `S00`, OVA and named specials as a real Specials group instead of the all-seasons sentinel. Playback performs the existing bounded TorrServer stream probe before starting MPV, and startup repairs only library cards missing metadata or posters in a non-blocking background pass.
+
+The series screen remembers the last season, episode and auto-next choice per torrent, displays watched/total progress for every season and keeps movies, normal episodes and specials in stable groups. MPV restores both audio and subtitle tracks. Library cards include a direct Continue action that selects the unfinished or next unviewed file without opening the detail page.
+
+On Windows, bundled MPV can render into a native child area inside Pirate Cinema; the setting can switch back to the ordinary separate MPV window, and failure to create the native area falls back automatically. Linux keeps the separate system MPV window. Both modes preserve the same IPC history and auto-next behavior.
 
 Release 0.6.3 fixes the file-card CSS cascade: the specific launch-button rule follows the generic file-button rule, so both its normal and hover states remain visibly white.
 
