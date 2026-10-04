@@ -32,7 +32,7 @@ Release 0.6.3 fixes the file-card CSS cascade: the specific launch-button rule f
 
 Release 0.6.4 no longer blocks creation of the desktop window while bundled TorrServer starts. The UI opens immediately and retries the local service in the background for up to one minute. Arch/CachyOS packaging now declares the required `webkit2gtk-4.1` runtime; DEB and RPM metadata declare their equivalent WebKitGTK runtime packages.
 
-The release workflow smoke-tests the exact Linux archive in a fresh Arch Linux container. It installs the declared runtime packages, rejects unresolved ELF dependencies, and requires the Dioxus process to remain alive for twenty seconds under DBus and Xvfb before any tagged release can be published.
+The release workflow compiles the application natively in a fresh Arch Linux container, rejects unresolved ELF dependencies, and requires the Dioxus process to remain alive for twenty seconds under DBus and Xvfb before any tagged release can be published. This prevents Ubuntu-linked ABI requirements such as `libxdo.so.3` from being repackaged as an Arch build where only `libxdo.so.4` is available.
 
 Linux CI also creates one x86_64 AppImage with bundled Pirate Cinema, TorrServer and MPV executables using pinned, checksum-verified linuxdeploy tooling. The same Arch smoke job must keep both the extracted archive and AppImage processes alive for twenty seconds. DEB, RPM and PKGBUILD remain available until the AppImage has passed real desktop testing.
 

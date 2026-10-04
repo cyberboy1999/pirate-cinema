@@ -96,21 +96,22 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: linux-release
           path: release-linux
       - name: Install Arch runtime dependencies
-        run: pacman -Syu --noconfirm mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool xorg-server-xvfb dbus
+        run: pacman -Syu --noconfirm base-devel rustup mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool xorg-server-xvfb dbus
       - name: Smoke-test the packaged application
         shell: bash
         run: |
-          mkdir package profile
-          tar -xzf release-linux/Pirate-Cinema-*-linux-x86_64.tar.gz -C package
-          ldd package/opt/pirate-cinema/pirate-cinema | tee ldd.txt
+          rustup default stable
+          cargo build --release --locked --manifest-path desktop-rust/Cargo.toml --bin pirate-cinema
+          ldd desktop-rust/target/release/pirate-cinema | tee ldd.txt
           ! grep -q 'not found' ldd.txt
           set +e
-          XDG_DATA_HOME="$PWD/profile" dbus-run-session -- xvfb-run -a timeout 20s package/opt/pirate-cinema/pirate-cinema
+          XDG_DATA_HOME="$PWD/profile-native" dbus-run-session -- xvfb-run -a timeout 20s desktop-rust/target/release/pirate-cinema
           status=$?
           set -e
           test "$status" -eq 124
