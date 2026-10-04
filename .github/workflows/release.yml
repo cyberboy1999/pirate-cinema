@@ -3,6 +3,7 @@ name: Build Pirate Cinema release
 on:
   workflow_dispatch:
   push:
+    branches: ["codex/rust-0.6.0-release"]
     tags: ["v*"]
 
 permissions:
@@ -62,13 +63,20 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)" = "$GITHUB_REF_NAME"
       - name: Install build and package dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev rpm mpv
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libfuse2 file rpm mpv
       - name: Restore verified TorrServer
         run: |
           mkdir -p desktop-rust/vendor/torrserver
           curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-linux-amd64' -o desktop-rust/vendor/torrserver/TorrServer-linux-amd64
           echo 'e93e3c3b85932eed4c98b61785fabe6379b1ee10d91998729cbdea3384af5f9d  desktop-rust/vendor/torrserver/TorrServer-linux-amd64' | sha256sum -c -
           chmod 755 desktop-rust/vendor/torrserver/TorrServer-linux-amd64 desktop-rust/packaging/*.sh
+      - name: Restore pinned AppImage tools
+        run: |
+          curl -fL 'https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage' -o linuxdeploy-x86_64.AppImage
+          echo 'c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  linuxdeploy-x86_64.AppImage' | sha256sum -c -
+          curl -fL 'https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/7a3fbc31a9e5075073ff8790f26effbac5f84453/linuxdeploy-plugin-gtk.sh' -o linuxdeploy-plugin-gtk.sh
+          echo 'b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171  linuxdeploy-plugin-gtk.sh' | sha256sum -c -
+          chmod 755 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
       - run: cargo test --manifest-path desktop-rust/Cargo.toml
       - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
       - name: Build Linux packages
@@ -76,15 +84,46 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)
           mkdir -p release-linux
           desktop-rust/packaging/build-linux.sh "$version" desktop-rust/target/release/pirate-cinema desktop-rust/vendor/torrserver/TorrServer-linux-amd64 release-linux
-          (cd release-linux && sha256sum *.deb *.rpm *.tar.gz > SHA256SUMS)
+          desktop-rust/packaging/build-appimage.sh "$version" desktop-rust/target/release/pirate-cinema desktop-rust/vendor/torrserver/TorrServer-linux-amd64 release-linux "$PWD/linuxdeploy-x86_64.AppImage"
+          (cd release-linux && sha256sum *.AppImage *.deb *.rpm *.tar.gz > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: linux-release
           path: release-linux/*
 
+  arch-smoke:
+    needs: linux
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-release
+          path: release-linux
+      - name: Install Arch runtime dependencies
+        run: pacman -Syu --noconfirm mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool xorg-server-xvfb dbus
+      - name: Smoke-test the packaged application
+        shell: bash
+        run: |
+          mkdir package profile
+          tar -xzf release-linux/Pirate-Cinema-*-linux-x86_64.tar.gz -C package
+          ldd package/opt/pirate-cinema/pirate-cinema | tee ldd.txt
+          ! grep -q 'not found' ldd.txt
+          set +e
+          XDG_DATA_HOME="$PWD/profile" dbus-run-session -- xvfb-run -a timeout 20s package/opt/pirate-cinema/pirate-cinema
+          status=$?
+          set -e
+          test "$status" -eq 124
+          chmod 755 release-linux/Pirate-Cinema-*-x86_64.AppImage
+          set +e
+          XDG_DATA_HOME="$PWD/profile-appimage" dbus-run-session -- xvfb-run -a timeout 20s release-linux/Pirate-Cinema-*-x86_64.AppImage --appimage-extract-and-run
+          status=$?
+          set -e
+          test "$status" -eq 124
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [windows, linux]
+    needs: [windows, linux, arch-smoke]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

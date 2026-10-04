@@ -403,6 +403,14 @@ pub fn bundled_executable() -> Result<PathBuf, String> {
     }
     #[cfg(not(windows))]
     {
+        let beside_app = std::env::current_exe()
+            .map_err(|error| error.to_string())?
+            .parent()
+            .ok_or("Не удалось определить папку приложения")?
+            .join("mpv");
+        if beside_app.is_file() {
+            return Ok(beside_app);
+        }
         for path in ["/usr/bin/mpv", "/usr/local/bin/mpv"] {
             if Path::new(path).is_file() {
                 return Ok(PathBuf::from(path));

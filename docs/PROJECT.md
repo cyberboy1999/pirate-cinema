@@ -32,6 +32,10 @@ Release 0.6.3 fixes the file-card CSS cascade: the specific launch-button rule f
 
 Release 0.6.4 no longer blocks creation of the desktop window while bundled TorrServer starts. The UI opens immediately and retries the local service in the background for up to one minute. Arch/CachyOS packaging now declares the required `webkit2gtk-4.1` runtime; DEB and RPM metadata declare their equivalent WebKitGTK runtime packages.
 
+The release workflow smoke-tests the exact Linux archive in a fresh Arch Linux container. It installs the declared runtime packages, rejects unresolved ELF dependencies, and requires the Dioxus process to remain alive for twenty seconds under DBus and Xvfb before any tagged release can be published.
+
+Linux CI also creates one x86_64 AppImage with bundled Pirate Cinema, TorrServer and MPV executables using pinned, checksum-verified linuxdeploy tooling. The same Arch smoke job must keep both the extracted archive and AppImage processes alive for twenty seconds. DEB, RPM and PKGBUILD remain available until the AppImage has passed real desktop testing.
+
 The bundled TorrServer starts with explicit loopback IP, port 8090 and profile path arguments, so its database location no longer depends on inherited process state. Startup failures retain their concrete error in the UI, and the offline status uses a red indicator.
 
 No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.
