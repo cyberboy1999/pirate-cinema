@@ -34,7 +34,7 @@ Release 0.6.4 no longer blocks creation of the desktop window while bundled Torr
 
 The release workflow compiles the application natively in a fresh Arch Linux container, rejects unresolved ELF dependencies, and requires the Dioxus process to remain alive for twenty seconds under DBus and Xvfb before any tagged release can be published. This prevents Ubuntu-linked ABI requirements such as `libxdo.so.3` from being repackaged as an Arch build where only `libxdo.so.4` is available.
 
-Linux CI also creates one x86_64 AppImage with bundled Pirate Cinema, TorrServer and MPV executables using pinned, checksum-verified linuxdeploy tooling. The same Arch smoke job must keep both the extracted archive and AppImage processes alive for twenty seconds. DEB, RPM and PKGBUILD remain available until the AppImage has passed real desktop testing.
+Linux CI also creates one x86_64 AppImage with bundled Pirate Cinema, TorrServer and MPV executables using pinned, checksum-verified linuxdeploy tooling. It deliberately uses the distribution's WebKitGTK 4.1 stack because WebKit helper paths are compiled differently on Debian and Arch; this avoids shipping an Ubuntu-only helper path while still bundling the `libxdo` ABI that broke the old Arch package. The same Arch smoke job must keep both the native Arch build and AppImage processes alive for twenty seconds. DEB, RPM and PKGBUILD remain available until the AppImage has passed real desktop testing.
 
 The bundled TorrServer starts with explicit loopback IP, port 8090 and profile path arguments, so its database location no longer depends on inherited process state. Startup failures retain their concrete error in the UI, and the offline status uses a red indicator.
 

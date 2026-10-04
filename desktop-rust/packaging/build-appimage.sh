@@ -19,12 +19,25 @@ install -m644 "$root/../public/favicon.png" "$appdir/usr/share/icons/hicolor/256
 
 APPIMAGE_EXTRACT_AND_RUN=1 \
 NO_STRIP=1 \
-OUTPUT="$output/Pirate-Cinema-$version-x86_64.AppImage" \
 "$linuxdeploy" \
   --appdir "$appdir" \
   --executable "$appdir/usr/bin/pirate-cinema" \
   --executable /usr/bin/mpv \
   --desktop-file "$appdir/usr/share/applications/pirate-cinema.desktop" \
   --icon-file "$appdir/usr/share/icons/hicolor/256x256/apps/pirate-cinema.png" \
-  --plugin gtk \
+  --plugin gtk
+
+# WebKitGTK helper paths are compiled into the library and differ between
+# distributions. Use the host WebKitGTK stack so its helpers always match;
+# the package still bundles the rest of the application runtime.
+find "$appdir/usr/lib" \( -type f -o -type l \) \( \
+  -name 'libwebkit2gtk-4.1.so*' -o \
+  -name 'libjavascriptcoregtk-4.1.so*' \
+\) -delete
+
+APPIMAGE_EXTRACT_AND_RUN=1 \
+NO_STRIP=1 \
+OUTPUT="$output/Pirate-Cinema-$version-x86_64.AppImage" \
+"$linuxdeploy" \
+  --appdir "$appdir" \
   --output appimage
