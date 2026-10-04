@@ -25,22 +25,35 @@ pub struct Movie {
 }
 
 fn agent() -> ureq::Agent {
+    agent_with_timeout(Duration::from_secs(12))
+}
+
+fn agent_with_timeout(timeout: Duration) -> ureq::Agent {
     ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(12)))
+        .timeout_global(Some(timeout))
         .build()
         .into()
 }
 
 fn json(agent: &ureq::Agent, url: &str) -> Result<Value, String> {
-    agent
+    let mut response = agent
         .get(url)
         .header("accept", "application/json")
         .header("user-agent", "PirateCinema-Rust/0.1.6 (local desktop app)")
         .call()
-        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+    let mut bytes = Vec::new();
+    let read_error = response
         .body_mut()
-        .read_json()
-        .map_err(|error| error.to_string())
+        .as_reader()
+        .read_to_end(&mut bytes)
+        .err()
+        .map(|error| error.to_string());
+    parse_json_body(&bytes, read_error)
+}
+
+fn parse_json_body(bytes: &[u8], read_error: Option<String>) -> Result<Value, String> {
+    serde_json::from_slice(bytes).map_err(|error| read_error.unwrap_or_else(|| error.to_string()))
 }
 
 fn encode(value: &str) -> String {
@@ -212,7 +225,7 @@ fn parse_wikidata_links(payload: &Value) -> WikiLinks {
 }
 
 pub fn popular() -> Result<Vec<Movie>, String> {
-    let agent = agent();
+    let agent = agent_with_timeout(Duration::from_secs(5));
     let mut items = parse_catalog(&json(
         &agent,
         &format!("{CINEMETA}/catalog/movie/top.json"),
@@ -794,6 +807,32 @@ mod tests {
     #[test]
     fn tvmaze_summary_is_plain_text() {
         assert_eq!(strip_html("<p>One &amp; <b>two</b></p>"), "One & two");
+    }
+
+    #[test]
+    fn complete_json_survives_a_late_chunked_body_timeout() {
+        assert_eq!(
+            parse_json_body(br#"{"metas":[]}"#, Some("timed out".into())).unwrap(),
+            serde_json::json!({"metas": []})
+        );
+        assert_eq!(
+            parse_json_body(b"{", Some("timed out".into())).unwrap_err(),
+            "timed out"
+        );
+    }
+
+    #[test]
+    #[ignore = "uses the public Cinemeta service"]
+    fn live_cinemeta_metadata_is_readable() {
+        let payload = json(
+            &agent(),
+            "https://v3-cinemeta.strem.io/meta/movie/tt0111161.json",
+        )
+        .unwrap();
+        assert_eq!(
+            payload.pointer("/meta/id").and_then(Value::as_str),
+            Some("tt0111161")
+        );
     }
 
     #[test]

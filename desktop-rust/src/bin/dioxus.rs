@@ -17,7 +17,10 @@ use pirate_cinema_core::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex, OnceLock,
+};
 use std::time::Duration;
 
 static STARTUP_MAGNET: OnceLock<String> = OnceLock::new();
@@ -353,6 +356,7 @@ fn App() -> Element {
     let search_poster = use_signal(String::new);
     let mut popular = use_signal(catalog::fallback_popular);
     let mut popular_posters = use_signal(HashMap::<String, String>::new);
+    let home_busy = use_signal(|| false);
     let mut selected = use_signal(|| None::<Torrent>);
     let mut files = use_signal(Vec::<PlayableFile>::new);
     let mut players = use_signal(Vec::<OwnedPlayer>::new);
@@ -398,7 +402,7 @@ fn App() -> Element {
                 popular.set(saved);
             }
         }
-        refresh_popular(popular, popular_posters);
+        refresh_popular(popular, popular_posters, home_busy);
         if let Some(magnet) = STARTUP_MAGNET.get().cloned() {
             let title = pirate_cinema_core::magnet_title(&magnet);
             busy.set(true);
@@ -675,7 +679,7 @@ fn App() -> Element {
         spawn(async move {
             let torrent_for_request = torrent.clone();
             let result = tokio::task::spawn_blocking(move || {
-                sync_library_metadata(&endpoint_value, &[torrent_for_request])
+                sync_library_metadata(&endpoint_value, &[torrent_for_request], None)
             })
             .await;
             match result {
@@ -730,10 +734,20 @@ fn App() -> Element {
         busy.set(true);
         metadata_status.set(format!("Обновляем карточки: 0/{}", torrents.len()));
         spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                sync_library_metadata(&endpoint_value, &torrents)
-            })
-            .await;
+            let total = torrents.len();
+            let progress = Arc::new(AtomicUsize::new(0));
+            let worker_progress = progress.clone();
+            let mut task = tokio::task::spawn_blocking(move || {
+                sync_library_metadata(&endpoint_value, &torrents, Some(&worker_progress))
+            });
+            let result = loop {
+                tokio::select! {
+                    result = &mut task => break result,
+                    _ = tokio::time::sleep(Duration::from_millis(250)) => {
+                        metadata_status.set(format!("Обновляем карточки: {}/{total}", progress.load(Ordering::Relaxed)));
+                    }
+                }
+            };
             match result {
                 Ok(Ok((updated, failed, refreshed))) => {
                     cards.set(refreshed);
@@ -829,7 +843,7 @@ fn App() -> Element {
                     }
                 }
                 match page() {
-                    Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), posters: popular_posters(), recent: recent(), cards: cards(), busy: busy(), on_refresh: move |_| { refresh_server(endpoint(), busy, server, cards, recent); refresh_popular(popular, popular_posters); }, on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
+                    Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), posters: popular_posters(), recent: recent(), cards: cards(), busy: home_busy(), on_refresh: move |_| { let torrents = server.read().torrents.clone(); cards.set(load_library_cards(&torrents).unwrap_or_default()); recent.set(load_continue_items(&torrents).unwrap_or_default()); refresh_popular(popular, popular_posters, home_busy); }, on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
                     Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
                     Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
@@ -937,7 +951,12 @@ fn popular_cache_dir() -> Option<PathBuf> {
 fn refresh_popular(
     mut popular: Signal<Vec<Movie>>,
     mut popular_posters: Signal<HashMap<String, String>>,
+    mut home_busy: Signal<bool>,
 ) {
+    if home_busy() {
+        return;
+    }
+    home_busy.set(true);
     spawn(async move {
         let loaded = tokio::task::spawn_blocking(catalog::popular).await;
         if let Ok(items) =
@@ -980,6 +999,7 @@ fn refresh_popular(
                 }
             }
         }
+        home_busy.set(false);
     });
 }
 
@@ -2183,6 +2203,7 @@ fn load_continue_items(torrents: &[Torrent]) -> Result<Vec<ContinueItem>, String
 fn sync_library_metadata(
     endpoint: &str,
     torrents: &[Torrent],
+    progress: Option<&AtomicUsize>,
 ) -> Result<(usize, usize, Vec<LibraryCard>), String> {
     let path = history_path()?;
     let history = HistoryStore::open(&path).map_err(|error| error.to_string())?;
@@ -2195,7 +2216,10 @@ fn sync_library_metadata(
     let mut updated = 0;
     let mut failed = 0;
 
-    for torrent in torrents {
+    for (index, torrent) in torrents.iter().enumerate() {
+        if let Some(progress) = progress {
+            progress.store(index, Ordering::Relaxed);
+        }
         let current = history
             .metadata(&torrent.hash)
             .map_err(|error| error.to_string())?;
@@ -2270,6 +2294,9 @@ fn sync_library_metadata(
             .merge_remote_metadata(&torrent.hash, &torrent.title, &metadata)
             .map_err(|error| error.to_string())?;
         updated += 1;
+    }
+    if let Some(progress) = progress {
+        progress.store(torrents.len(), Ordering::Relaxed);
     }
     let cards = load_library_cards(torrents)?;
     Ok((updated, failed, cards))

@@ -28,7 +28,9 @@ The auto-next switch is available for every multi-file torrent, regardless of it
 
 The file-card `Запустить` action uses a solid white treatment so it remains distinct from metadata and secondary controls.
 
-The home shelf has a compact refresh action beside its navigation arrows. It reloads the public catalogue, posters, TorrServer library and continue-watching history without restarting the application. Search-result `Добавить` and `Смотреть` actions use the same solid white treatment as the file-card launch action.
+The home shelf has a compact refresh action beside its navigation arrows. It reloads the public catalogue, posters, cached library and continue-watching history without restarting the application or waiting for a full metadata sync. Search-result `Добавить` and `Смотреть` actions use the same solid white treatment as the file-card launch action. Cinemeta responses are parsed when a complete JSON body has arrived even if its redirected chunked catalogue response fails to close cleanly.
+
+The public Cinemeta catalogue has its own five-second timeout and falls back to the cached/bundled shelf when its redirected chunked response stalls. Cinemeta metadata, search and poster endpoints remain independent. Full metadata synchronization reports the current card count while processing large TorrServer libraries, and the home refresh action has a separate busy state so it stays available during that operation.
 
 Release 0.6.3 fixes the file-card CSS cascade: the specific launch-button rule follows the generic file-button rule, so both its normal and hover states remain visibly white.
 
