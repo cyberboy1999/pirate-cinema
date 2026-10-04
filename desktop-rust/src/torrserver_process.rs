@@ -56,11 +56,9 @@ impl TorrServerProcess {
         let deadline = Instant::now() + Duration::from_secs(60);
         while Instant::now() < deadline {
             if probe(endpoint) {
-                if let Err(error) = enable_rutor_search(endpoint, data_dir) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(error);
-                }
+                // RuTor is optional: a transient settings error must not take down
+                // an otherwise healthy local TorrServer.
+                let _ = enable_rutor_search(endpoint, data_dir);
                 return Ok(Self { child: Some(child) });
             }
             if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {

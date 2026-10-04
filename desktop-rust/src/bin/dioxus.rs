@@ -1599,9 +1599,7 @@ fn Settings(
         spawn(async move {
             let result = tokio::task::spawn_blocking(move || {
                 let installer = download_rust_update(&update)?;
-                std::process::Command::new(&installer)
-                    .spawn()
-                    .map_err(|error| format!("Не удалось запустить установщик: {error}"))?;
+                launch_update_installer(&installer)?;
                 Ok::<_, String>(installer)
             })
             .await;
@@ -2023,6 +2021,29 @@ fn system_diagnostics(endpoint: &str, player_type: PlayerType, player_path: &str
         },
     );
     checks
+}
+
+#[cfg(windows)]
+fn launch_update_installer(installer: &PathBuf) -> Result<(), String> {
+    std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Start-Process -FilePath $env:PIRATE_CINEMA_UPDATE -Verb RunAs",
+        ])
+        .env("PIRATE_CINEMA_UPDATE", installer)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Не удалось запросить права для установщика: {error}"))
+}
+
+#[cfg(not(windows))]
+fn launch_update_installer(installer: &PathBuf) -> Result<(), String> {
+    std::process::Command::new(installer)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Не удалось запустить установщик: {error}"))
 }
 
 fn open_external_url(url: &str) -> Result<(), String> {

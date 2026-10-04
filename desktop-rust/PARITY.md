@@ -1,6 +1,6 @@
-# Electron 0.5.8 → Rust 0.6.7 replacement audit
+# Electron 0.5.8 → Rust 0.6.8 replacement audit
 
-| User flow | Rust 0.6.7 |
+| User flow | Rust 0.6.8 |
 |---|---|
 | TorrServer | Reuses or owns the bundled local process; configurable endpoint; list/add/remove and metadata sync |
 | Search | RuTor plus optional Jackett/Prowlarr Torznab, quality filters, validated same-origin torrent downloads, duplicate checks |

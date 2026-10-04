@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Latest stable release: 0.6.7. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest stable release: 0.6.8. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -20,7 +20,7 @@ Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source i
 
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
-## Rust desktop 0.6.7
+## Rust desktop 0.6.8
 
 `desktop-rust/` is the production desktop application. Dioxus provides the Rust UI; TorrServer ownership, MPV IPC, SQLite history, metadata, backup/restore, updates and tray integration are implemented in Rust. The release replaces Electron program files and performs a one-time, non-destructive import of the Electron 0.5.8 profile. Windows ships one offline NSIS installer; Linux ships one x86_64 AppImage. The retired egui application is not built or packaged.
 
@@ -31,6 +31,8 @@ The file-card `Запустить` action uses a solid white treatment so it rem
 The home shelf has a compact refresh action beside its navigation arrows. It reloads the public catalogue, posters, cached library and continue-watching history without restarting the application or waiting for a full metadata sync. Search-result `Добавить` and `Смотреть` actions use the same solid white treatment as the file-card launch action. Cinemeta responses are parsed when a complete JSON body has arrived even if its redirected chunked catalogue response fails to close cleanly.
 
 The public Cinemeta catalogue has its own five-second timeout and falls back to the cached/bundled shelf when its redirected chunked response stalls. Cinemeta metadata, search and poster endpoints remain independent. Full metadata synchronization reports the current card count while processing large TorrServer libraries, and the home refresh action has a separate busy state so it stays available during that operation.
+
+The bundled TorrServer remains running when the optional RuTor settings call fails after startup; only an actual startup or health failure marks it offline. The in-app Windows updater launches the downloaded system-wide NSIS package through an explicit UAC `runas` request instead of surfacing Windows error 740 as a launch failure.
 
 Release 0.6.3 fixes the file-card CSS cascade: the specific launch-button rule follows the generic file-button rule, so both its normal and hover states remain visibly white.
 
