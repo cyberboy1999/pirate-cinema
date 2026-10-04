@@ -23,18 +23,29 @@ NO_STRIP=1 \
 "$linuxdeploy" \
   --appdir "$appdir" \
   --executable "$appdir/usr/bin/pirate-cinema" \
-  --executable /usr/bin/mpv \
   --desktop-file "$appdir/usr/share/applications/pirate-cinema.desktop" \
   --icon-file "$appdir/usr/share/icons/hicolor/256x256/apps/pirate-cinema.png" \
   --plugin gtk
 
-# WebKitGTK helper paths are compiled into the library and differ between
-# distributions. Use the host WebKitGTK stack so its helpers always match;
-# the package still bundles the rest of the application runtime.
-find "$appdir/usr/lib" \( -type f -o -type l \) \( \
-  -name 'libwebkit2gtk-4.1.so*' -o \
-  -name 'libjavascriptcoregtk-4.1.so*' \
-\) -delete
+# WebKitGTK helper paths and its GLib stack must come from the same
+# distribution. Keep only Ubuntu's libxdo ABI compatibility library and use
+# the host GTK/WebKit/MPV stack for everything else.
+libxdo="$(find "$appdir/usr/lib" -type f -name 'libxdo.so.3*' -print -quit)"
+test -n "$libxdo"
+compat_lib="$(mktemp)"
+cp -L "$libxdo" "$compat_lib"
+find "$appdir/usr/lib" -depth -delete
+mkdir -p "$appdir/usr/lib/compat"
+install -m644 "$compat_lib" "$appdir/usr/lib/compat/libxdo.so.3"
+rm -f "$compat_lib"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'HERE="$(dirname "$(readlink -f "$0")")"' \
+  'export PATH="$HERE/usr/bin:$PATH"' \
+  'export LD_LIBRARY_PATH="$HERE/usr/lib/compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"' \
+  'exec "$HERE/usr/bin/pirate-cinema" "$@"' \
+  > "$appdir/AppRun"
+chmod 755 "$appdir/AppRun"
 
 APPIMAGE_EXTRACT_AND_RUN=1 \
 ARCH=x86_64 \
