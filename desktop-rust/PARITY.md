@@ -1,6 +1,6 @@
-# Electron 0.5.8 → Rust 0.6.4 replacement audit
+# Electron 0.5.8 → Rust 0.6.5 replacement audit
 
-| User flow | Rust 0.6.4 |
+| User flow | Rust 0.6.5 |
 |---|---|
 | TorrServer | Reuses or owns the bundled local process; configurable endpoint; list/add/remove and metadata sync |
 | Search | RuTor plus optional Jackett/Prowlarr Torznab, quality filters, validated same-origin torrent downloads, duplicate checks |
@@ -11,6 +11,6 @@
 | Data | SQLite per-file history, validated backup/restore, one-time non-destructive Electron/prototype migration |
 | Settings | RU/EN, player, endpoint, Jackett/Torznab, diagnostics, metadata sync, backup/restore and updater |
 | Desktop integration | Native tray hide/open/exit, `magnet:` handler, production shortcuts and application icon |
-| Packaging | Production Windows x64 NSIS plus Linux DEB/RPM/tar/PKGBUILD sources |
+| Packaging | One production Windows x64 NSIS installer and one Linux x86_64 AppImage |
 
 The production binary is `pirate-cinema`. The retired egui application and separate Prototype installer are removed. Final release acceptance requires a clean Windows installation and an installation over Electron 0.5.8, followed by one real playback/resume check.

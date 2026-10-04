@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Latest stable release: 0.5.8. Releases contain Windows offline/web installers, Debian/Ubuntu DEB, RPM, Arch Linux tarball and PKGBUILD. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest stable release: 0.6.5. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -20,9 +20,9 @@ Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source i
 
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
-## Rust desktop 0.6.4
+## Rust desktop 0.6.5
 
-`desktop-rust/` is the production desktop application. Dioxus provides the Rust UI; TorrServer ownership, MPV IPC, SQLite history, metadata, backup/restore, updates and tray integration are implemented in Rust. The release replaces Electron program files and performs a one-time, non-destructive import of the Electron 0.5.8 profile. Windows ships offline and web NSIS installers; Linux ships DEB, RPM, a portable archive/install script and an Arch PKGBUILD. The retired egui application is not built or packaged.
+`desktop-rust/` is the production desktop application. Dioxus provides the Rust UI; TorrServer ownership, MPV IPC, SQLite history, metadata, backup/restore, updates and tray integration are implemented in Rust. The release replaces Electron program files and performs a one-time, non-destructive import of the Electron 0.5.8 profile. Windows ships one offline NSIS installer; Linux ships one x86_64 AppImage. The retired egui application is not built or packaged.
 
 The auto-next switch is available for every multi-file torrent, regardless of its saved movie/series classification.
 
@@ -34,7 +34,7 @@ Release 0.6.4 no longer blocks creation of the desktop window while bundled Torr
 
 The release workflow compiles the application natively in a fresh Arch Linux container, rejects unresolved ELF dependencies, and requires the Dioxus process to remain alive for twenty seconds under DBus and Xvfb before any tagged release can be published. This prevents Ubuntu-linked ABI requirements such as `libxdo.so.3` from being repackaged as an Arch build where only `libxdo.so.4` is available.
 
-Linux CI also creates one x86_64 AppImage with Pirate Cinema, TorrServer and the required `libxdo.so.3` compatibility library using checksum-verified linuxdeploy and appimagetool binaries. It deliberately uses the distribution's MPV and complete GTK/WebKitGTK 4.1 stack because WebKit helper paths and GLib symbols differ between Debian and Arch. The same Arch smoke job must keep both the native Arch build and AppImage processes alive for twenty seconds. DEB, RPM and PKGBUILD remain available until the AppImage has passed real desktop testing.
+Linux CI creates one x86_64 AppImage with Pirate Cinema, TorrServer and the required `libxdo.so.3` compatibility library using checksum-verified linuxdeploy and appimagetool binaries. It deliberately uses the distribution's MPV and complete GTK/WebKitGTK 4.1 stack because WebKit helper paths and GLib symbols differ between Debian and Arch. The same Arch smoke job must keep both the native Arch build and AppImage processes alive for twenty seconds. DEB, RPM, portable archives and PKGBUILD are retired from new releases.
 
 AppImage runtime dependencies are documented on the repository landing page with copyable commands for Debian/Ubuntu, Fedora/RHEL and Arch/CachyOS. Failure to initialize the optional Linux tray must not panic the Dioxus tree; the window remains usable and closes normally when no tray provider is available.
 
@@ -122,23 +122,20 @@ Electron creates timestamped backup folders containing `data`, TorrServer state
 and a versioned manifest. SQLite is checkpointed before copying. Restore requires
 an explicit native confirmation, replaces local state, then restarts the app.
 
-On Windows, `electron-updater` checks the public GitHub release feed after startup, downloads
-updates in the background and waits for explicit restart or normal app exit to
-install. DEB/RPM installations are updated through the distribution package
-manager or a newer release package. The offline NSIS build publishes `latest.yml`
-and its blockmap.
+The Rust application checks the public GitHub release feed and downloads the
+single Windows NSIS installer after explicit user action. Linux AppImage users
+replace the executable with the newer release after reviewing its checksum.
 
 `.github/workflows/release.yml` runs tests and lint for version tags, restores
 the pinned MPV and TorrServer payload from the public 0.3.6 bootstrap package,
-verifies both SHA-256 hashes, builds both installer variants and publishes release
-assets. Updating bundled runtime versions requires updating the bootstrap source
-and hashes together.
+verifies both SHA-256 hashes, builds the Windows installer and Linux AppImage,
+and publishes only those two application artifacts plus checksums and notices.
+Updating bundled runtime versions requires updating the bootstrap source and
+hashes together.
 
 The legacy suffix workflows remain only for historical release maintenance.
-Normal releases use a single plain version tag. Linux packages depend on system
-MPV and FFmpeg; Arch uses the generated PKGBUILD and installs under
-`/opt/pirate-cinema`. The shared install script verifies SHA-256 and creates
-freedesktop launchers for KDE, GNOME and XFCE.
+Normal releases use a single plain version tag. The AppImage uses system MPV,
+GTK and WebKitGTK; required package-manager commands are documented in README.
 
 ## Library experience in 0.5.0
 

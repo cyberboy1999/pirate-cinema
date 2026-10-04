@@ -46,13 +46,10 @@ jobs:
           Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md stage/
           $makensis="${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           & $makensis "/DAPP_SOURCE=$pwd\stage" "/DAPP_OUTPUT=$pwd\Pirate-Cinema-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/installer.nsi
-          & $makensis "/DWEB_OUTPUT=$pwd\Pirate-Cinema-Web-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/web-installer.nsi
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: |
-            Pirate-Cinema-Setup-*-win-x64.exe
-            Pirate-Cinema-Web-Setup-*-win-x64.exe
+          path: Pirate-Cinema-Setup-*-win-x64.exe
 
   linux:
     runs-on: ubuntu-latest
@@ -63,7 +60,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)" = "$GITHUB_REF_NAME"
       - name: Install build and package dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libfuse2 file rpm mpv
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libfuse2 mpv
       - name: Restore verified TorrServer
         run: |
           mkdir -p desktop-rust/vendor/torrserver
@@ -81,13 +78,12 @@ jobs:
           chmod 755 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh appimagetool-x86_64.AppImage
       - run: cargo test --manifest-path desktop-rust/Cargo.toml
       - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
-      - name: Build Linux packages
+      - name: Build AppImage
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)
           mkdir -p release-linux
-          desktop-rust/packaging/build-linux.sh "$version" desktop-rust/target/release/pirate-cinema desktop-rust/vendor/torrserver/TorrServer-linux-amd64 release-linux
           desktop-rust/packaging/build-appimage.sh "$version" desktop-rust/target/release/pirate-cinema desktop-rust/vendor/torrserver/TorrServer-linux-amd64 release-linux "$PWD/linuxdeploy-x86_64.AppImage" "$PWD/appimagetool-x86_64.AppImage"
-          (cd release-linux && sha256sum *.AppImage *.deb *.rpm *.tar.gz > SHA256SUMS)
+          (cd release-linux && sha256sum *.AppImage > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: linux-release
@@ -137,4 +133,4 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema ${GITHUB_REF_NAME#v}" --notes-file docs/RELEASE_0.6.4.md
+        run: gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema ${GITHUB_REF_NAME#v}" --notes-file docs/RELEASE_0.6.5.md

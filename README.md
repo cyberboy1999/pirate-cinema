@@ -26,25 +26,9 @@ Pirate Cinema — локальное настольное приложение �
 
 ### Windows 10/11
 
-Скачайте автономный `Pirate-Cinema-Setup-*-win-x64.exe` или небольшой `Pirate-Cinema-Web-Setup-*-win-x64.exe`. Web-установщик загружает автономный пакет с GitHub, поэтому требует доступ к GitHub на протяжении установки. Установщик обновляет существующую установку или заменяет прежнюю Electron-версию, сохраняя пользовательские данные.
+Скачайте `Pirate-Cinema-Setup-*-win-x64.exe`. Установщик обновляет существующую установку или заменяет прежнюю Electron-версию, сохраняя пользовательские данные.
 
-### Debian и Ubuntu
-
-```sh
-sudo apt install ./Pirate-Cinema-*-linux-amd64.deb
-```
-
-### Fedora, RHEL и другие RPM-системы
-
-```sh
-sudo dnf install ./Pirate-Cinema-*-linux-x86_64.rpm
-```
-
-### Arch Linux
-
-Скачайте `PKGBUILD` и архив из одного релиза, затем выполните `makepkg -si`. MPV и системные библиотеки устанавливаются пакетным менеджером.
-
-### Зависимости AppImage
+### Linux AppImage
 
 AppImage содержит Pirate Cinema и TorrServer, но использует системные MPV, GTK и WebKitGTK. Перед первым запуском установите зависимости своей системы.
 
@@ -115,25 +99,9 @@ Download packages from the [latest release](https://github.com/cyberboy1999/pira
 
 #### Windows 10/11
 
-Run the offline `Pirate-Cinema-Setup-*-win-x64.exe` or the small `Pirate-Cinema-Web-Setup-*-win-x64.exe`. The web installer downloads the offline package from GitHub and therefore needs GitHub access during installation. It updates an existing installation or replaces the former Electron edition while preserving user data.
+Run `Pirate-Cinema-Setup-*-win-x64.exe`. It updates an existing installation or replaces the former Electron edition while preserving user data.
 
-#### Debian and Ubuntu
-
-```sh
-sudo apt install ./Pirate-Cinema-*-linux-amd64.deb
-```
-
-#### Fedora, RHEL, and other RPM systems
-
-```sh
-sudo dnf install ./Pirate-Cinema-*-linux-x86_64.rpm
-```
-
-#### Arch Linux
-
-Download the `PKGBUILD` and source archive from the same release, then run `makepkg -si`.
-
-#### AppImage dependencies
+#### Linux AppImage
 
 The AppImage contains Pirate Cinema and TorrServer but uses the system MPV, GTK, and WebKitGTK. Install the runtime for your distribution before first launch.
 
