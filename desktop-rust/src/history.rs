@@ -23,6 +23,13 @@ pub struct RecentPlayback {
     pub playback_duration: i64,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PlaybackPreferences {
+    pub season: Option<u8>,
+    pub episode: Option<u16>,
+    pub auto_next: bool,
+}
+
 pub struct HistoryStore {
     db: Connection,
 }
@@ -498,6 +505,16 @@ impl HistoryStore {
                 torrent_hash TEXT PRIMARY KEY,
                 track_id INTEGER NOT NULL CHECK(track_id > 0)
             );
+            CREATE TABLE IF NOT EXISTS media_subtitle_tracks (
+                torrent_hash TEXT PRIMARY KEY,
+                track_id INTEGER NOT NULL CHECK(track_id > 0)
+            );
+            CREATE TABLE IF NOT EXISTS media_playback_preferences (
+                torrent_hash TEXT PRIMARY KEY,
+                season INTEGER,
+                episode INTEGER,
+                auto_next INTEGER NOT NULL DEFAULT 0
+            );
             CREATE TABLE IF NOT EXISTS media_metadata (
                 torrent_hash TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -759,6 +776,68 @@ impl HistoryStore {
             "INSERT INTO media_audio_tracks(torrent_hash,track_id) VALUES(?1,?2)
              ON CONFLICT(torrent_hash) DO UPDATE SET track_id=excluded.track_id",
             params![hash, track_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn subtitle_track(&self, hash: &str) -> rusqlite::Result<Option<i64>> {
+        let hash = checked_key(hash, 0)?;
+        self.db
+            .query_row(
+                "SELECT track_id FROM media_subtitle_tracks WHERE torrent_hash=?1",
+                [hash],
+                |row| row.get(0),
+            )
+            .optional()
+    }
+
+    pub fn save_subtitle_track(&self, hash: &str, track_id: i64) -> rusqlite::Result<()> {
+        let hash = checked_key(hash, 0)?;
+        if track_id < 1 {
+            return Err(rusqlite::Error::InvalidParameterName("track_id".into()));
+        }
+        self.db.execute(
+            "INSERT INTO media_subtitle_tracks(torrent_hash,track_id) VALUES(?1,?2)
+             ON CONFLICT(torrent_hash) DO UPDATE SET track_id=excluded.track_id",
+            params![hash, track_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn playback_preferences(&self, hash: &str) -> rusqlite::Result<PlaybackPreferences> {
+        let hash = checked_key(hash, 0)?;
+        self.db
+            .query_row(
+                "SELECT season,episode,auto_next FROM media_playback_preferences WHERE torrent_hash=?1",
+                [hash],
+                |row| {
+                    Ok(PlaybackPreferences {
+                        season: row.get::<_, Option<i64>>(0)?.and_then(|value| u8::try_from(value).ok()),
+                        episode: row.get::<_, Option<i64>>(1)?.and_then(|value| u16::try_from(value).ok()),
+                        auto_next: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .map(|value| value.unwrap_or_default())
+    }
+
+    pub fn save_playback_preferences(
+        &self,
+        hash: &str,
+        preferences: &PlaybackPreferences,
+    ) -> rusqlite::Result<()> {
+        let hash = checked_key(hash, 0)?;
+        self.db.execute(
+            "INSERT INTO media_playback_preferences(torrent_hash,season,episode,auto_next)
+             VALUES(?1,?2,?3,?4) ON CONFLICT(torrent_hash) DO UPDATE SET
+             season=excluded.season,episode=excluded.episode,auto_next=excluded.auto_next",
+            params![
+                hash,
+                preferences.season,
+                preferences.episode,
+                preferences.auto_next
+            ],
         )?;
         Ok(())
     }
@@ -1080,6 +1159,25 @@ mod tests {
         assert_eq!(db.get(&hash, 1).unwrap().unwrap().launch_count, 2);
         assert!(db.get(&hash, 1).unwrap().unwrap().is_watched);
         assert!(db.get(&hash, 2).unwrap().is_none());
+        db.save_subtitle_track(&hash, 4).unwrap();
+        db.save_playback_preferences(
+            &hash,
+            &PlaybackPreferences {
+                season: Some(3),
+                episode: Some(8),
+                auto_next: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(db.subtitle_track(&hash).unwrap(), Some(4));
+        assert_eq!(
+            db.playback_preferences(&hash).unwrap(),
+            PlaybackPreferences {
+                season: Some(3),
+                episode: Some(8),
+                auto_next: true,
+            }
+        );
         assert_eq!(db.media_type(&hash).unwrap(), None);
         assert!(db.set_title(&hash, " ").is_err());
         db.set_title(&hash, "Русское название").unwrap();

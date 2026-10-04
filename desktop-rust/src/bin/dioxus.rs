@@ -3,7 +3,9 @@
 use base64::Engine;
 use dioxus::prelude::*;
 use pirate_cinema_core::catalog::{self, Movie};
-use pirate_cinema_core::history::{create_local_backup, HistoryStore, MediaMetadata};
+use pirate_cinema_core::history::{
+    create_local_backup, HistoryStore, MediaMetadata, PlaybackPreferences,
+};
 use pirate_cinema_core::migration::{legacy_profile_paths, migrate_legacy_profiles};
 use pirate_cinema_core::mpv::{self, MpvEvent, MpvSession};
 use pirate_cinema_core::settings::{self, Language, PlayerType, Preferences};
@@ -93,6 +95,8 @@ h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
 .card strong { display: block; margin-top: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size:15px;line-height:1.35; }
 .card small { display: block; margin-top: 6px; color: #888; font-size:13px; }
 .card small.viewed { color: #71cc91; }
+.card-open{display:block;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left}
+.quick-play{width:100%;min-height:38px;margin-top:10px}
 .shelf { display: grid; grid-auto-flow: column; grid-auto-columns: 176px; grid-template-rows: repeat(2, auto); gap: 28px 18px; overflow-x: auto; padding: 4px 2px 18px; scrollbar-color: #333 transparent; scroll-snap-type:x proximity; }
 .section-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}.section-heading h1,.section-heading h2{margin:0}.shelf-controls{display:flex;gap:9px}.shelf-controls button{width:44px;height:44px;display:grid;place-items:center;border:1px solid #303030;border-radius:11px;background:#171717;color:#bbb}.shelf-controls button img{width:22px;height:22px;filter:invert(1);opacity:.75}.shelf-controls button:hover{background:#242424;color:#fff}.shelf-controls button:hover img{opacity:1}
 .continue-list { display: grid; gap: 8px; margin: 0 0 34px; max-width: 820px; }
@@ -135,6 +139,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .player-strip { margin: 14px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); gap: 8px; align-items: center; padding: 10px; border: 1px solid #242424; border-radius: 12px; background: #0d0d0d; }
 .player-strip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-strip button { min-height: 34px; border: 1px solid #303030; border-radius: 8px; background: #191919; }
+.embedded-player-space{height:min(calc((100vw - 294px)*.5625),calc(100vh - 236px));min-height:360px;margin-top:14px;border:1px solid #292929;border-radius:12px;background:#000}
+.season-progress{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 18px}.season-progress span{padding:8px 11px;border:1px solid #292929;border-radius:9px;background:#101010;color:#aaa;font-size:13px}
 @media (max-width: 900px) { .shell { grid-template-columns: 78px 1fr; } .brand { margin-inline:auto;font-size: 0; } .brand img{width:34px;height:34px}.nav button { justify-content:center;overflow: hidden; white-space: nowrap; } .nav button span { display: none; } .content { padding: 24px 22px; } .topbar{grid-template-columns:1fr}.status{justify-self:start}.search-layout{grid-template-columns:1fr}.search-feature{position:static;display:grid;grid-template-columns:130px 1fr;gap:18px}.setting-row{grid-template-columns:1fr;gap:7px}.settings-actions,.choice-row,.settings-facts{grid-template-columns:1fr}.file { grid-template-columns: 1fr 1fr; } .file > div { grid-column: 1 / -1; } }
 "#;
 
@@ -536,6 +542,68 @@ fn App() -> Element {
     let open_saved = move |torrent: Torrent| {
         open_torrent(torrent, endpoint(), page, busy, selected, files, server);
     };
+    let quick_play = move |torrent: Torrent| {
+        let request_endpoint = endpoint();
+        busy.set(true);
+        spawn(async move {
+            let hash = torrent.hash.clone();
+            let loaded = tokio::task::spawn_blocking(move || {
+                let files = torrent_video_files(&request_endpoint, &hash)?;
+                let history =
+                    HistoryStore::open(&history_path()?).map_err(|error| error.to_string())?;
+                let chosen = files
+                    .iter()
+                    .find(|file| {
+                        history
+                            .get(&hash, file.id)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|item| {
+                                item.playback_timecode.unwrap_or(0) > 0
+                                    && item.playback_timecode.unwrap_or(0) + 60
+                                        < item.playback_duration.unwrap_or(i64::MAX)
+                            })
+                    })
+                    .or_else(|| {
+                        files.iter().find(|file| {
+                            !history
+                                .get(&hash, file.id)
+                                .ok()
+                                .flatten()
+                                .is_some_and(|item| item.is_watched)
+                        })
+                    })
+                    .or_else(|| files.first())
+                    .cloned()
+                    .ok_or("В раздаче нет видеофайлов")?;
+                Ok::<_, String>((files, chosen))
+            })
+            .await;
+            match loaded {
+                Ok(Ok((queue, file))) => launch_playback(
+                    PendingPlayback {
+                        torrent,
+                        file,
+                        resume: true,
+                        queue,
+                        auto_next: true,
+                    },
+                    endpoint(),
+                    busy,
+                    players,
+                    server,
+                ),
+                Ok(Err(error)) => {
+                    server.write().error = error;
+                    busy.set(false);
+                }
+                Err(error) => {
+                    server.write().error = error.to_string();
+                    busy.set(false);
+                }
+            }
+        });
+    };
 
     let mut add_result = move |(item, open): (SearchResult, bool)| {
         let existing = {
@@ -786,6 +854,10 @@ fn App() -> Element {
         .iter()
         .map(|player| player.session.label().to_owned())
         .collect::<Vec<_>>();
+    let embedded_player_active = players
+        .read()
+        .iter()
+        .any(|player| player.session.is_embedded());
 
     rsx! {
         style { {CSS} }
@@ -861,10 +933,11 @@ fn App() -> Element {
                         }
                     }
                 }
+                if embedded_player_active { div { class: "embedded-player-space" } }
                 match page() {
                     Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), posters: popular_posters(), recent: recent(), cards: cards(), busy: home_busy(), on_refresh: move |_| { let torrents = server.read().torrents.clone(); cards.set(load_library_cards(&torrents).unwrap_or_default()); recent.set(load_continue_items(&torrents).unwrap_or_default()); refresh_popular(popular, popular_posters, home_busy); }, on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
-                    Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
+                    Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_quick: quick_play, on_sync: sync_metadata } },
                     Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
                     Page::Settings => rsx! { Settings { language, endpoint, busy, server, cards, recent, metadata_status, online_icon: online_icon.clone(), on_sync: sync_metadata } },
                 }
@@ -882,6 +955,7 @@ fn Welcome(on_complete: EventHandler<Preferences>) -> Element {
     let mut english = use_signal(|| initial.language == Language::English);
     let mut endpoint = use_signal(|| initial.torrserver_url);
     let mut external = use_signal(|| initial.player_type == PlayerType::External);
+    let embedded_player = initial.embedded_player;
     let mut player_path = use_signal(|| initial.player_path);
     let mut error = use_signal(String::new);
     let submit = move |_| {
@@ -899,6 +973,7 @@ fn Welcome(on_complete: EventHandler<Preferences>) -> Element {
                 PlayerType::BundledMpv
             },
             player_path: player_path(),
+            embedded_player,
             torznab_url: initial.torznab_url.clone(),
             torznab_api_key: initial.torznab_api_key.clone(),
         };
@@ -1170,6 +1245,7 @@ fn Library(
     busy: bool,
     status: String,
     on_open: EventHandler<Torrent>,
+    on_quick: EventHandler<Torrent>,
     on_sync: EventHandler<MouseEvent>,
 ) -> Element {
     let mut filter = use_signal(String::new);
@@ -1262,12 +1338,15 @@ fn Library(
             } else {
                 div { class: "grid",
                     for card in visible {
-                        button { class: "card", title: "{card.torrent.title}", onclick: { let torrent = card.torrent.clone(); move |_| on_open.call(torrent.clone()) },
+                        article { class: "card", title: "{card.torrent.title}",
+                            button { class: "card-open", onclick: { let torrent = card.torrent.clone(); move |_| on_open.call(torrent.clone()) },
                             div { class: "poster", if let Some(poster) = card.poster.as_ref() { img { src: "{poster}", alt: "" } } else { "▶" } }
                             strong { "{card.metadata.as_ref().map(|item| item.title.as_str()).unwrap_or(&card.torrent.title)}" }
                             small { class: if card.viewed { "viewed" } else { "" },
                                 if card.viewed { {language.pick("✓ Просмотрено", "✓ Viewed")} } else if let Some(year) = card.metadata.as_ref().and_then(|item| item.year) { "{year}" } else { "BTIH · {short_hash(&card.torrent.hash)}" }
                             }
+                            }
+                            button { class: "primary quick-play", onclick: { let torrent = card.torrent.clone(); move |_| on_quick.call(torrent.clone()) }, {language.pick("Продолжить", "Continue")} }
                         }
                     }
                 }
@@ -1293,12 +1372,31 @@ fn Detail(
     on_refresh_metadata: EventHandler<MouseEvent>,
     on_remove: EventHandler<MouseEvent>,
 ) -> Element {
+    let saved_preferences = torrent
+        .as_ref()
+        .and_then(|torrent| {
+            history_path().ok().and_then(|path| {
+                HistoryStore::open(&path)
+                    .ok()?
+                    .playback_preferences(&torrent.hash)
+                    .ok()
+            })
+        })
+        .unwrap_or_default();
     let mut confirm_remove = use_signal(|| false);
     let mut file_filter = use_signal(String::new);
-    let mut season = use_signal(|| "all".to_owned());
-    let mut episode = use_signal(|| "all".to_owned());
+    let mut season = use_signal(|| {
+        saved_preferences
+            .season
+            .map_or_else(|| "all".into(), |value| value.to_string())
+    });
+    let mut episode = use_signal(|| {
+        saved_preferences
+            .episode
+            .map_or_else(|| "all".into(), |value| value.to_string())
+    });
     let mut file_kind = use_signal(|| "all".to_owned());
-    let mut auto_next = use_signal(|| false);
+    let mut auto_next = use_signal(|| saved_preferences.auto_next);
     let Some(torrent) = torrent else {
         return rsx! { section { class: "page", div { class: "empty", {language.pick("Раздача не выбрана", "No torrent selected")} } } };
     };
@@ -1314,6 +1412,20 @@ fn Detail(
         .collect::<Vec<_>>();
     seasons.sort_unstable();
     seasons.dedup();
+    let season_progress = seasons
+        .iter()
+        .map(|number| {
+            let episodes = files
+                .iter()
+                .filter(|item| file_season(&item.file.path) == Some(*number))
+                .collect::<Vec<_>>();
+            (
+                *number,
+                episodes.iter().filter(|item| item.viewed).count(),
+                episodes.len(),
+            )
+        })
+        .collect::<Vec<_>>();
     let mut episodes = files
         .iter()
         .filter(|item| {
@@ -1400,7 +1512,14 @@ fn Detail(
                 }
             }
             h2 { {language.pick("Выберите файл", "Choose a file")} }
-            if has_next_file { label { class: "auto-next", input { r#type: "checkbox", checked: auto_next(), onchange: move |event| auto_next.set(event.checked()) } {language.pick(" Автопереход к следующей серии", " Play the next episode automatically")} } }
+            if has_next_file { label { class: "auto-next", input { r#type: "checkbox", checked: auto_next(), onchange: { let hash = torrent.hash.clone(); move |event| { auto_next.set(event.checked()); save_detail_preferences(&hash, &season(), &episode(), auto_next()); } } } {language.pick(" Автопереход к следующей серии", " Play the next episode automatically")} } }
+            if media_type.as_deref() == Some("series") && !season_progress.is_empty() {
+                div { class: "season-progress",
+                    for (number, watched, total) in season_progress {
+                        span { if number == 0 { {language.pick("Спецвыпуски", "Specials")} } else if language == Language::Russian { "Сезон {number}" } else { "Season {number}" } " · {watched}/{total}" }
+                    }
+                }
+            }
             if media_type.as_deref() == Some("series") {
                 if let Some(next) = visible_files.iter().find(|item| !item.viewed) {
                     button { class: "primary", style: "min-height:42px; margin-bottom:16px", onclick: { let file = next.file.clone(); move |_| on_play.call((file.clone(), true, auto_next())) }, if language == Language::Russian { "Следующая непросмотренная: {next.file.name}" } else { "Next unwatched: {next.file.name}" } }
@@ -1417,13 +1536,13 @@ fn Detail(
                         }
                     }
                     if seasons.len() > 1 {
-                        select { value: "{season}", onchange: move |event| { season.set(event.value()); episode.set("all".into()); },
+                        select { value: "{season}", onchange: { let hash = torrent.hash.clone(); move |event| { season.set(event.value()); episode.set("all".into()); save_detail_preferences(&hash, &season(), &episode(), auto_next()); } },
                             option { value: "all", {language.pick("Все сезоны", "All seasons")} }
                             for number in seasons { option { value: "{number}", if number == 0 { {language.pick("Спецвыпуски", "Specials")} } else if language == Language::Russian { "Сезон {number}" } else { "Season {number}" } } }
                         }
                     }
                     if !episodes.is_empty() {
-                        select { value: "{episode}", onchange: move |event| episode.set(event.value()),
+                        select { value: "{episode}", onchange: { let hash = torrent.hash.clone(); move |event| { episode.set(event.value()); save_detail_preferences(&hash, &season(), &episode(), auto_next()); } },
                             option { value: "all", {language.pick("Все серии", "All episodes")} }
                             for number in episodes { option { value: "{number}", if language == Language::Russian { "Серия {number}" } else { "Episode {number}" } } }
                         }
@@ -1470,6 +1589,7 @@ fn Settings(
     let mut torznab_api_key = use_signal(|| initial.torznab_api_key);
     let mut player_path = use_signal(|| initial.player_path);
     let mut external_player = use_signal(|| initial.player_type == PlayerType::External);
+    let mut embedded_player = use_signal(|| initial.embedded_player);
     let mut status = use_signal(String::new);
     let mut maintenance_busy = use_signal(|| false);
     let mut diagnostics = use_signal(Vec::<String>::new);
@@ -1490,6 +1610,7 @@ fn Settings(
                 PlayerType::BundledMpv
             },
             player_path: player_path(),
+            embedded_player: embedded_player(),
             torznab_url: torznab_url(),
             torznab_api_key: torznab_api_key(),
         };
@@ -1704,6 +1825,12 @@ fn Settings(
                 div { class: "choice-row",
                     button { class: if !external_player() { "secondary selected" } else { "secondary" }, onclick: move |_| external_player.set(false), {language().pick("Встроенный MPV", "Bundled MPV")} }
                     button { class: if external_player() { "secondary selected" } else { "secondary" }, onclick: move |_| external_player.set(true), {language().pick("Локальный плеер", "Local player")} }
+                }
+                if !external_player() {
+                    label { class: "auto-next",
+                        input { r#type: "checkbox", checked: embedded_player(), onchange: move |event| embedded_player.set(event.checked()) }
+                        {language().pick(" Встраивать видео в окно приложения (Windows)", " Embed video in the application window (Windows)")}
+                    }
                 }
                 p { class: "hint", {language().pick("Только встроенный MPV сохраняет точную позицию просмотра через IPC.", "Only bundled MPV saves exact playback position through IPC.")} }
                 if external_player() {
@@ -1997,6 +2124,19 @@ fn history_path() -> Result<PathBuf, String> {
     Ok(root.join("history.sqlite"))
 }
 
+fn save_detail_preferences(hash: &str, season: &str, episode: &str, auto_next: bool) {
+    let preferences = PlaybackPreferences {
+        season: season.parse().ok(),
+        episode: episode.parse().ok(),
+        auto_next,
+    };
+    if let Ok(path) = history_path() {
+        if let Ok(history) = HistoryStore::open(&path) {
+            let _ = history.save_playback_preferences(hash, &preferences);
+        }
+    }
+}
+
 fn initialize_added_torrent(endpoint: &str, torrent: &Torrent) -> Result<(), String> {
     let files = torrent_video_files(endpoint, &torrent.hash)?;
     let series = infer_series(&torrent.title, &files);
@@ -2065,6 +2205,7 @@ fn default_preferences() -> Preferences {
         torrserver_url: DEFAULT_TORRSERVER_URL.to_owned(),
         player_type: PlayerType::BundledMpv,
         player_path: String::new(),
+        embedded_player: cfg!(windows),
         torznab_url: String::new(),
         torznab_api_key: String::new(),
     }
@@ -2200,6 +2341,7 @@ fn launch_playback(
                 &torrent.hash,
                 &file,
                 resume,
+                preferences.embedded_player,
             )
             .map(Some)
         })

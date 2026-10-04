@@ -29,6 +29,7 @@ pub struct Preferences {
     pub torrserver_url: String,
     pub player_type: PlayerType,
     pub player_path: String,
+    pub embedded_player: bool,
     pub torznab_url: String,
     pub torznab_api_key: String,
 }
@@ -58,6 +59,10 @@ pub fn load_preferences(path: &Path) -> Result<Preferences, String> {
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .to_owned(),
+        embedded_player: value
+            .get("embedded_player")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(cfg!(windows)),
         torznab_url: value
             .get("torznab_url")
             .and_then(|value| value.as_str())
@@ -88,6 +93,7 @@ pub fn save_preferences(path: &Path, preferences: &Preferences) -> Result<(), St
         "mpv"
     });
     value["player_path"] = serde_json::json!(preferences.player_path.trim());
+    value["embedded_player"] = serde_json::json!(preferences.embedded_player);
     value["torznab_url"] = serde_json::json!(preferences.torznab_url.trim());
     value["torznab_api_key"] = serde_json::json!(preferences.torznab_api_key.trim());
     write_settings(path, &value)
@@ -294,6 +300,7 @@ mod tests {
             torrserver_url: DEFAULT_TORRSERVER_URL.into(),
             player_type: PlayerType::BundledMpv,
             player_path: String::new(),
+            embedded_player: true,
             torznab_url: "http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/".into(),
             torznab_api_key: "secret".into(),
         };
