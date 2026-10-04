@@ -44,10 +44,31 @@ sudo dnf install ./Pirate-Cinema-*-linux-x86_64.rpm
 
 Скачайте `PKGBUILD` и архив из одного релиза, затем выполните `makepkg -si`. MPV и системные библиотеки устанавливаются пакетным менеджером.
 
-Для AppImage установите системные компоненты, затем разрешите запуск файла:
+### Зависимости AppImage
+
+AppImage содержит Pirate Cinema и TorrServer, но использует системные MPV, GTK и WebKitGTK. Перед первым запуском установите зависимости своей системы.
+
+Debian и Ubuntu:
+
+```sh
+sudo apt install mpv libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool
+```
+
+Fedora, RHEL и совместимые системы:
+
+```sh
+sudo dnf install mpv gtk3 webkit2gtk4.1 libayatana-appindicator xdotool
+```
+
+Arch Linux и CachyOS:
 
 ```sh
 sudo pacman -S --needed mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
+```
+
+После установки зависимостей разрешите запуск AppImage:
+
+```sh
 chmod +x Pirate-Cinema-*-x86_64.AppImage
 ```
 
@@ -112,10 +133,31 @@ sudo dnf install ./Pirate-Cinema-*-linux-x86_64.rpm
 
 Download the `PKGBUILD` and source archive from the same release, then run `makepkg -si`.
 
-For the AppImage, install its system runtime and make the file executable:
+#### AppImage dependencies
+
+The AppImage contains Pirate Cinema and TorrServer but uses the system MPV, GTK, and WebKitGTK. Install the runtime for your distribution before first launch.
+
+Debian and Ubuntu:
+
+```sh
+sudo apt install mpv libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool
+```
+
+Fedora, RHEL, and compatible distributions:
+
+```sh
+sudo dnf install mpv gtk3 webkit2gtk4.1 libayatana-appindicator xdotool
+```
+
+Arch Linux and CachyOS:
 
 ```sh
 sudo pacman -S --needed mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
+```
+
+Then make the AppImage executable:
+
+```sh
 chmod +x Pirate-Cinema-*-x86_64.AppImage
 ```
 
