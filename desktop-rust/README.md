@@ -1,4 +1,4 @@
-# Pirate Cinema Desktop 0.6.6
+# Pirate Cinema Desktop 0.6.7
 
 This directory contains the production Rust desktop application. Dioxus Desktop renders the interface; the backend, TorrServer ownership, MPV IPC, SQLite history, metadata cache, backup/restore, updater, and tray are implemented in Rust. There is no Electron, Node.js, React, or egui runtime in this build.
 
