@@ -12,7 +12,7 @@ use pirate_cinema_core::torrserver_process::{
 };
 use pirate_cinema_core::{
     add_magnet, check_rust_update, configure_torznab, download_rust_update, magnet_info_hash,
-    magnet_title, read_torrserver, remove_torrent, search_all_sources, stream_url,
+    magnet_title, probe_stream, read_torrserver, remove_torrent, search_all_sources, stream_url,
     torrent_video_files, ReleaseUpdate, SearchResult, Torrent, VideoFile, DEFAULT_TORRSERVER_URL,
 };
 use std::collections::HashMap;
@@ -386,6 +386,25 @@ fn App() -> Element {
             refresh_server(endpoint(), busy, server, cards, recent);
             tokio::time::sleep(Duration::from_secs(3)).await;
         }
+    });
+
+    use_future(move || async move {
+        tokio::time::sleep(Duration::from_secs(12)).await;
+        let missing = cards
+            .read()
+            .iter()
+            .filter(|card| card.metadata.is_none() || card.poster.is_none())
+            .map(|card| card.torrent.clone())
+            .collect::<Vec<_>>();
+        if missing.is_empty() {
+            return;
+        }
+        let request_endpoint = endpoint();
+        let _ = tokio::task::spawn_blocking(move || {
+            sync_library_metadata(&request_endpoint, &missing, None)
+        })
+        .await;
+        cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
     });
 
     use_effect(move || {
@@ -1276,8 +1295,8 @@ fn Detail(
 ) -> Element {
     let mut confirm_remove = use_signal(|| false);
     let mut file_filter = use_signal(String::new);
-    let mut season = use_signal(|| 0_u8);
-    let mut episode = use_signal(|| 0_u16);
+    let mut season = use_signal(|| "all".to_owned());
+    let mut episode = use_signal(|| "all".to_owned());
     let mut file_kind = use_signal(|| "all".to_owned());
     let mut auto_next = use_signal(|| false);
     let Some(torrent) = torrent else {
@@ -1297,7 +1316,13 @@ fn Detail(
     seasons.dedup();
     let mut episodes = files
         .iter()
-        .filter(|item| season() == 0 || file_season(&item.file.path) == Some(season()))
+        .filter(|item| {
+            season() == "all"
+                || file_season(&item.file.path)
+                    .map(|value| value.to_string())
+                    .as_deref()
+                    == Some(season().as_str())
+        })
         .filter_map(|item| file_episode(&item.file.path))
         .collect::<Vec<_>>();
     episodes.sort_unstable();
@@ -1312,8 +1337,16 @@ fn Detail(
             (needle.is_empty()
                 || item.file.name.to_lowercase().contains(&needle)
                 || item.file.path.to_lowercase().contains(&needle))
-                && (season() == 0 || file_season(&item.file.path) == Some(season()))
-                && (episode() == 0 || file_episode(&item.file.path) == Some(episode()))
+                && (season() == "all"
+                    || file_season(&item.file.path)
+                        .map(|value| value.to_string())
+                        .as_deref()
+                        == Some(season().as_str()))
+                && (episode() == "all"
+                    || file_episode(&item.file.path)
+                        .map(|value| value.to_string())
+                        .as_deref()
+                        == Some(episode().as_str()))
                 && match file_kind().as_str() {
                     "movies" => !is_episode(&item.file.path),
                     "episodes" => is_episode(&item.file.path),
@@ -1377,21 +1410,21 @@ fn Detail(
                 div { class: "filters",
                     input { value: "{file_filter}", placeholder: language.pick("Найти фильм или серию", "Find a movie or episode"), oninput: move |event| file_filter.set(event.value()) }
                     if has_movies && has_episodes {
-                        select { value: "{file_kind}", onchange: move |event| { file_kind.set(event.value()); season.set(0); episode.set(0); },
+                        select { value: "{file_kind}", onchange: move |event| { file_kind.set(event.value()); season.set("all".into()); episode.set("all".into()); },
                             option { value: "all", {language.pick("Фильмы и серии", "Movies and episodes")} }
                             option { value: "movies", {language.pick("Только фильмы", "Movies only")} }
                             option { value: "episodes", {language.pick("Только серии", "Episodes only")} }
                         }
                     }
                     if seasons.len() > 1 {
-                        select { value: "{season}", onchange: move |event| { season.set(event.value().parse().unwrap_or(0)); episode.set(0); },
-                            option { value: "0", {language.pick("Все сезоны", "All seasons")} }
-                            for number in seasons { option { value: "{number}", if language == Language::Russian { "Сезон {number}" } else { "Season {number}" } } }
+                        select { value: "{season}", onchange: move |event| { season.set(event.value()); episode.set("all".into()); },
+                            option { value: "all", {language.pick("Все сезоны", "All seasons")} }
+                            for number in seasons { option { value: "{number}", if number == 0 { {language.pick("Спецвыпуски", "Specials")} } else if language == Language::Russian { "Сезон {number}" } else { "Season {number}" } } }
                         }
                     }
                     if !episodes.is_empty() {
-                        select { value: "{episode}", onchange: move |event| episode.set(event.value().parse().unwrap_or(0)),
-                            option { value: "0", {language.pick("Все серии", "All episodes")} }
+                        select { value: "{episode}", onchange: move |event| episode.set(event.value()),
+                            option { value: "all", {language.pick("Все серии", "All episodes")} }
                             for number in episodes { option { value: "{number}", if language == Language::Russian { "Серия {number}" } else { "Episode {number}" } } }
                         }
                     }
@@ -2140,6 +2173,8 @@ fn launch_playback(
         let player_torrent = torrent.clone();
         let player_file = file.clone();
         let result = tokio::task::spawn_blocking(move || {
+            probe_stream(&endpoint, &torrent.hash, &file)
+                .map_err(|error| format!("Поток пока недоступен: {error}"))?;
             let preferences = settings_path()
                 .ok()
                 .and_then(|path| settings::load_preferences(&path).ok())
@@ -2427,6 +2462,12 @@ fn clock(seconds: i64) -> String {
 
 fn file_season(path: &str) -> Option<u8> {
     let lower = path.to_lowercase();
+    if ["special", "ova", "спецвыпуск"]
+        .iter()
+        .any(|marker| lower.contains(marker))
+    {
+        return Some(0);
+    }
     for marker in ["season", "сезон"] {
         if let Some(offset) = lower.find(marker) {
             let digits = lower[offset + marker.len()..]
@@ -2511,6 +2552,7 @@ mod tests {
         assert_eq!(file_season("Season_12/Episode 1.mkv"), Some(12));
         assert_eq!(file_season("Сезон 2/серия.mkv"), Some(2));
         assert_eq!(file_season("Show.S03E08.mkv"), Some(3));
+        assert_eq!(file_season("Show/OVA 1.mkv"), Some(0));
         assert_eq!(file_season("Movie.2026.mkv"), None);
     }
 
