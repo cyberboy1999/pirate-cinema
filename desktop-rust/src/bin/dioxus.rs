@@ -1277,6 +1277,8 @@ fn Detail(
     let mut confirm_remove = use_signal(|| false);
     let mut file_filter = use_signal(String::new);
     let mut season = use_signal(|| 0_u8);
+    let mut episode = use_signal(|| 0_u16);
+    let mut file_kind = use_signal(|| "all".to_owned());
     let mut auto_next = use_signal(|| false);
     let Some(torrent) = torrent else {
         return rsx! { section { class: "page", div { class: "empty", {language.pick("Раздача не выбрана", "No torrent selected")} } } };
@@ -1293,17 +1295,40 @@ fn Detail(
         .collect::<Vec<_>>();
     seasons.sort_unstable();
     seasons.dedup();
+    let mut episodes = files
+        .iter()
+        .filter(|item| season() == 0 || file_season(&item.file.path) == Some(season()))
+        .filter_map(|item| file_episode(&item.file.path))
+        .collect::<Vec<_>>();
+    episodes.sort_unstable();
+    episodes.dedup();
+    let has_movies = files.iter().any(|item| !is_episode(&item.file.path));
+    let has_episodes = files.iter().any(|item| is_episode(&item.file.path));
     let files_empty = files.is_empty();
     let has_next_file = files.len() > 1;
-    let visible_files = files
+    let mut visible_files = files
         .into_iter()
         .filter(|item| {
             (needle.is_empty()
                 || item.file.name.to_lowercase().contains(&needle)
                 || item.file.path.to_lowercase().contains(&needle))
                 && (season() == 0 || file_season(&item.file.path) == Some(season()))
+                && (episode() == 0 || file_episode(&item.file.path) == Some(episode()))
+                && match file_kind().as_str() {
+                    "movies" => !is_episode(&item.file.path),
+                    "episodes" => is_episode(&item.file.path),
+                    _ => true,
+                }
         })
         .collect::<Vec<_>>();
+    visible_files.sort_by_key(|item| {
+        (
+            is_episode(&item.file.path),
+            file_season(&item.file.path).unwrap_or(0),
+            file_episode(&item.file.path).unwrap_or(0),
+            item.file.path.to_lowercase(),
+        )
+    });
     rsx! {
         section { class: "page",
             div { class: "detail-layout",
@@ -1351,10 +1376,23 @@ fn Detail(
             if visible_files.len() > 1 || !needle.is_empty() || !seasons.is_empty() {
                 div { class: "filters",
                     input { value: "{file_filter}", placeholder: language.pick("Найти фильм или серию", "Find a movie or episode"), oninput: move |event| file_filter.set(event.value()) }
+                    if has_movies && has_episodes {
+                        select { value: "{file_kind}", onchange: move |event| { file_kind.set(event.value()); season.set(0); episode.set(0); },
+                            option { value: "all", {language.pick("Фильмы и серии", "Movies and episodes")} }
+                            option { value: "movies", {language.pick("Только фильмы", "Movies only")} }
+                            option { value: "episodes", {language.pick("Только серии", "Episodes only")} }
+                        }
+                    }
                     if seasons.len() > 1 {
-                        select { value: "{season}", onchange: move |event| season.set(event.value().parse().unwrap_or(0)),
+                        select { value: "{season}", onchange: move |event| { season.set(event.value().parse().unwrap_or(0)); episode.set(0); },
                             option { value: "0", {language.pick("Все сезоны", "All seasons")} }
                             for number in seasons { option { value: "{number}", if language == Language::Russian { "Сезон {number}" } else { "Season {number}" } } }
+                        }
+                    }
+                    if !episodes.is_empty() {
+                        select { value: "{episode}", onchange: move |event| episode.set(event.value().parse().unwrap_or(0)),
+                            option { value: "0", {language.pick("Все серии", "All episodes")} }
+                            for number in episodes { option { value: "{number}", if language == Language::Russian { "Серия {number}" } else { "Episode {number}" } } }
                         }
                     }
                 }
@@ -1383,8 +1421,8 @@ fn Settings(
     mut endpoint: Signal<String>,
     busy: Signal<bool>,
     server: Signal<ServerState>,
-    cards: Signal<Vec<LibraryCard>>,
-    recent: Signal<Vec<ContinueItem>>,
+    mut cards: Signal<Vec<LibraryCard>>,
+    mut recent: Signal<Vec<ContinueItem>>,
     metadata_status: Signal<String>,
     online_icon: String,
     on_sync: EventHandler<MouseEvent>,
@@ -1839,8 +1877,8 @@ fn add_search_result(
     selected: Signal<Option<Torrent>>,
     files: Signal<Vec<PlayableFile>>,
     mut server: Signal<ServerState>,
-    cards: Signal<Vec<LibraryCard>>,
-    recent: Signal<Vec<ContinueItem>>,
+    mut cards: Signal<Vec<LibraryCard>>,
+    mut recent: Signal<Vec<ContinueItem>>,
 ) {
     busy.set(true);
     spawn(async move {
@@ -1851,19 +1889,28 @@ fn add_search_result(
             tokio::task::spawn_blocking(move || add_magnet(&request_endpoint, &link, &title)).await;
         match added {
             Ok(Ok(added)) => {
+                let torrent = Torrent {
+                    title: item.title,
+                    hash: added.hash,
+                };
+                let metadata_endpoint = endpoint.clone();
+                let metadata_torrent = torrent.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    initialize_added_torrent(&metadata_endpoint, &metadata_torrent)
+                })
+                .await;
+                if !server
+                    .read()
+                    .torrents
+                    .iter()
+                    .any(|saved| saved.hash.eq_ignore_ascii_case(&torrent.hash))
+                {
+                    server.write().torrents.push(torrent.clone());
+                }
+                cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
+                recent.set(load_continue_items(&server.read().torrents).unwrap_or_default());
                 if open {
-                    open_torrent(
-                        Torrent {
-                            title: item.title,
-                            hash: added.hash,
-                        },
-                        endpoint,
-                        page,
-                        busy,
-                        selected,
-                        files,
-                        server,
-                    );
+                    open_torrent(torrent, endpoint, page, busy, selected, files, server);
                 } else {
                     server.write().error = "Раздача добавлена в TorrServer".into();
                     refresh_server(endpoint, busy, server, cards, recent);
@@ -1915,6 +1962,17 @@ fn history_path() -> Result<PathBuf, String> {
     let root = data.parent().ok_or("Не удалось определить папку истории")?;
     std::fs::create_dir_all(root).map_err(|error| error.to_string())?;
     Ok(root.join("history.sqlite"))
+}
+
+fn initialize_added_torrent(endpoint: &str, torrent: &Torrent) -> Result<(), String> {
+    let files = torrent_video_files(endpoint, &torrent.hash)?;
+    let series = infer_series(&torrent.title, &files);
+    let history = HistoryStore::open(&history_path()?).map_err(|error| error.to_string())?;
+    history
+        .set_media_type(&torrent.hash, if series { "series" } else { "movie" })
+        .map_err(|error| error.to_string())?;
+    let _ = sync_library_metadata(endpoint, std::slice::from_ref(torrent), None);
+    Ok(())
 }
 
 fn settings_path() -> Result<PathBuf, String> {
@@ -2247,11 +2305,19 @@ fn sync_library_metadata(
         let title = current
             .as_ref()
             .map_or(torrent.title.as_str(), |item| item.title.as_str());
-        let series = history
+        let stored_type = history
             .media_type(&torrent.hash)
-            .map_err(|error| error.to_string())?
-            .as_deref()
-            == Some("series");
+            .map_err(|error| error.to_string())?;
+        let series = if let Some(kind) = stored_type.as_deref() {
+            kind == "series"
+        } else {
+            let files = torrent_video_files(endpoint, &torrent.hash).unwrap_or_default();
+            let detected = infer_series(&torrent.title, &files);
+            history
+                .set_media_type(&torrent.hash, if detected { "series" } else { "movie" })
+                .map_err(|error| error.to_string())?;
+            detected
+        };
         let movie = match catalog::lookup(title, series) {
             Ok(movie) => movie,
             Err(_) => {
@@ -2388,9 +2454,51 @@ fn file_season(path: &str) -> Option<u8> {
     None
 }
 
+fn file_episode(path: &str) -> Option<u16> {
+    let lower = path.to_lowercase();
+    for marker in ["episode", "эпизод", "серия"] {
+        if let Some(offset) = lower.find(marker) {
+            let digits = lower[offset + marker.len()..]
+                .trim_start_matches(|character: char| !character.is_ascii_digit())
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>();
+            if let Ok(number) = digits.parse::<u16>() {
+                return Some(number);
+            }
+        }
+    }
+    let bytes = lower.as_bytes();
+    for index in 1..bytes.len().saturating_sub(1) {
+        if bytes[index] == b'e' && bytes[index - 1].is_ascii_digit() {
+            let digits = lower[index + 1..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>();
+            if let Ok(number) = digits.parse::<u16>() {
+                return Some(number);
+            }
+        }
+    }
+    None
+}
+
+fn is_episode(path: &str) -> bool {
+    file_season(path).is_some() || file_episode(path).is_some()
+}
+
+fn infer_series(title: &str, files: &[VideoFile]) -> bool {
+    let episodic = files.iter().filter(|file| is_episode(&file.path)).count();
+    episodic > 1
+        || episodic * 2 > files.len()
+        || is_episode(title)
+        || title.to_lowercase().contains("сезон")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{file_season, release_quality, short_hash};
+    use super::{file_episode, file_season, infer_series, release_quality, short_hash};
+    use pirate_cinema_core::VideoFile;
 
     #[test]
     fn short_hash_never_splits_utf8_or_overflows() {
@@ -2404,6 +2512,23 @@ mod tests {
         assert_eq!(file_season("Сезон 2/серия.mkv"), Some(2));
         assert_eq!(file_season("Show.S03E08.mkv"), Some(3));
         assert_eq!(file_season("Movie.2026.mkv"), None);
+    }
+
+    #[test]
+    fn detects_and_classifies_episodic_releases() {
+        assert_eq!(file_episode("Show.S03E08.mkv"), Some(8));
+        assert_eq!(file_episode("Сезон 2/Серия 11.mkv"), Some(11));
+        let files = ["Movie.mkv", "Show.S01E01.mkv", "Show.S01E02.mkv"]
+            .into_iter()
+            .enumerate()
+            .map(|(id, path)| VideoFile {
+                id: id as i64,
+                name: path.into(),
+                path: path.into(),
+                length: 1,
+            })
+            .collect::<Vec<_>>();
+        assert!(infer_series("Collection", &files));
     }
 
     #[test]

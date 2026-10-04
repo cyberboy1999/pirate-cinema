@@ -36,6 +36,8 @@ The bundled TorrServer remains running when the optional RuTor settings call fai
 
 Linux release packaging pins appimagetool 1.9.1 and verifies its published SHA-256; it does not depend on the mutable `continuous` asset.
 
+Newly added torrents are classified locally as a movie or series from their title and real TorrServer video-file list, then immediately enter the existing metadata/poster pipeline. Mixed releases expose movie/episode grouping plus season and episode selectors; files retain their original TorrServer IDs and are ordered by group, season, episode and path.
+
 Release 0.6.3 fixes the file-card CSS cascade: the specific launch-button rule follows the generic file-button rule, so both its normal and hover states remain visibly white.
 
 Release 0.6.4 no longer blocks creation of the desktop window while bundled TorrServer starts. The UI opens immediately and retries the local service in the background for up to one minute. Arch/CachyOS packaging now declares the required `webkit2gtk-4.1` runtime; DEB and RPM metadata declare their equivalent WebKitGTK runtime packages.
