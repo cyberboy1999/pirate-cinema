@@ -6,6 +6,7 @@ binary="${2:?application binary is required}"
 torrserver="${3:?TorrServer binary is required}"
 output="${4:?output directory is required}"
 linuxdeploy="${5:?linuxdeploy is required}"
+appimagetool="${6:?appimagetool is required}"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 appdir="$(mktemp -d)"
@@ -36,8 +37,7 @@ find "$appdir/usr/lib" \( -type f -o -type l \) \( \
 \) -delete
 
 APPIMAGE_EXTRACT_AND_RUN=1 \
-NO_STRIP=1 \
-OUTPUT="$output/Pirate-Cinema-$version-x86_64.AppImage" \
-"$linuxdeploy" \
-  --appdir "$appdir" \
-  --output appimage
+ARCH=x86_64 \
+"$appimagetool" \
+  "$appdir" \
+  "$output/Pirate-Cinema-$version-x86_64.AppImage"

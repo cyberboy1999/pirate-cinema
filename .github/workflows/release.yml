@@ -76,7 +76,9 @@ jobs:
           echo 'c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  linuxdeploy-x86_64.AppImage' | sha256sum -c -
           curl -fL 'https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/7a3fbc31a9e5075073ff8790f26effbac5f84453/linuxdeploy-plugin-gtk.sh' -o linuxdeploy-plugin-gtk.sh
           echo 'b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171  linuxdeploy-plugin-gtk.sh' | sha256sum -c -
-          chmod 755 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
+          curl -fL 'https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage' -o appimagetool-x86_64.AppImage
+          echo 'a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0  appimagetool-x86_64.AppImage' | sha256sum -c -
+          chmod 755 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh appimagetool-x86_64.AppImage
       - run: cargo test --manifest-path desktop-rust/Cargo.toml
       - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
       - name: Build Linux packages
@@ -84,7 +86,7 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)
           mkdir -p release-linux
           desktop-rust/packaging/build-linux.sh "$version" desktop-rust/target/release/pirate-cinema desktop-rust/vendor/torrserver/TorrServer-linux-amd64 release-linux
-          desktop-rust/packaging/build-appimage.sh "$version" desktop-rust/target/release/pirate-cinema desktop-rust/vendor/torrserver/TorrServer-linux-amd64 release-linux "$PWD/linuxdeploy-x86_64.AppImage"
+          desktop-rust/packaging/build-appimage.sh "$version" desktop-rust/target/release/pirate-cinema desktop-rust/vendor/torrserver/TorrServer-linux-amd64 release-linux "$PWD/linuxdeploy-x86_64.AppImage" "$PWD/appimagetool-x86_64.AppImage"
           (cd release-linux && sha256sum *.AppImage *.deb *.rpm *.tar.gz > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
