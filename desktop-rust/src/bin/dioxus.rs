@@ -106,6 +106,8 @@ h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
 .result span, .result small { color: #888; }
 .secondary, .result button, .file button { min-height: 42px; border: 1px solid #303030; border-radius: 9px; padding: 0 16px; background: #191919; font-weight:600; transition:background .15s,border-color .15s; }
 .secondary:hover,.result button:hover,.file button:hover{background:#242424;border-color:#555}
+.result button.result-action{background:#fff;color:#080808;border-color:#fff}
+.result button.result-action:hover{background:#e5e5e5;border-color:#e5e5e5}
 .file button.launch-button{background:#fff;color:#080808;border-color:#fff}
 .file button.launch-button:hover{background:#e5e5e5;border-color:#e5e5e5}
 button:disabled{cursor:not-allowed;opacity:.48;transform:none!important}
@@ -396,54 +398,7 @@ fn App() -> Element {
                 popular.set(saved);
             }
         }
-        spawn(async move {
-            let loaded = tokio::task::spawn_blocking(catalog::popular).await;
-            if let Ok(items) =
-                loaded.map(|result| result.unwrap_or_else(|_| catalog::fallback_popular()))
-            {
-                if let Some(cache) = popular_cache_dir() {
-                    let _ = catalog::cache_popular(&cache, &items);
-                }
-                popular.set(items.clone());
-                for group in items.chunks(4) {
-                    let group = group.to_vec();
-                    let loaded = tokio::task::spawn_blocking(move || {
-                        std::thread::scope(|scope| {
-                            let jobs = group
-                                .iter()
-                                .map(|movie| {
-                                    scope.spawn(move || {
-                                        let cache = popular_cache_dir();
-                                        let bytes = cache
-                                            .as_deref()
-                                            .and_then(|path| {
-                                                catalog::cached_poster(path, &movie.id)
-                                            })
-                                            .or_else(|| {
-                                                catalog::movie_poster_jpeg(movie, false).ok()
-                                            });
-                                        bytes.map(|bytes| {
-                                            if let Some(cache) = cache.as_deref() {
-                                                let _ =
-                                                    catalog::cache_poster(cache, &movie.id, &bytes);
-                                            }
-                                            (movie.id.clone(), jpeg_data_uri(&bytes))
-                                        })
-                                    })
-                                })
-                                .collect::<Vec<_>>();
-                            jobs.into_iter()
-                                .filter_map(|job| job.join().ok().flatten())
-                                .collect::<Vec<_>>()
-                        })
-                    })
-                    .await;
-                    if let Ok(posters) = loaded {
-                        popular_posters.write().extend(posters);
-                    }
-                }
-            }
-        });
+        refresh_popular(popular, popular_posters);
         if let Some(magnet) = STARTUP_MAGNET.get().cloned() {
             let title = pirate_cinema_core::magnet_title(&magnet);
             busy.set(true);
@@ -874,7 +829,7 @@ fn App() -> Element {
                     }
                 }
                 match page() {
-                    Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), posters: popular_posters(), recent: recent(), cards: cards(), on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
+                    Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), posters: popular_posters(), recent: recent(), cards: cards(), busy: busy(), on_refresh: move |_| { refresh_server(endpoint(), busy, server, cards, recent); refresh_popular(popular, popular_posters); }, on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
                     Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
                     Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
@@ -979,6 +934,55 @@ fn popular_cache_dir() -> Option<PathBuf> {
         .map(|path| path.join("cache").join("popular"))
 }
 
+fn refresh_popular(
+    mut popular: Signal<Vec<Movie>>,
+    mut popular_posters: Signal<HashMap<String, String>>,
+) {
+    spawn(async move {
+        let loaded = tokio::task::spawn_blocking(catalog::popular).await;
+        if let Ok(items) =
+            loaded.map(|result| result.unwrap_or_else(|_| catalog::fallback_popular()))
+        {
+            if let Some(cache) = popular_cache_dir() {
+                let _ = catalog::cache_popular(&cache, &items);
+            }
+            popular.set(items.clone());
+            for group in items.chunks(4) {
+                let group = group.to_vec();
+                let loaded = tokio::task::spawn_blocking(move || {
+                    std::thread::scope(|scope| {
+                        let jobs = group
+                            .iter()
+                            .map(|movie| {
+                                scope.spawn(move || {
+                                    let cache = popular_cache_dir();
+                                    let bytes = cache
+                                        .as_deref()
+                                        .and_then(|path| catalog::cached_poster(path, &movie.id))
+                                        .or_else(|| catalog::movie_poster_jpeg(movie, false).ok());
+                                    bytes.map(|bytes| {
+                                        if let Some(cache) = cache.as_deref() {
+                                            let _ = catalog::cache_poster(cache, &movie.id, &bytes);
+                                        }
+                                        (movie.id.clone(), jpeg_data_uri(&bytes))
+                                    })
+                                })
+                            })
+                            .collect::<Vec<_>>();
+                        jobs.into_iter()
+                            .filter_map(|job| job.join().ok().flatten())
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .await;
+                if let Ok(posters) = loaded {
+                    popular_posters.write().extend(posters);
+                }
+            }
+        }
+    });
+}
+
 #[component]
 fn Home(
     language: Language,
@@ -988,6 +992,8 @@ fn Home(
     posters: HashMap<String, String>,
     recent: Vec<ContinueItem>,
     cards: Vec<LibraryCard>,
+    busy: bool,
+    on_refresh: EventHandler<MouseEvent>,
     on_movie: EventHandler<String>,
     on_open: EventHandler<Torrent>,
 ) -> Element {
@@ -1015,6 +1021,7 @@ fn Home(
             div { class: "section-heading",
                 h1 { {language.pick("Популярное", "Popular")} }
                 div { class: "shelf-controls",
+                    button { aria_label: language.pick("Обновить главную", "Refresh home"), title: language.pick("Обновить главную", "Refresh home"), disabled: busy, onclick: move |event| on_refresh.call(event), "↻" }
                     button { aria_label: language.pick("Предыдущие фильмы", "Previous movies"), onclick: move |_| { document::eval("document.querySelector('.shelf')?.scrollBy({left:-760,behavior:'smooth'})"); }, img { src: "{left_icon}", alt: "" } }
                     button { aria_label: language.pick("Следующие фильмы", "Next movies"), onclick: move |_| { document::eval("document.querySelector('.shelf')?.scrollBy({left:760,behavior:'smooth'})"); }, img { src: "{right_icon}", alt: "" } }
                 }
@@ -1107,8 +1114,8 @@ fn SearchPage(
                             strong { title: "{item.title}", "[{release_quality(&item.title)}] {item.title}" }
                             span { "{item.size}" }
                             small { if language == Language::Russian { "{item.seeders} сидов" } else { "{item.seeders} seeders" } }
-                            button { class: "secondary", onclick: { let item = item.clone(); move |_| on_add.call((item.clone(), false)) }, {language.pick("Добавить", "Add")} }
-                            button { class: "primary", onclick: { let item = item.clone(); move |_| on_add.call((item.clone(), true)) }, {language.pick("Смотреть", "Watch")} }
+                            button { class: "primary result-action", onclick: { let item = item.clone(); move |_| on_add.call((item.clone(), false)) }, {language.pick("Добавить", "Add")} }
+                            button { class: "primary result-action", onclick: { let item = item.clone(); move |_| on_add.call((item.clone(), true)) }, {language.pick("Смотреть", "Watch")} }
                         }
                     }
                 } }

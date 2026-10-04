@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Latest stable release: 0.6.5. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest stable release: 0.6.6. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -20,13 +20,15 @@ Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source i
 
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
-## Rust desktop 0.6.5
+## Rust desktop 0.6.6
 
 `desktop-rust/` is the production desktop application. Dioxus provides the Rust UI; TorrServer ownership, MPV IPC, SQLite history, metadata, backup/restore, updates and tray integration are implemented in Rust. The release replaces Electron program files and performs a one-time, non-destructive import of the Electron 0.5.8 profile. Windows ships one offline NSIS installer; Linux ships one x86_64 AppImage. The retired egui application is not built or packaged.
 
 The auto-next switch is available for every multi-file torrent, regardless of its saved movie/series classification.
 
 The file-card `Запустить` action uses a solid white treatment so it remains distinct from metadata and secondary controls.
+
+The home shelf has a compact refresh action beside its navigation arrows. It reloads the public catalogue, posters, TorrServer library and continue-watching history without restarting the application. Search-result `Добавить` and `Смотреть` actions use the same solid white treatment as the file-card launch action.
 
 Release 0.6.3 fixes the file-card CSS cascade: the specific launch-button rule follows the generic file-button rule, so both its normal and hover states remain visibly white.
 
