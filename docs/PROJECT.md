@@ -40,6 +40,8 @@ The bundled TorrServer starts with explicit loopback IP, port 8090 and profile p
 
 No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.
 
+The public README is intentionally version-agnostic: installation examples use filename wildcards and always point to the latest GitHub release. Exact version numbers belong in release notes and technical history, not on the repository landing page.
+
 THIRD_PARTY_NOTICES.md records the versions, licenses, source links and SHA-256
 hashes of the TorrServer, MPV and FFmpeg binaries distributed in releases 0.3.2 through 0.4.0.
 Keep it updated whenever a bundled binary changes.
