@@ -66,6 +66,12 @@ distributed under their respective MIT, Apache-2.0 or SQLite public-domain
 terms; their upstream license metadata is retained in the Cargo registry and
 linked from `desktop-rust/Cargo.lock`.
 
+The local Windows player prototype also embeds ArtPlayer 5.4.0 (MIT) and
+hls.js for its WebView2 playback controls. ArtPlayer source and license:
+https://github.com/zhw2590582/ArtPlayer/tree/v5.4.0. The vendored
+`desktop-rust/assets/artplayer.js` SHA-256 is
+`f1db1fa3406aa6d41baa7c554749429a8e79f99d56a794bde23345eb9c07573f`.
+
 ## Ponytail
 
 - Instruction package by Dietrich Gebert, commit

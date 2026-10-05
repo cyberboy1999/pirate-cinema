@@ -47,6 +47,8 @@ const RIGHT_ICON: &[u8] = include_bytes!(
     "../../assets/icons/arrow_arrows_back_direction_left_navigation_right_icon_123236.png"
 );
 const ONLINE_ICON: &[u8] = include_bytes!("../../assets/icons/online_4158.png");
+const HLS_JS: &str = include_str!("../../assets/hls.min.js");
+const ARTPLAYER_JS: &str = include_str!("../../assets/artplayer.js");
 
 const CSS: &str = r#"
 :root { color-scheme: dark; font-family: Inter, "Segoe UI", sans-serif; font-size:17px; background: #050505; color: #f2f2f2; }
@@ -131,6 +133,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .settings-card{display:grid;gap:16px;padding:22px;border:1px solid #292929;border-radius:15px;background:#0d0d0d}.settings-card h2{margin:0;font-size:20px}.settings-card .hint{margin:-7px 0 0;color:#777;font-size:13px;line-height:1.45}
 .settings label { display: grid; gap: 8px; color: #aaa; }
 .settings input, .settings select { min-height:46px;padding: 13px 14px; border: 1px solid #292929; border-radius: 10px; background: #0b0b0b; color: white; }
+.settings label.auto-next{display:flex;align-items:center;gap:10px}.settings .auto-next input[type="checkbox"]{width:18px;height:18px;min-height:0;margin:0;padding:0;flex:0 0 18px;accent-color:#e8e8e8}
 .setting-row{display:grid;grid-template-columns:180px minmax(0,1fr);gap:18px;align-items:center}.setting-row>span{color:#aaa;font-size:14px;text-transform:uppercase;letter-spacing:.6px}.setting-row label{display:contents}.choice-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.choice-row button.selected{border-color:#777;background:#282828;color:#fff}.settings-actions { display:grid;grid-template-columns:1fr 1fr;gap:10px}.settings-card .primary{min-height:46px}.settings-output{display:grid;gap:10px}.server-summary{grid-template-columns:52px minmax(0,1fr);align-items:center}.server-summary img{width:34px;height:34px;object-fit:contain;filter:brightness(0) invert(1);opacity:.82}.server-summary strong{display:block;font-size:17px}.server-summary small{display:block;margin-top:4px;color:#8a8a8a}.settings-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.settings-facts article{padding:15px;border:1px solid #282828;border-radius:11px;background:#111}.settings-facts span,.settings-facts small{display:block;color:#777;font-size:12px}.settings-facts strong{display:block;margin:6px 0;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 24px; }
 .filters input, .filters select { min-height: 42px; padding: 0 13px; border: 1px solid #292929; border-radius: 10px; background: #0b0b0b; color: white; }
@@ -139,7 +142,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .player-strip { margin: 14px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); gap: 8px; align-items: center; padding: 10px; border: 1px solid #242424; border-radius: 12px; background: #0d0d0d; }
 .player-strip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-strip button { min-height: 34px; border: 1px solid #303030; border-radius: 8px; background: #191919; }
-.embedded-player-space{height:min(calc((100vw - 294px)*.5625),calc(100vh - 236px));min-height:360px;margin-top:14px;border:1px solid #292929;border-radius:12px;background:#000}
+.web-player{margin-top:14px;padding:12px;border:1px solid #292929;border-radius:12px;background:#090909}.web-player header{display:flex;align-items:center;gap:10px;margin-bottom:10px}.web-player header strong{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.artplayer-host{width:100%;height:min(72vh,760px);min-height:420px;border-radius:9px;overflow:hidden;background:#000}.art-video-player{--art-theme:#287cff}.pc-player-topbar{position:absolute;z-index:80;top:12px;left:12px;display:flex;gap:6px;max-width:calc(100% - 24px);padding:5px;border:1px solid #ffffff26;border-radius:9px;background:#090909d9;backdrop-filter:blur(8px);opacity:.42;transition:opacity .18s}.art-video-player:hover .pc-player-topbar,.pc-player-topbar:focus-within{opacity:1}.pc-player-topbar select{width:auto;min-width:96px;max-width:190px;height:32px;padding:0 28px 0 10px;border:1px solid #ffffff29;border-radius:7px;background:#181818;color:#fff;font:600 13px system-ui;cursor:pointer}.pc-player-topbar .pc-season{min-width:105px}.pc-player-topbar .pc-episode{min-width:112px}.pc-player-topbar .pc-audio{min-width:130px;max-width:240px}
 .season-progress{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 18px}.season-progress span{padding:8px 11px;border:1px solid #292929;border-radius:9px;background:#101010;color:#aaa;font-size:13px}
 @media (max-width: 900px) { .shell { grid-template-columns: 78px 1fr; } .brand { margin-inline:auto;font-size: 0; } .brand img{width:34px;height:34px}.nav button { justify-content:center;overflow: hidden; white-space: nowrap; } .nav button span { display: none; } .content { padding: 24px 22px; } .topbar{grid-template-columns:1fr}.status{justify-self:start}.search-layout{grid-template-columns:1fr}.search-feature{position:static;display:grid;grid-template-columns:130px 1fr;gap:18px}.setting-row{grid-template-columns:1fr;gap:7px}.settings-actions,.choice-row,.settings-facts{grid-template-columns:1fr}.file { grid-template-columns: 1fr 1fr; } .file > div { grid-column: 1 / -1; } }
 "#;
@@ -193,6 +196,25 @@ struct PendingPlayback {
     resume: bool,
     queue: Vec<VideoFile>,
     auto_next: bool,
+    force_mpv: bool,
+}
+
+#[derive(Clone, PartialEq)]
+struct WebPlayback {
+    torrent: Torrent,
+    file: VideoFile,
+    queue: Vec<VideoFile>,
+    auto_next: bool,
+    url: String,
+    probe_url: String,
+    heartbeat_url: String,
+    position: i64,
+}
+
+enum PlaybackLaunch {
+    Mpv(MpvSession),
+    Web(WebPlayback),
+    External,
 }
 
 struct OwnedPlayer {
@@ -366,6 +388,7 @@ fn App() -> Element {
     let mut selected = use_signal(|| None::<Torrent>);
     let mut files = use_signal(Vec::<PlayableFile>::new);
     let mut players = use_signal(Vec::<OwnedPlayer>::new);
+    let mut web_player = use_signal(|| None::<WebPlayback>);
     let mut busy = use_signal(|| false);
     let mut metadata_status = use_signal(String::new);
     let mut pending_duplicate = use_signal(|| None::<(SearchResult, bool)>);
@@ -376,6 +399,342 @@ fn App() -> Element {
             .is_some_and(|preferences| preferences.onboarding_complete)
     });
     let mut startup_update = use_signal(|| None::<ReleaseUpdate>);
+
+    use_effect(move || {
+        let Some(playback) = web_player() else {
+            return;
+        };
+        let key = format!("{}-{}", playback.torrent.hash, playback.file.id);
+        let selector = serde_json::to_string(&key).unwrap_or_else(|_| "\"\"".into());
+        let episodes = playback
+            .queue
+            .iter()
+            .map(|file| {
+                serde_json::json!({
+                    "id": file.id,
+                    "name": file.name,
+                    "current": file.id == playback.file.id,
+                })
+            })
+            .collect::<Vec<_>>();
+        let episodes = serde_json::to_string(&episodes).unwrap_or_else(|_| "[]".into());
+        let script = format!(
+            r#"
+            {hls_js}
+            {artplayer_js}
+            const key = {selector};
+            const episodes = {episodes};
+            let container = null;
+            for (let attempt = 0; attempt < 50; attempt++) {{
+                container = document.querySelector(`[data-playback-key="${{key}}"]`);
+                if (container) break;
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }}
+            if (!container) return;
+            if (!window.Artplayer || !window.Hls || !window.Hls.isSupported()) {{
+                dioxus.send({{ kind: 'error', message: 'WebView2 не поддерживает ArtPlayer или Media Source Extensions' }});
+                return;
+            }}
+            if (window.__pirateCinemaArt) window.__pirateCinemaArt.destroy();
+            if (window.__pirateCinemaHls) window.__pirateCinemaHls.destroy();
+            let hls = null;
+            let video = null;
+            let recoveryAttempts = 0;
+            let playbackStarted = false;
+            let streamHealthy = false;
+            const bufferedAhead = () => {{
+                if (!video) return 0;
+                const position = video.currentTime || 0;
+                for (let index = 0; index < video.buffered.length; index++) {{
+                    if (video.buffered.start(index) <= position + 0.25 && video.buffered.end(index) >= position) {{
+                        return video.buffered.end(index) - position;
+                    }}
+                }}
+                return 0;
+            }};
+            const startWhenBuffered = () => {{
+                if (playbackStarted || bufferedAhead() < 18) return;
+                playbackStarted = true;
+                video.play().catch(() => {{ playbackStarted = false; }});
+            }};
+            const attachHls = (target, url) => {{
+                if (hls) hls.destroy();
+                video = target;
+                recoveryAttempts = 0;
+                playbackStarted = false;
+                streamHealthy = false;
+                const source = new URL(url);
+                const startPosition = Number(source.searchParams.get('seconds')) || 0;
+                source.searchParams.set('seconds', '0');
+                hls = new window.Hls({{
+                    startPosition,
+                    enableWorker: true,
+                    startFragPrefetch: true,
+                    maxBufferLength: 60,
+                    maxMaxBufferLength: 120,
+                    backBufferLength: 30,
+                    maxBufferHole: 0.5
+                }});
+                window.__pirateCinemaHls = hls;
+                const restorePosition = () => {{
+                    if (startPosition > 0 && Math.abs((video.currentTime || 0) - startPosition) > 1) {{
+                        video.currentTime = startPosition;
+                    }}
+                }};
+                target.addEventListener('loadedmetadata', restorePosition, {{ once: true }});
+                hls.on(window.Hls.Events.FRAG_BUFFERED, startWhenBuffered);
+                hls.on(window.Hls.Events.FRAG_LOADED, () => {{
+                    recoveryAttempts = 0;
+                    if (!streamHealthy) {{
+                        streamHealthy = true;
+                        dioxus.send({{ kind: 'healthy' }});
+                    }}
+                }});
+                hls.on(window.Hls.Events.ERROR, (_event, data) => {{
+                    if (!data.fatal) return;
+                    if (recoveryAttempts++ < 3 && data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {{
+                        hls.startLoad(video.currentTime || -1);
+                        return;
+                    }}
+                    if (recoveryAttempts <= 3 && data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {{
+                        hls.recoverMediaError();
+                        return;
+                    }}
+                    dioxus.send({{ kind: 'error', message: data.details || data.type || 'Ошибка HLS' }});
+                }});
+                hls.loadSource(source.toString());
+                hls.attachMedia(target);
+            }};
+            const art = new window.Artplayer({{
+                container,
+                url: container.dataset.hlsUrl,
+                type: 'm3u8',
+                title: container.dataset.title,
+                theme: '#287cff',
+                lang: 'ru',
+                i18n: {{
+                    ru: {{
+                        'Play': 'Воспроизвести', 'Pause': 'Пауза', 'Replay': 'Повторить',
+                        'Volume': 'Громкость', 'Mute': 'Без звука', 'Video Info': 'О видео', 'Close': 'Закрыть',
+                        'Rate': 'Скорость', 'Default': 'По умолчанию', 'Normal': 'Обычная', 'Open': 'Открыть',
+                        'Play Speed': 'Скорость', 'Aspect Ratio': 'Соотношение сторон',
+                        'Fullscreen': 'Полный экран', 'Exit Fullscreen': 'Выйти из полного экрана',
+                        'Web Fullscreen': 'На всё окно', 'Exit Web Fullscreen': 'Выйти из режима окна',
+                        'PIP Mode': 'Картинка в картинке', 'Exit PIP Mode': 'Выйти из PiP',
+                        'Mini Player': 'Мини-плеер', 'Video Flip': 'Отразить видео',
+                        'Horizontal': 'Горизонтально', 'Vertical': 'Вертикально', 'Reconnect': 'Переподключиться',
+                        'Show Setting': 'Показать настройки', 'Hide Setting': 'Скрыть настройки', 'Screenshot': 'Снимок кадра',
+                        'Switch Video': 'Сменить видео', 'Switch Subtitle': 'Сменить субтитры',
+                        'Subtitle Offset': 'Смещение субтитров', 'Video Load Failed': 'Не удалось загрузить видео',
+                        'PIP Not Supported': 'Режим PiP не поддерживается', 'Fullscreen Not Supported': 'Полный экран не поддерживается',
+                        'Last Seen': 'Последняя позиция', 'Jump Play': 'Перейти к просмотру',
+                        'AirPlay': 'AirPlay', 'AirPlay Not Available': 'AirPlay недоступен'
+                    }}
+                }},
+                autoplay: false,
+                fullscreen: true,
+                fullscreenWeb: true,
+                pip: true,
+                hotkey: true,
+                setting: true,
+                playbackRate: true,
+                aspectRatio: true,
+                customType: {{ m3u8: attachHls }}
+            }});
+            window.__pirateCinemaArt = art;
+            const topbar = document.createElement('div');
+            topbar.className = 'pc-player-topbar';
+            const addSelect = (className, label) => {{
+                const select = document.createElement('select');
+                select.className = className;
+                select.title = label;
+                select.setAttribute('aria-label', label);
+                topbar.append(select);
+                return select;
+            }};
+            const parsedEpisodes = episodes.map((item, index) => {{
+                const match = item.name.match(/\bS(\d{{1,2}})E(\d{{1,3}})\b/i);
+                return {{ ...item, season: match ? Number(match[1]) : 1, episode: match ? Number(match[2]) : index + 1 }};
+            }});
+            if (episodes.length > 1) {{
+                const seasons = [...new Set(parsedEpisodes.map(item => item.season))];
+                let selectedSeason = parsedEpisodes.find(item => item.current)?.season ?? seasons[0];
+                let seasonSelect = null;
+                const episodeSelect = addSelect('pc-episode', 'Выбор серии');
+                const fillEpisodes = () => {{
+                    const choices = parsedEpisodes.filter(item => item.season === selectedSeason);
+                    episodeSelect.replaceChildren(...choices.map(item => new Option(`Серия ${{item.episode}}`, String(item.id), false, item.current)));
+                    if (!choices.some(item => item.current)) episodeSelect.value = String(choices[0]?.id ?? '');
+                }};
+                if (seasons.length > 1) {{
+                    seasonSelect = addSelect('pc-season', 'Выбор сезона');
+                    seasonSelect.replaceChildren(...seasons.map(season => new Option(`Сезон ${{season}}`, String(season), false, season === selectedSeason)));
+                    topbar.insertBefore(seasonSelect, episodeSelect);
+                    seasonSelect.addEventListener('change', () => {{ selectedSeason = Number(seasonSelect.value); fillEpisodes(); }});
+                }}
+                fillEpisodes();
+                episodeSelect.addEventListener('change', () => {{
+                    const fileId = Number(episodeSelect.value);
+                    if (!parsedEpisodes.find(item => item.id === fileId)?.current) dioxus.send({{ kind: 'episode', file_id: fileId }});
+                }});
+            }}
+            const audioSelect = addSelect('pc-audio', 'Выбор озвучки');
+            audioSelect.append(new Option('Озвучка…', ''));
+            art.template.$player.append(topbar);
+            requestAnimationFrame(() => {{
+                window.focus();
+                container.scrollIntoView({{ block: 'start', behavior: 'smooth' }});
+                container.tabIndex = -1;
+                container.focus({{ preventScroll: true }});
+            }});
+            art.on('fullscreen', active => dioxus.send({{ kind: 'fullscreen', active }}));
+            art.on('video:ended', () => dioxus.send({{ kind: 'ended' }}));
+            const loadAudioTracks = async () => {{
+                for (let attempt = 0; attempt < 4; attempt++) {{
+                    try {{
+                        const response = await fetch(container.dataset.probeUrl);
+                        const info = response.ok ? await response.json() : null;
+                        const tracks = (info?.Tracks || []).filter(track => String(track.Type).toLowerCase() === 'audio');
+                        if (!tracks.length) throw new Error('audio tracks unavailable');
+                        audioSelect.replaceChildren(...tracks.map((track, index) => new Option(
+                            [track.Title, track.Language, track.Channels ? `${{track.Channels}} ch` : ''].filter(Boolean).join(' · ') || `Дорожка ${{index + 1}}`,
+                            String(track.Index ?? index)
+                        )));
+                        audioSelect.addEventListener('change', () => {{
+                            const next = new URL(container.dataset.hlsUrl);
+                            next.searchParams.set('audio', audioSelect.value);
+                            next.searchParams.set('seconds', String(Math.floor(art.currentTime || 0)));
+                            art.pause();
+                            art.switchUrl(next.toString()).catch(error => dioxus.send({{ kind: 'error', message: String(error) }}));
+                        }});
+                        return;
+                    }} catch (_) {{
+                        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 2000));
+                    }}
+                }}
+                audioSelect.replaceChildren(new Option('Озвучка недоступна', ''));
+                audioSelect.disabled = true;
+            }};
+            void loadAudioTracks();
+            while (document.contains(container) && container.dataset.playbackKey === key) {{
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                fetch(container.dataset.heartbeatUrl).catch(() => {{}});
+                dioxus.send({{ kind: 'progress', position: art.currentTime || 0, duration: art.duration || 0 }});
+                if (video.ended) break;
+            }}
+            if (window.__pirateCinemaHls === hls) window.__pirateCinemaHls = null;
+            if (window.__pirateCinemaArt === art) window.__pirateCinemaArt = null;
+            if (hls) hls.destroy();
+            art.destroy();
+            "#,
+            hls_js = HLS_JS,
+            artplayer_js = ARTPLAYER_JS,
+            episodes = episodes
+        );
+        let player_window = desktop.clone();
+        spawn(async move {
+            let mut eval = document::eval(&script);
+            while let Ok(value) = eval.recv::<serde_json::Value>().await {
+                if value.get("kind").and_then(|item| item.as_str()) == Some("fullscreen") {
+                    player_window.set_fullscreen(
+                        value
+                            .get("active")
+                            .and_then(|item| item.as_bool())
+                            .unwrap_or(false),
+                    );
+                    continue;
+                }
+                if value.get("kind").and_then(|item| item.as_str()) == Some("error") {
+                    let message = value
+                        .get("message")
+                        .and_then(|item| item.as_str())
+                        .unwrap_or("Неизвестная ошибка HLS");
+                    server.write().error = format!("Встроенный HLS-плеер: {message}");
+                    continue;
+                }
+                if value.get("kind").and_then(|item| item.as_str()) == Some("healthy") {
+                    if server.read().error.starts_with("Встроенный HLS-плеер:") {
+                        server.write().error.clear();
+                    }
+                    continue;
+                }
+                if value.get("kind").and_then(|item| item.as_str()) == Some("episode") {
+                    if let Some(file) = value
+                        .get("file_id")
+                        .and_then(|item| item.as_i64())
+                        .and_then(|id| playback.queue.iter().find(|file| file.id == id))
+                        .cloned()
+                    {
+                        web_player.set(None);
+                        launch_playback(
+                            PendingPlayback {
+                                torrent: playback.torrent.clone(),
+                                file,
+                                resume: true,
+                                queue: playback.queue.clone(),
+                                auto_next: playback.auto_next,
+                                force_mpv: false,
+                            },
+                            endpoint(),
+                            busy,
+                            players,
+                            web_player,
+                            server,
+                        );
+                        break;
+                    }
+                    continue;
+                }
+                if value.get("kind").and_then(|item| item.as_str()) == Some("ended") {
+                    if playback.auto_next {
+                        if let Some(file) = playback
+                            .queue
+                            .iter()
+                            .position(|file| file.id == playback.file.id)
+                            .and_then(|position| playback.queue.get(position + 1))
+                            .cloned()
+                        {
+                            web_player.set(None);
+                            launch_playback(
+                                PendingPlayback {
+                                    torrent: playback.torrent.clone(),
+                                    file,
+                                    resume: true,
+                                    queue: playback.queue.clone(),
+                                    auto_next: true,
+                                    force_mpv: false,
+                                },
+                                endpoint(),
+                                busy,
+                                players,
+                                web_player,
+                                server,
+                            );
+                        }
+                    }
+                    break;
+                }
+                let position = value
+                    .get("position")
+                    .and_then(|item| item.as_f64())
+                    .unwrap_or(0.0);
+                let duration = value
+                    .get("duration")
+                    .and_then(|item| item.as_f64())
+                    .unwrap_or(0.0);
+                if let Ok(path) = history_path() {
+                    if let Ok(history) = HistoryStore::open(&path) {
+                        let _ = history.save_progress(
+                            &playback.torrent.hash,
+                            playback.file.id,
+                            position as i64,
+                            duration as i64,
+                        );
+                    }
+                }
+            }
+        });
+    });
 
     use_future(move || async move {
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -496,6 +855,7 @@ fn App() -> Element {
                                                 resume: true,
                                                 queue: player.queue.clone(),
                                                 auto_next: true,
+                                                force_mpv: false,
                                             });
                                         }
                                     }
@@ -534,7 +894,7 @@ fn App() -> Element {
                 server.write().error = error;
             }
             for request in advance {
-                launch_playback(request, endpoint(), busy, players, server);
+                launch_playback(request, endpoint(), busy, players, web_player, server);
             }
         }
     });
@@ -587,10 +947,12 @@ fn App() -> Element {
                         resume: true,
                         queue,
                         auto_next: true,
+                        force_mpv: false,
                     },
                     endpoint(),
                     busy,
                     players,
+                    web_player,
                     server,
                 ),
                 Ok(Err(error)) => {
@@ -681,6 +1043,12 @@ fn App() -> Element {
         let Some(torrent) = selected.read().clone() else {
             return;
         };
+        if web_player.read().as_ref().is_some_and(|playback| {
+            playback.torrent.hash == torrent.hash && playback.file.id == file.id
+        }) {
+            server.write().error = "Этот файл уже открыт во встроенном плеере".into();
+            return;
+        }
         if let Some(session) = players
             .write()
             .iter_mut()
@@ -697,7 +1065,7 @@ fn App() -> Element {
             .iter()
             .map(|item| item.file.clone())
             .collect::<Vec<_>>();
-        if players.read().is_empty() {
+        if players.read().is_empty() && web_player.read().is_none() {
             launch_playback(
                 PendingPlayback {
                     torrent,
@@ -705,10 +1073,12 @@ fn App() -> Element {
                     resume,
                     queue,
                     auto_next,
+                    force_mpv: false,
                 },
                 endpoint(),
                 busy,
                 players,
+                web_player,
                 server,
             );
         } else {
@@ -718,6 +1088,7 @@ fn App() -> Element {
                 resume,
                 queue,
                 auto_next,
+                force_mpv: false,
             }));
         }
     };
@@ -854,11 +1225,6 @@ fn App() -> Element {
         .iter()
         .map(|player| player.session.label().to_owned())
         .collect::<Vec<_>>();
-    let embedded_player_active = players
-        .read()
-        .iter()
-        .any(|player| player.session.is_embedded());
-
     rsx! {
         style { {CSS} }
         document::Title { "Pirate Cinema {VERSION} — локальная медиатека" }
@@ -917,9 +1283,9 @@ fn App() -> Element {
                 }
                 if let Some(request) = pending_playback() {
                     div { class: "notice",
-                        {language().pick("MPV уже воспроизводит другой файл. Заменить его или открыть новое окно? ", "MPV is already playing another file. Replace it or open a new window? ")}
-                        button { class: "secondary", onclick: { let request = request.clone(); move |_| { players.write().clear(); pending_playback.set(None); launch_playback(request.clone(), endpoint(), busy, players, server); } }, {language().pick("Заменить", "Replace")} }
-                        button { class: "secondary", onclick: { let request = request.clone(); move |_| { pending_playback.set(None); launch_playback(request.clone(), endpoint(), busy, players, server); } }, {language().pick("Новое окно", "New window")} }
+                        {language().pick("Плеер уже воспроизводит другой файл. Заменить его или открыть новое окно? ", "The player is already playing another file. Replace it or open a new window? ")}
+                        button { class: "secondary", onclick: { let request = request.clone(); move |_| { players.write().clear(); web_player.set(None); pending_playback.set(None); launch_playback(request.clone(), endpoint(), busy, players, web_player, server); } }, {language().pick("Заменить", "Replace")} }
+                        button { class: "secondary", onclick: { let request = request.clone(); move |_| { let mut request = request.clone(); request.force_mpv = true; pending_playback.set(None); launch_playback(request, endpoint(), busy, players, web_player, server); } }, {language().pick("Новое окно MPV", "New MPV window")} }
                         button { class: "secondary", onclick: move |_| pending_playback.set(None), {language().pick("Отмена", "Cancel")} }
                     }
                 }
@@ -933,7 +1299,23 @@ fn App() -> Element {
                         }
                     }
                 }
-                if embedded_player_active { div { class: "embedded-player-space" } }
+                if let Some(playback) = web_player() {
+                    div { class: "web-player",
+                        header {
+                            strong { title: "{playback.file.name}", "{playback.file.name}" }
+                            button { class: "secondary", onclick: move |_| web_player.set(None), {language().pick("Закрыть", "Close")} }
+                        }
+                        div {
+                            class: "artplayer-host",
+                            id: "pirate-cinema-video",
+                            "data-playback-key": "{playback.torrent.hash}-{playback.file.id}",
+                            "data-hls-url": "{playback.url}",
+                            "data-probe-url": "{playback.probe_url}",
+                            "data-heartbeat-url": "{playback.heartbeat_url}",
+                            "data-title": "{playback.file.name}",
+                        }
+                    }
+                }
                 match page() {
                     Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), posters: popular_posters(), recent: recent(), cards: cards(), busy: home_busy(), on_refresh: move |_| { let torrents = server.read().torrents.clone(); cards.set(load_library_cards(&torrents).unwrap_or_default()); recent.set(load_continue_items(&torrents).unwrap_or_default()); refresh_popular(popular, popular_posters, home_busy); }, on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
@@ -1823,13 +2205,13 @@ fn Settings(
                     }
                 }
                 div { class: "choice-row",
-                    button { class: if !external_player() { "secondary selected" } else { "secondary" }, onclick: move |_| external_player.set(false), {language().pick("Встроенный MPV", "Bundled MPV")} }
+                    button { class: if !external_player() { "secondary selected" } else { "secondary" }, onclick: move |_| external_player.set(false), {language().pick("Плеер приложения", "Application player")} }
                     button { class: if external_player() { "secondary selected" } else { "secondary" }, onclick: move |_| external_player.set(true), {language().pick("Локальный плеер", "Local player")} }
                 }
                 if !external_player() {
                     label { class: "auto-next",
                         input { r#type: "checkbox", checked: embedded_player(), onchange: move |event| embedded_player.set(event.checked()) }
-                        {language().pick(" Встраивать видео в окно приложения (Windows)", " Embed video in the application window (Windows)")}
+                        {language().pick(" Воспроизводить внутри приложения через HLS", " Play inside the application over HLS")}
                     }
                 }
                 p { class: "hint", {language().pick("Только встроенный MPV сохраняет точную позицию просмотра через IPC.", "Only bundled MPV saves exact playback position through IPC.")} }
@@ -2300,6 +2682,7 @@ fn launch_playback(
     endpoint: String,
     mut busy: Signal<bool>,
     mut players: Signal<Vec<OwnedPlayer>>,
+    mut web_player: Signal<Option<WebPlayback>>,
     mut server: Signal<ServerState>,
 ) {
     let PendingPlayback {
@@ -2308,18 +2691,24 @@ fn launch_playback(
         resume,
         queue,
         auto_next,
+        force_mpv,
     } = request;
     busy.set(true);
     spawn(async move {
         let player_torrent = torrent.clone();
         let player_file = file.clone();
+        let web_queue = queue.clone();
         let result = tokio::task::spawn_blocking(move || {
-            probe_stream(&endpoint, &torrent.hash, &file)
-                .map_err(|error| format!("Поток пока недоступен: {error}"))?;
             let preferences = settings_path()
                 .ok()
                 .and_then(|path| settings::load_preferences(&path).ok())
                 .unwrap_or_else(default_preferences);
+            let web_playback = preferences.player_type != PlayerType::External
+                && use_web_player(preferences.embedded_player, force_mpv);
+            if uses_raw_stream_probe(preferences.player_type, web_playback) {
+                probe_stream(&endpoint, &torrent.hash, &file)
+                    .map_err(|error| format!("Поток пока недоступен: {error}"))?;
+            }
             if preferences.player_type == PlayerType::External {
                 settings::validate_player(preferences.player_type, &preferences.player_path)?;
                 let url = stream_url(&endpoint, &torrent.hash, &file)?;
@@ -2332,7 +2721,47 @@ fn launch_playback(
                 history
                     .mark_played(&torrent.hash, file.id, &file.name, Some(&file.path))
                     .map_err(|error| error.to_string())?;
-                return Ok(None);
+                return Ok(PlaybackLaunch::External);
+            }
+            if web_playback {
+                ensure_gstreamer(&endpoint)?;
+                let history =
+                    HistoryStore::open(&history_path()?).map_err(|error| error.to_string())?;
+                let position = if resume {
+                    history
+                        .get(&torrent.hash, file.id)
+                        .map_err(|error| error.to_string())?
+                        .and_then(|record| record.playback_timecode)
+                        .unwrap_or(0)
+                        .max(0)
+                } else {
+                    0
+                };
+                history
+                    .mark_played(&torrent.hash, file.id, &file.name, Some(&file.path))
+                    .map_err(|error| error.to_string())?;
+                let url = gstreamer_hls_url(&endpoint, &torrent.hash, file.id, position);
+                let probe_url = format!(
+                    "{}/gst/{}/probe?index={}",
+                    endpoint.trim_end_matches('/'),
+                    torrent.hash,
+                    file.id
+                );
+                let heartbeat_url = format!(
+                    "{}/gst/{}/heartbeat",
+                    endpoint.trim_end_matches('/'),
+                    torrent.hash
+                );
+                return Ok(PlaybackLaunch::Web(WebPlayback {
+                    torrent,
+                    file,
+                    queue: web_queue,
+                    auto_next,
+                    url,
+                    probe_url,
+                    heartbeat_url,
+                    position,
+                }));
             }
             MpvSession::launch(
                 &mpv::bundled_executable()?,
@@ -2341,13 +2770,12 @@ fn launch_playback(
                 &torrent.hash,
                 &file,
                 resume,
-                preferences.embedded_player,
             )
-            .map(Some)
+            .map(PlaybackLaunch::Mpv)
         })
         .await;
         match result {
-            Ok(Ok(Some(session))) => {
+            Ok(Ok(PlaybackLaunch::Mpv(session))) => {
                 players.write().push(OwnedPlayer {
                     session,
                     torrent: player_torrent,
@@ -2357,7 +2785,11 @@ fn launch_playback(
                 });
                 server.write().error.clear();
             }
-            Ok(Ok(None)) => {
+            Ok(Ok(PlaybackLaunch::Web(playback))) => {
+                web_player.set(Some(playback));
+                server.write().error.clear();
+            }
+            Ok(Ok(PlaybackLaunch::External)) => {
                 server.write().error =
                     "Файл открыт во внешнем плеере; позиция просмотра там не отслеживается".into()
             }
@@ -2366,6 +2798,67 @@ fn launch_playback(
         }
         busy.set(false);
     });
+}
+
+fn use_web_player(embedded_player: bool, force_mpv: bool) -> bool {
+    embedded_player && !force_mpv
+}
+
+fn uses_raw_stream_probe(player_type: PlayerType, web_playback: bool) -> bool {
+    player_type == PlayerType::External || !web_playback
+}
+
+fn gstreamer_hls_url(endpoint: &str, hash: &str, file_id: i64, position: i64) -> String {
+    format!(
+        "{}/gst/{hash}/master.m3u8?index={}&seconds={}",
+        endpoint.trim_end_matches('/'),
+        file_id.max(1),
+        position.max(0)
+    )
+}
+
+fn ensure_gstreamer(endpoint: &str) -> Result<(), String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build()
+        .into();
+    let mut response = agent
+        .get(format!("{}/gst/settings", endpoint.trim_end_matches('/')))
+        .call()
+        .map_err(|error| format!("TorrServer GST не отвечает: {error}"))?;
+    let mut settings: serde_json::Value = response
+        .body_mut()
+        .read_json()
+        .map_err(|error| format!("Некорректный ответ TorrServer GST: {error}"))?;
+    if settings.get("built_in").and_then(|value| value.as_bool()) != Some(true) {
+        return Err("Запущена обычная сборка TorrServer без HLS. Закройте её и перезапустите локальный прототип".into());
+    }
+    let config = settings
+        .get_mut("config")
+        .and_then(|value| value.as_object_mut())
+        .ok_or("TorrServer GST не вернул конфигурацию")?;
+    let mut changed = false;
+    for name in [
+        "TranscodeH265",
+        "TranscodeAV1",
+        "TranscodeVP9",
+        "TranscodeVP8",
+        "TranscodeAVI",
+        "HDRToSDR",
+        "X264Ultrafast",
+    ] {
+        if config.get(name).and_then(|value| value.as_bool()) != Some(true) {
+            config.insert(name.into(), serde_json::Value::Bool(true));
+            changed = true;
+        }
+    }
+    if changed {
+        agent
+            .post(format!("{}/gst/settings", endpoint.trim_end_matches('/')))
+            .send_json(serde_json::json!({"action": "set", "config": config}))
+            .map_err(|error| format!("Не удалось настроить HLS-транскодирование: {error}"))?;
+    }
+    Ok(())
 }
 
 fn control_player(
@@ -2680,7 +3173,11 @@ fn infer_series(title: &str, files: &[VideoFile]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{file_episode, file_season, infer_series, release_quality, short_hash};
+    use super::{
+        file_episode, file_season, gstreamer_hls_url, infer_series, release_quality, short_hash,
+        use_web_player, uses_raw_stream_probe,
+    };
+    use pirate_cinema_core::settings::PlayerType;
     use pirate_cinema_core::VideoFile;
 
     #[test]
@@ -2721,5 +3218,27 @@ mod tests {
         assert_eq!(release_quality("Movie.1080i.HDTV"), "1080p");
         assert_eq!(release_quality("Movie.720p.WEB-DL"), "720p");
         assert_eq!(release_quality("Movie.DVDRip"), "Другое");
+    }
+
+    #[test]
+    fn mpv_fallback_never_uses_the_web_player() {
+        assert!(use_web_player(true, false));
+        assert!(!use_web_player(true, true));
+        assert!(!use_web_player(false, false));
+    }
+
+    #[test]
+    fn hls_launch_skips_the_legacy_raw_stream_probe() {
+        assert!(!uses_raw_stream_probe(PlayerType::BundledMpv, true));
+        assert!(uses_raw_stream_probe(PlayerType::BundledMpv, false));
+        assert!(uses_raw_stream_probe(PlayerType::External, false));
+    }
+
+    #[test]
+    fn gstreamer_hls_url_keeps_file_and_resume_position() {
+        assert_eq!(
+            gstreamer_hls_url("http://127.0.0.1:8090/", "abc", 7, 42),
+            "http://127.0.0.1:8090/gst/abc/master.m3u8?index=7&seconds=42"
+        );
     }
 }

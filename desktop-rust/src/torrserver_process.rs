@@ -153,20 +153,29 @@ fn probe(endpoint: &str) -> bool {
 pub fn bundled_executable() -> Result<PathBuf, String> {
     #[cfg(windows)]
     {
-        let name = "TorrServer-windows-amd64.exe";
-        let beside_app = std::env::current_exe()
+        let app_dir = std::env::current_exe()
             .map_err(|error| error.to_string())?
             .parent()
             .ok_or("Не удалось определить папку приложения")?
-            .join("torrserver")
-            .join(name);
-        if beside_app.is_file() {
-            return Ok(beside_app);
+            .join("torrserver");
+        for name in [
+            "TorrServer-gst-windows-amd64.exe",
+            "TorrServer-windows-amd64.exe",
+        ] {
+            let executable = app_dir.join(name);
+            if executable.is_file() {
+                return Ok(executable);
+            }
         }
-        Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
+        let vendor = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("vendor")
-            .join("torrserver")
-            .join(name))
+            .join("torrserver");
+        let gst = vendor.join("TorrServer-gst-windows-amd64.exe");
+        Ok(if gst.is_file() {
+            gst
+        } else {
+            vendor.join("TorrServer-windows-amd64.exe")
+        })
     }
     #[cfg(not(windows))]
     {
@@ -190,6 +199,15 @@ pub fn bundled_executable() -> Result<PathBuf, String> {
 pub fn default_data_dir() -> Result<PathBuf, String> {
     if let Some(root) = std::env::var_os("PIRATE_CINEMA_DATA_DIR") {
         return Ok(PathBuf::from(root).join("torrserver"));
+    }
+    if let Some(app_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+    {
+        let portable = app_dir.join("portable-data");
+        if portable.is_dir() {
+            return Ok(portable.join("torrserver"));
+        }
     }
     #[cfg(windows)]
     let root = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA не задан")?;
