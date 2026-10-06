@@ -210,13 +210,13 @@ pub fn default_data_dir() -> Result<PathBuf, String> {
         }
     }
     #[cfg(windows)]
-    let root = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA не задан")?;
+    let root = PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA не задан")?);
     #[cfg(not(windows))]
     let root = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
         .ok_or("HOME не задан")?;
-    Ok(PathBuf::from(root).join("Pirate Cinema").join("torrserver"))
+    Ok(root.join("Pirate Cinema").join("torrserver"))
 }
 
 #[cfg(test)]
