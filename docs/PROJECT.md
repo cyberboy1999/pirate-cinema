@@ -68,6 +68,8 @@ No hosting, cloud persistence or automatic publication. Do not commit databases,
 
 The public README is intentionally version-agnostic: installation examples use filename wildcards and always point to the latest GitHub release. Exact version numbers belong in release notes and technical history, not on the repository landing page.
 
+The repository landing page uses `docs/images/pirate-cinema-home.png`, a cropped main-screen capture without a version-specific native title bar.
+
 THIRD_PARTY_NOTICES.md records the versions, licenses, source links and SHA-256
 hashes of the TorrServer, MPV and FFmpeg binaries distributed in releases 0.3.2 through 0.4.0.
 Keep it updated whenever a bundled binary changes.
