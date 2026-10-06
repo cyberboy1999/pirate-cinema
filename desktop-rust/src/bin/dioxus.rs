@@ -99,7 +99,6 @@ h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
 .card small { display: block; margin-top: 6px; color: #888; font-size:13px; }
 .card small.viewed { color: #71cc91; }
 .card-open{display:block;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left}
-.quick-play{width:100%;min-height:38px;margin-top:10px}
 .shelf { display: grid; grid-auto-flow: column; grid-auto-columns: 176px; grid-template-rows: repeat(2, auto); gap: 28px 18px; overflow-x: auto; padding: 4px 2px 18px; scrollbar-color: #333 transparent; scroll-snap-type:x proximity; }
 .section-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}.section-heading h1,.section-heading h2{margin:0}.shelf-controls{display:flex;gap:9px}.shelf-controls button{width:44px;height:44px;display:grid;place-items:center;border:1px solid #303030;border-radius:11px;background:#171717;color:#bbb}.shelf-controls button img{width:22px;height:22px;filter:invert(1);opacity:.75}.shelf-controls button:hover{background:#242424;color:#fff}.shelf-controls button:hover img{opacity:1}
 .continue-list { display: grid; gap: 8px; margin: 0 0 34px; max-width: 820px; }
@@ -913,71 +912,6 @@ fn App() -> Element {
     let open_saved = move |torrent: Torrent| {
         open_torrent(torrent, endpoint(), page, busy, selected, files, server);
     };
-    let quick_play = move |torrent: Torrent| {
-        let request_endpoint = endpoint();
-        busy.set(true);
-        spawn(async move {
-            let hash = torrent.hash.clone();
-            let loaded = tokio::task::spawn_blocking(move || {
-                let files = torrent_video_files(&request_endpoint, &hash)?;
-                let history =
-                    HistoryStore::open(&history_path()?).map_err(|error| error.to_string())?;
-                let chosen = files
-                    .iter()
-                    .find(|file| {
-                        history
-                            .get(&hash, file.id)
-                            .ok()
-                            .flatten()
-                            .is_some_and(|item| {
-                                item.playback_timecode.unwrap_or(0) > 0
-                                    && item.playback_timecode.unwrap_or(0) + 60
-                                        < item.playback_duration.unwrap_or(i64::MAX)
-                            })
-                    })
-                    .or_else(|| {
-                        files.iter().find(|file| {
-                            !history
-                                .get(&hash, file.id)
-                                .ok()
-                                .flatten()
-                                .is_some_and(|item| item.is_watched)
-                        })
-                    })
-                    .or_else(|| files.first())
-                    .cloned()
-                    .ok_or("В раздаче нет видеофайлов")?;
-                Ok::<_, String>((files, chosen))
-            })
-            .await;
-            match loaded {
-                Ok(Ok((queue, file))) => launch_playback(
-                    PendingPlayback {
-                        torrent,
-                        file,
-                        resume: true,
-                        queue,
-                        auto_next: true,
-                        force_mpv: false,
-                    },
-                    endpoint(),
-                    busy,
-                    players,
-                    web_player,
-                    server,
-                ),
-                Ok(Err(error)) => {
-                    server.write().error = error;
-                    busy.set(false);
-                }
-                Err(error) => {
-                    server.write().error = error.to_string();
-                    busy.set(false);
-                }
-            }
-        });
-    };
-
     let mut add_result = move |(item, open): (SearchResult, bool)| {
         let existing = {
             let state = server.read();
@@ -1330,7 +1264,7 @@ fn App() -> Element {
                 match page() {
                     Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), posters: popular_posters(), recent: recent(), cards: cards(), busy: home_busy(), on_refresh: move |_| { let torrents = server.read().torrents.clone(); cards.set(load_library_cards(&torrents).unwrap_or_default()); recent.set(load_continue_items(&torrents).unwrap_or_default()); refresh_popular(popular, popular_posters, home_busy); }, on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
-                    Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_quick: quick_play, on_sync: sync_metadata } },
+                    Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
                     Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
                     Page::Settings => rsx! { Settings { language, endpoint, busy, server, cards, recent, metadata_status, online_icon: online_icon.clone(), on_sync: sync_metadata } },
                 }
@@ -1647,7 +1581,6 @@ fn Library(
     busy: bool,
     status: String,
     on_open: EventHandler<Torrent>,
-    on_quick: EventHandler<Torrent>,
     on_sync: EventHandler<MouseEvent>,
 ) -> Element {
     let mut filter = use_signal(String::new);
@@ -1748,7 +1681,6 @@ fn Library(
                                 if card.viewed { {language.pick("✓ Просмотрено", "✓ Viewed")} } else if let Some(year) = card.metadata.as_ref().and_then(|item| item.year) { "{year}" } else { "BTIH · {short_hash(&card.torrent.hash)}" }
                             }
                             }
-                            button { class: "primary quick-play", onclick: { let torrent = card.torrent.clone(); move |_| on_quick.call(torrent.clone()) }, {language.pick("Продолжить", "Continue")} }
                         }
                     }
                 }
