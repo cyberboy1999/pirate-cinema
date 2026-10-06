@@ -1,8 +1,5 @@
 use super::models::{ImageCandidate, MediaType, MetadataSource};
 
-pub mod fanart;
-pub mod omdb;
-pub mod tmdb;
 pub mod tvmaze;
 
 #[derive(Clone, Debug, Default)]
@@ -14,7 +11,6 @@ pub struct ProviderRecord {
     pub rating: Option<f64>,
     pub images: Vec<ImageCandidate>,
     pub imdb_id: Option<String>,
-    pub tmdb_id: Option<i64>,
     pub tvmaze_id: Option<i64>,
     pub genres: Vec<String>,
 }

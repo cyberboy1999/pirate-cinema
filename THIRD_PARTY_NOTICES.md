@@ -82,8 +82,6 @@ https://github.com/zhw2590582/ArtPlayer/tree/v5.4.0. The vendored
 
 ## Metadata and artwork
 
-- Text excerpts attributed to Wikipedia are available under CC BY-SA 4.0 and
-  are linked to their source articles in the application.
 - `public/pirate-cinema-logo.png` is derived from a user-provided third-party
   logo. It is not covered by Pirate Cinema's source-code license, and Pirate
   Cinema is not affiliated with or endorsed by The Pirate Bay.

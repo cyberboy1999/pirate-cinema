@@ -20,7 +20,7 @@ Pirate Cinema — локальное настольное приложение �
 - локальные резервные копии, диагностика, обновления и системный трей;
 - русский и английский интерфейс.
 
-Все пользовательские данные остаются на компьютере. Pirate Cinema обращается к Cinemeta, Wikipedia и TVmaze только за общедоступными названиями, описаниями и изображениями; история просмотра им не передаётся.
+Все пользовательские данные остаются на компьютере. Pirate Cinema обращается к Cinemeta, TVmaze и Wikidata только за общедоступными названиями, описаниями и изображениями; история просмотра им не передаётся.
 
 ## Установка
 
@@ -93,7 +93,7 @@ Pirate Cinema is a local Rust desktop application for searching, adding, and str
 - local backup, diagnostics, updates, and system tray;
 - Russian and English interfaces.
 
-Playback history stays on the computer. Cinemeta, Wikipedia, and TVmaze receive only public metadata queries, never the local history database.
+Playback history stays on the computer. Cinemeta, TVmaze, and Wikidata receive only public metadata queries, never the local history database.
 
 ### Installation
 

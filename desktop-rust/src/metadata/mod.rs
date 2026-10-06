@@ -9,10 +9,7 @@ pub use crate::catalog::{
 pub use models::{
     best_image, ExternalIds, ImageCandidate, ImageType, LocalizedText, MediaType, MetadataSource,
 };
-use providers::{
-    fanart::FanartProvider, omdb::OmdbProvider, tmdb::TmdbProvider, tvmaze::TvMazeProvider,
-    MetadataProvider, ProviderRecord,
-};
+use providers::{tvmaze::TvMazeProvider, MetadataProvider, ProviderRecord};
 
 /// UI-facing metadata facade. Provider-specific HTTP calls stay behind this module.
 pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
@@ -41,26 +38,11 @@ pub fn title_candidates(title: &str) -> Vec<String> {
 pub struct MetadataManager;
 impl MetadataManager {
     pub fn lookup(&self, title: &str, media_type: MediaType) -> Result<Option<Movie>, String> {
-        if let Some(tmdb) = TmdbProvider::from_env() {
-            if let Ok(Some(mut record)) = tmdb.search(title, media_type) {
-                if let (Some(fanart), Some(id)) = (FanartProvider::from_env(), record.tmdb_id) {
-                    if let Ok(images) = fanart.images_for_tmdb(id, media_type) {
-                        record.images.extend(images);
-                    }
-                }
-                return Ok(Some(movie_from_record(record)));
-            }
-        }
         if let Ok(Some(movie)) = catalog::lookup(title, matches!(media_type, MediaType::Series)) {
             return Ok(Some(movie));
         }
         if let Ok(Some(record)) = TvMazeProvider.search(title, media_type) {
             return Ok(Some(movie_from_record(record)));
-        }
-        if let Some(omdb) = OmdbProvider::from_env() {
-            if let Ok(Some(record)) = omdb.search(title, media_type) {
-                return Ok(Some(movie_from_record(record)));
-            }
         }
         Ok(None)
     }
@@ -71,7 +53,6 @@ fn movie_from_record(record: ProviderRecord) -> Movie {
     let background_url = best_image(record.images, ImageType::Backdrop).map(|image| image.url);
     let id = record
         .imdb_id
-        .or_else(|| record.tmdb_id.map(|id| format!("tmdb:{id}")))
         .or_else(|| record.tvmaze_id.map(|id| format!("tvmaze:{id}")))
         .unwrap_or_else(|| "metadata:unknown".into());
     Movie {
@@ -111,7 +92,7 @@ mod tests {
                     vote_count: None,
                 },
                 ImageCandidate {
-                    source: MetadataSource::Tmdb,
+                    source: MetadataSource::Cinemeta,
                     image_type: ImageType::Poster,
                     url: "https://example.test/russian.jpg".into(),
                     language: Some("ru".into()),

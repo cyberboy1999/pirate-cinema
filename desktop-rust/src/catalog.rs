@@ -5,7 +5,7 @@ use std::time::Duration;
 
 const CINEMETA: &str = "https://v3-cinemeta.strem.io";
 const WIKIDATA: &str = "https://query.wikidata.org/sparql";
-type WikiLinks = std::collections::HashMap<String, (String, Option<String>, Option<String>)>;
+type WikidataRecords = std::collections::HashMap<String, (String, Option<String>, Option<String>)>;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Movie {
@@ -68,27 +68,6 @@ fn encode(value: &str) -> String {
             _ => format!("%{byte:02X}"),
         })
         .collect()
-}
-
-fn decode_path(value: &str) -> Option<String> {
-    let bytes = value.as_bytes();
-    let mut output = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' {
-            let code = std::str::from_utf8(bytes.get(index + 1..index + 3)?).ok()?;
-            output.push(u8::from_str_radix(code, 16).ok()?);
-            index += 3;
-        } else {
-            output.push(if bytes[index] == b'_' {
-                b' '
-            } else {
-                bytes[index]
-            });
-            index += 1;
-        }
-    }
-    String::from_utf8(output).ok()
 }
 
 fn year(value: &Value) -> Option<i64> {
@@ -167,7 +146,7 @@ fn parse_catalog(value: &Value) -> Vec<Movie> {
         .collect()
 }
 
-fn russian_links(agent: &ureq::Agent, ids: &[&str]) -> Result<WikiLinks, String> {
+fn wikidata_records(agent: &ureq::Agent, ids: &[&str]) -> Result<WikidataRecords, String> {
     let ids = ids
         .iter()
         .copied()
@@ -182,15 +161,15 @@ fn russian_links(agent: &ureq::Agent, ids: &[&str]) -> Result<WikiLinks, String>
         .map(|id| format!("\"{id}\""))
         .collect::<Vec<_>>()
         .join(" ");
-    let query = format!("SELECT ?id ?label ?article ?enarticle WHERE {{ VALUES ?id {{ {values} }} ?item <http://www.wikidata.org/prop/direct/P345> ?id. OPTIONAL {{ ?item <http://www.w3.org/2000/01/rdf-schema#label> ?label. FILTER(LANG(?label)=\"ru\") }} OPTIONAL {{ ?article <http://schema.org/about> ?item; <http://schema.org/isPartOf> <https://ru.wikipedia.org/>. }} OPTIONAL {{ ?enarticle <http://schema.org/about> ?item; <http://schema.org/isPartOf> <https://en.wikipedia.org/>. }} }}");
+    let query = format!("SELECT ?id ?label ?description ?image WHERE {{ VALUES ?id {{ {values} }} ?item <http://www.wikidata.org/prop/direct/P345> ?id. OPTIONAL {{ ?item <http://www.w3.org/2000/01/rdf-schema#label> ?label. FILTER(LANG(?label)=\"ru\") }} OPTIONAL {{ ?item <http://schema.org/description> ?description. FILTER(LANG(?description)=\"ru\") }} OPTIONAL {{ ?item <http://www.wikidata.org/prop/direct/P18> ?image. }} }}");
     let payload = json(
         agent,
         &format!("{WIKIDATA}?format=json&query={}", encode(&query)),
     )?;
-    Ok(parse_wikidata_links(&payload))
+    Ok(parse_wikidata_records(&payload))
 }
 
-fn parse_wikidata_links(payload: &Value) -> WikiLinks {
+fn parse_wikidata_records(payload: &Value) -> WikidataRecords {
     let mut matches = std::collections::HashMap::new();
     if let Some(rows) = payload
         .pointer("/results/bindings")
@@ -207,23 +186,28 @@ fn parse_wikidata_links(payload: &Value) -> WikiLinks {
                 .pointer("/label/value")
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            let article = row
-                .pointer("/article/value")
+            let description = row
+                .pointer("/description/value")
                 .and_then(Value::as_str)
-                .and_then(|url| url.strip_prefix("https://ru.wikipedia.org/wiki/"))
-                .and_then(decode_path);
-            let english_article = row
-                .pointer("/enarticle/value")
+                .map(str::to_owned);
+            let image = row
+                .pointer("/image/value")
                 .and_then(Value::as_str)
-                .and_then(|url| url.strip_prefix("https://en.wikipedia.org/wiki/"))
-                .and_then(decode_path);
-            matches.insert(
-                id.to_owned(),
-                (label.trim().to_owned(), article, english_article),
-            );
+                .and_then(wikidata_image_url);
+            matches.insert(id.to_owned(), (label.trim().to_owned(), description, image));
         }
     }
     matches
+}
+
+fn wikidata_image_url(value: &str) -> Option<String> {
+    let file = value.rsplit('/').next()?.replace('_', " ");
+    (!file.is_empty()).then(|| {
+        format!(
+            "https://www.wikidata.org/wiki/Special:FilePath/{}",
+            encode(&file)
+        )
+    })
 }
 
 pub fn popular() -> Result<Vec<Movie>, String> {
@@ -250,32 +234,16 @@ fn popular_kind(kind: &str) -> Result<Vec<Movie>, String> {
         .iter()
         .map(|item| item.id.as_str())
         .collect::<Vec<_>>();
-    if let Ok(names) = russian_links(&agent, &ids) {
-        let articles = names
-            .values()
-            .filter_map(|(_, article, _)| article.as_deref())
-            .collect::<Vec<_>>();
-        let english_articles = names
-            .values()
-            .filter_map(|(_, _, article)| article.as_deref())
-            .collect::<Vec<_>>();
-        let thumbnails = wikipedia_thumbnails(&agent, "ru", &articles).unwrap_or_default();
-        let english_thumbnails =
-            wikipedia_thumbnails(&agent, "en", &english_articles).unwrap_or_default();
+    if let Ok(records) = wikidata_records(&agent, &ids) {
         for item in &mut items {
-            if let Some((name, article, english_article)) = names.get(&item.id) {
+            if let Some((name, description, image)) = records.get(&item.id) {
                 if !name.is_empty() {
                     item.title = name.clone();
                 }
-                item.alternate_poster_url = article
-                    .as_ref()
-                    .and_then(|title| thumbnails.get(title))
-                    .or_else(|| {
-                        english_article
-                            .as_ref()
-                            .and_then(|title| english_thumbnails.get(title))
-                    })
-                    .cloned();
+                if item.overview.is_none() {
+                    item.overview = description.clone();
+                }
+                item.alternate_poster_url = image.clone();
             }
         }
     }
@@ -309,71 +277,13 @@ pub fn fallback_popular() -> Vec<Movie> {
         original_title: title.to_owned(),
         year: Some(year),
         rating: Some(rating),
-        poster_url: Some(format!(
-            "https://images.metahub.space/poster/medium/{id}/img"
-        )),
+        poster_url: None,
         alternate_poster_url: None,
         background_url: None,
         overview: None,
         genres: Vec::new(),
     })
     .collect()
-}
-
-fn wikipedia_thumbnails(
-    agent: &ureq::Agent,
-    language: &str,
-    titles: &[&str],
-) -> Result<std::collections::HashMap<String, String>, String> {
-    if !matches!(language, "ru" | "en") {
-        return Err("Неподдерживаемый язык Wikipedia".into());
-    }
-    let titles = titles.iter().copied().take(30).collect::<Vec<_>>();
-    if titles.is_empty() {
-        return Ok(Default::default());
-    }
-    let url = format!("https://{language}.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&prop=pageimages&pithumbsize=600&titles={}", encode(&titles.join("|")));
-    let payload = json(agent, &url)?;
-    Ok(payload
-        .pointer("/query/pages")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|page| {
-            Some((
-                page.get("title")?.as_str()?.to_owned(),
-                page.pointer("/thumbnail/source")?.as_str()?.to_owned(),
-            ))
-        })
-        .collect())
-}
-
-fn wikipedia_imdb_id(agent: &ureq::Agent, title: &str) -> Option<String> {
-    let page = json(
-        agent,
-        &format!(
-            "https://ru.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&prop=pageprops&ppprop=wikibase_item&titles={}",
-            encode(title)
-        ),
-    )
-    .ok()?;
-    let item = page
-        .pointer("/query/pages/0/pageprops/wikibase_item")
-        .and_then(Value::as_str)?;
-    let entity = json(
-        agent,
-        &format!(
-            "https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids={}",
-            encode(item)
-        ),
-    )
-    .ok()?;
-    let imdb = entity
-        .pointer(&format!(
-            "/entities/{item}/claims/P345/0/mainsnak/datavalue/value"
-        ))
-        .and_then(Value::as_str)?;
-    valid_imdb(imdb).then(|| imdb.to_owned())
 }
 
 pub fn cached_popular(cache: &Path) -> Vec<Movie> {
@@ -516,74 +426,6 @@ pub fn same_release(left: &str, right: &str) -> bool {
         }
 }
 
-fn russian_wikipedia(
-    agent: &ureq::Agent,
-    title: &str,
-    wanted_year: Option<i64>,
-    series: bool,
-) -> Option<Movie> {
-    if !title
-        .chars()
-        .any(|ch| ('А'..='я').contains(&ch) || ch == 'ё' || ch == 'Ё')
-    {
-        return None;
-    }
-    let topic = if series { "сериал" } else { "фильм" };
-    let url = format!("https://ru.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&generator=search&gsrnamespace=0&gsrlimit=8&gsrsearch={}&prop=pageimages%7Cextracts&pithumbsize=600&exintro=1&explaintext=1", encode(&format!("{title} {topic}")));
-    let payload = json(agent, &url).ok()?;
-    payload
-        .pointer("/query/pages")?
-        .as_array()?
-        .iter()
-        .find_map(|page| {
-            let page_title = page.get("title")?.as_str()?;
-            let clean_page_title = page_title.split(" (").next().unwrap_or(page_title);
-            if normalized(clean_page_title) != normalized(title) {
-                return None;
-            }
-            let overview = page.get("extract")?.as_str()?.trim();
-            let intro = overview.lines().next().unwrap_or(overview).to_lowercase();
-            let is_series = intro.contains("сериал") || intro.contains("телевизионн");
-            let is_movie = intro.contains("фильм")
-                || intro.contains("мультфильм")
-                || intro.contains("кинокартин");
-            if series != is_series || !is_series && !is_movie {
-                return None;
-            }
-            let found_year =
-                year(&Value::String(page_title.to_owned())).or_else(|| year(&Value::String(intro)));
-            if wanted_year.is_some_and(|expected| {
-                found_year.is_some_and(|found| (found - expected).abs() > 1)
-            }) && !series
-            {
-                return None;
-            }
-            let id = wikipedia_imdb_id(agent, page_title).unwrap_or_else(|| {
-                format!(
-                    "wiki:{}",
-                    page.get("pageid")
-                        .and_then(Value::as_i64)
-                        .unwrap_or_default()
-                )
-            });
-            Some(Movie {
-                id,
-                title: clean_page_title.to_owned(),
-                original_title: title.to_owned(),
-                year: found_year.or(wanted_year),
-                rating: None,
-                poster_url: page
-                    .pointer("/thumbnail/source")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                alternate_poster_url: None,
-                background_url: None,
-                overview: Some(overview.to_owned()),
-                genres: Vec::new(),
-            })
-        })
-}
-
 fn tvmaze(agent: &ureq::Agent, title: &str, wanted_year: Option<i64>) -> Option<Movie> {
     let url = format!("https://api.tvmaze.com/search/shows?q={}", encode(title));
     let rows = json(agent, &url).ok()?.as_array()?.clone();
@@ -652,8 +494,6 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
         return Ok(None);
     }
     let agent = agent();
-    let wiki = russian_wikipedia(&agent, &clean, wanted_year, series)
-        .or_else(|| russian_wikipedia(&agent, &clean, wanted_year, !series));
     let titles = title_candidates(title);
     let kinds = if series {
         ["series", "movie"]
@@ -687,9 +527,6 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
         }
     }
     let Some(mut item) = match_item else {
-        if wiki.is_some() {
-            return Ok(wiki);
-        }
         if series {
             if let Some(item) = tvmaze(&agent, &clean, wanted_year) {
                 return Ok(Some(item));
@@ -701,39 +538,16 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
             Err("Cinemeta недоступна".into())
         };
     };
-    if let Some(wiki) = wiki {
-        item.title = wiki.title;
-        item.overview = wiki.overview;
-        item.alternate_poster_url = wiki.poster_url;
-        return Ok(Some(item));
-    }
-    if let Ok(names) = russian_links(&agent, &[&item.id]) {
-        if let Some((name, article, english_article)) = names.get(&item.id) {
+    if let Ok(records) = wikidata_records(&agent, &[&item.id]) {
+        if let Some((name, description, image)) = records.get(&item.id) {
             if !name.is_empty() {
                 item.title = name.clone();
             }
-            if let Some(article) = article {
-                item.alternate_poster_url = wikipedia_thumbnails(&agent, "ru", &[article])
-                    .ok()
-                    .and_then(|images| images.get(article).cloned());
-                let url = format!("https://ru.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&prop=extracts&exintro=1&explaintext=1&titles={}", encode(article));
-                if let Ok(payload) = json(&agent, &url) {
-                    if let Some(extract) = payload
-                        .pointer("/query/pages/0/extract")
-                        .and_then(Value::as_str)
-                    {
-                        if !extract.trim().is_empty() {
-                            item.overview = Some(extract.trim().to_owned());
-                        }
-                    }
-                }
+            if item.overview.is_none() {
+                item.overview = description.clone();
             }
             if item.alternate_poster_url.is_none() {
-                if let Some(article) = english_article {
-                    item.alternate_poster_url = wikipedia_thumbnails(&agent, "en", &[article])
-                        .ok()
-                        .and_then(|images| images.get(article).cloned());
-                }
+                item.alternate_poster_url = image.clone();
             }
         }
     }
@@ -752,60 +566,22 @@ pub fn title_candidates(title: &str) -> Vec<String> {
     titles
 }
 
-pub fn movie_poster_jpeg(movie: &Movie, series: bool) -> Result<Vec<u8>, String> {
+pub fn movie_poster_jpeg(movie: &Movie, _series: bool) -> Result<Vec<u8>, String> {
     let mut urls = Vec::new();
     if let Some(primary) = movie.poster_url.as_deref() {
         urls.push(primary.to_owned());
-        if primary.contains("images.metahub.space/poster/small/") {
-            urls.push(primary.replacen("/poster/small/", "/poster/medium/", 1));
-        }
     }
     if let Some(alternate) = movie.alternate_poster_url.as_deref() {
         if !urls.iter().any(|url| url == alternate) {
             urls.push(alternate.to_owned());
         }
     }
-    if let Some(background) = movie.background_url.as_deref() {
-        if !urls.iter().any(|url| url == background) {
-            urls.push(background.to_owned());
-        }
-    }
-    if valid_imdb(&movie.id) {
-        urls.push(format!(
-            "https://images.metahub.space/poster/medium/{}/img",
-            movie.id
-        ));
-    }
     for url in urls {
         if let Ok(bytes) = poster_jpeg(&url) {
             return Ok(bytes);
         }
     }
-    if valid_imdb(&movie.id) {
-        let agent = agent();
-        if let Ok(links) = russian_links(&agent, &[&movie.id]) {
-            if let Some((_, russian, english)) = links.get(&movie.id) {
-                for (language, article) in [("ru", russian), ("en", english)] {
-                    if let Some(article) = article {
-                        if let Some(url) = wikipedia_thumbnails(&agent, language, &[article])
-                            .ok()
-                            .and_then(|images| images.get(article).cloned())
-                        {
-                            if let Ok(bytes) = poster_jpeg(&url) {
-                                return Ok(bytes);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if let Some(wiki) = russian_wikipedia(&agent(), &movie.title, movie.year, series) {
-        if let Some(url) = wiki.poster_url {
-            return poster_jpeg(&url);
-        }
-    }
-    Err("Не удалось получить обложку из Cinemeta или Wikipedia".into())
+    Err("Не удалось получить обложку из Cinemeta, TVmaze или Wikidata".into())
 }
 
 pub fn poster_jpeg(url: &str) -> Result<Vec<u8>, String> {
@@ -894,24 +670,21 @@ mod tests {
     }
 
     #[test]
-    fn wikipedia_article_path_is_decoded_once() {
-        assert_eq!(
-            decode_path("%D0%94%D1%8E%D0%BD%D0%B0_(%D1%84%D0%B8%D0%BB%D1%8C%D0%BC)"),
-            Some("Дюна (фильм)".into())
-        );
-    }
-
-    #[test]
-    fn wikidata_links_keep_english_wikipedia_when_russian_poster_is_missing() {
+    fn wikidata_records_keep_localized_fields() {
         let payload = serde_json::json!({"results":{"bindings":[{
             "id":{"value":"tt123"},
             "label":{"value":"Фильм"},
-            "enarticle":{"value":"https://en.wikipedia.org/wiki/Test_film"}
+            "description":{"value":"Описание"},
+            "image":{"value":"https://commons.wikimedia.org/wiki/Special:FilePath/Test_film.jpg"}
         }]}});
-        let links = parse_wikidata_links(&payload);
+        let records = parse_wikidata_records(&payload);
         assert_eq!(
-            links.get("tt123"),
-            Some(&("Фильм".into(), None, Some("Test film".into())))
+            records.get("tt123"),
+            Some(&(
+                "Фильм".into(),
+                Some("Описание".into()),
+                Some("https://www.wikidata.org/wiki/Special:FilePath/Test%20film.jpg".into())
+            ))
         );
     }
 
@@ -933,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "uses public Cinemeta and Wikipedia"]
+    #[ignore = "uses public Cinemeta, TVmaze and Wikidata"]
     fn live_series_bundle_gets_metadata_and_poster() {
         let movie = lookup(
             "Мажор [S01-05 + Мажор. Фильм + Мажор в Сочи] (2014-2025) WEB-DL",
@@ -1018,10 +791,7 @@ mod tests {
         let items = fallback_popular();
         assert!(items.len() >= 12);
         assert!(items.iter().all(|item| valid_imdb(&item.id)));
-        assert!(items.iter().all(|item| item
-            .poster_url
-            .as_deref()
-            .is_some_and(|url| url.starts_with("https://"))));
+        assert!(items.iter().all(|item| item.poster_url.is_none()));
         assert!(items
             .iter()
             .any(|item| item.title.chars().any(|ch| ('А'..='я').contains(&ch))));

@@ -2280,7 +2280,7 @@ fn Settings(
                     }
                     article {
                         span { {language().pick("Постеры и метаданные", "Posters and metadata")} }
-                        strong { "Wikipedia · Cinemeta" }
+                        strong { "Cinemeta · TVmaze · Wikidata" }
                         small { {language().pick("Локальный кэш и кадр MPV", "Local cache and MPV frame")} }
                     }
                     article {
@@ -3364,7 +3364,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "uses public Cinemeta and Wikipedia"]
+    #[ignore = "uses public Cinemeta, TVmaze and Wikidata"]
     fn live_refresh_writes_a_description_and_poster() {
         let root = std::env::temp_dir().join(format!(
             "pirate-cinema-metadata-refresh-{}",

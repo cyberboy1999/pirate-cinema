@@ -88,7 +88,6 @@ impl MetadataProvider for TvMazeProvider {
                 })
                 .collect(),
             imdb_id: None,
-            tmdb_id: None,
             tvmaze_id: show.get("id").and_then(Value::as_i64),
             genres: show
                 .get("genres")

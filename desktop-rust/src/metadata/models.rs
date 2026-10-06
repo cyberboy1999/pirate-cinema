@@ -16,20 +16,16 @@ impl MediaType {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExternalIds {
-    pub tmdb_id: Option<i64>,
     pub imdb_id: Option<String>,
-    pub tvdb_id: Option<i64>,
     pub tvmaze_id: Option<i64>,
+    pub wikidata_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MetadataSource {
-    Tmdb,
-    Fanart,
-    Omdb,
     TvMaze,
     Cinemeta,
-    Wikipedia,
+    Wikidata,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

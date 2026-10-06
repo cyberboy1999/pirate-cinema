@@ -78,7 +78,6 @@ export function MediaFilePicker({item,files,busy,error,language,onClose,onRetry,
       {poster&&<img src={poster} alt={"Постер: "+details.title} onError={event=>{event.currentTarget.hidden=true}}/>}
       <div><p className="description-genres">{details.genres?.join(" · ")}</p><h3>{en?"Description":"Описание"}</h3>
         <p className="description-text">{details.overview||(descriptionBusy?(en?"Loading description…":"Загружаем описание…"):(en?"No description found. You can select a file below.":"Описание пока не найдено. Вы можете выбрать файл для воспроизведения ниже."))}</p>
-        <WikipediaCredit url={details.overviewSourceUrl} language={language}/>
         {descriptionError&&<p role="status">{descriptionError}</p>}
       </div>
     </div>
@@ -112,11 +111,6 @@ export function MediaFilePicker({item,files,busy,error,language,onClose,onRetry,
       </article>)}</section>):<p>{en?"This torrent has no supported video files.":"В торренте нет поддерживаемых видеофайлов."}</p>}
     </div>
   </section>;
-}
-
-export function WikipediaCredit({url,language="ru"}:{url?:string|null;language?:"ru"|"en"}){
-  if(!url||!/^https:\/\/ru\.wikipedia\.org\/\?curid=\d+$/.test(url))return null;
-  return <small><a href={url} target="_blank" rel="noopener noreferrer">{language==="en"?"Description: Wikipedia":"Описание: Wikipedia"}</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a></small>;
 }
 
 export function PlaybackBar({language="ru"}:{language?:"ru"|"en"}){
