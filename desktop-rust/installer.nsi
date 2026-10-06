@@ -65,9 +65,9 @@ Section "Pirate Cinema" SEC_APP
   File "${APP_SOURCE}\LICENSE"
   File "${APP_SOURCE}\THIRD_PARTY_NOTICES.md"
   File /oname=pirate-cinema.ico "${APP_ICON}"
-  !ifexist "${APP_SOURCE}\vc_redist.x64.exe"
-    File "${APP_SOURCE}\vc_redist.x64.exe"
-  !endif
+  ; The release workflow always stages the official VC++ runtime.
+  ; NSIS has no !ifexist directive, so include it unconditionally.
+  File "${APP_SOURCE}\vc_redist.x64.exe"
 
   SetOutPath "$INSTDIR\torrserver"
   File "${APP_SOURCE}\torrserver\TorrServer-windows-amd64.exe"
