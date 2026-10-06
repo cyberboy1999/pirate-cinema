@@ -32,6 +32,7 @@ pub struct Preferences {
     pub embedded_player: bool,
     pub torznab_url: String,
     pub torznab_api_key: String,
+    pub close_to_tray: bool,
 }
 
 pub fn load_preferences(path: &Path) -> Result<Preferences, String> {
@@ -73,6 +74,10 @@ pub fn load_preferences(path: &Path) -> Result<Preferences, String> {
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .to_owned(),
+        close_to_tray: value
+            .get("close_to_tray")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true),
     })
 }
 
@@ -96,6 +101,7 @@ pub fn save_preferences(path: &Path, preferences: &Preferences) -> Result<(), St
     value["embedded_player"] = serde_json::json!(preferences.embedded_player);
     value["torznab_url"] = serde_json::json!(preferences.torznab_url.trim());
     value["torznab_api_key"] = serde_json::json!(preferences.torznab_api_key.trim());
+    value["close_to_tray"] = serde_json::json!(preferences.close_to_tray);
     write_settings(path, &value)
 }
 
@@ -303,6 +309,7 @@ mod tests {
             embedded_player: true,
             torznab_url: "http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/".into(),
             torznab_api_key: "secret".into(),
+            close_to_tray: false,
         };
         save_preferences(&path, &preferences).unwrap();
         let loaded = load_preferences(&path).unwrap();
@@ -311,6 +318,7 @@ mod tests {
         assert_eq!(loaded.torrserver_url, preferences.torrserver_url);
         assert_eq!(loaded.player_type, preferences.player_type);
         assert_eq!(loaded.torznab_api_key, "secret");
+        assert!(!loaded.close_to_tray);
         assert_eq!(
             loaded.torznab_url,
             "http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/"

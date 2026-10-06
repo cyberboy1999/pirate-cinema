@@ -2,9 +2,11 @@
 
 **Русский** · [English](#english)
 
-![Главный экран Pirate Cinema](docs/images/pirate-cinema-rust-home.png)
+![Главный экран Pirate Cinema 0.7.2](docs/images/pirate-cinema-rust-home.png)
 
 Pirate Cinema — локальное настольное приложение на Rust для поиска, добавления и просмотра раздач через TorrServer. Видео открывается в MPV, а история каждого файла хранится локально в SQLite.
+
+Текущий production-релиз: **0.7.2**. Он включает встроенный GST-TorrServer, корректный автопереход между сериями, завершение принадлежащих приложению процессов и установку Visual C++ Runtime на Windows.
 
 ## Возможности
 

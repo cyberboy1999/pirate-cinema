@@ -31,13 +31,6 @@ pub struct MpvSession {
     ipc_path: Option<PathBuf>,
     events: Receiver<MpvEvent>,
     worker: Option<JoinHandle<()>>,
-    embedded_host: Option<EmbeddedHost>,
-}
-
-struct EmbeddedHost {
-    window: isize,
-    stop: mpsc::Sender<()>,
-    worker: Option<JoinHandle<()>>,
 }
 
 impl MpvSession {
@@ -48,7 +41,6 @@ impl MpvSession {
         hash: &str,
         file: &VideoFile,
         resume: bool,
-        embedded: bool,
     ) -> Result<Self, String> {
         if !executable.is_file() {
             return Err(format!(
@@ -105,18 +97,6 @@ impl MpvSession {
             "--vo=gpu",
             &format!("--input-ipc-server={pipe_name}"),
         ]);
-        #[cfg(windows)]
-        let embedded_host = if embedded {
-            create_embedded_window().ok()
-        } else {
-            None
-        };
-        #[cfg(not(windows))]
-        let embedded_host: Option<EmbeddedHost> = None;
-        #[cfg(windows)]
-        if let Some(host) = embedded_host.as_ref() {
-            command.arg(format!("--wid={}", host.window));
-        }
         #[cfg(windows)]
         command.args([
             "--gpu-api=opengl",
@@ -303,7 +283,6 @@ impl MpvSession {
             ipc_path: cfg!(unix).then(|| PathBuf::from(pipe_name)),
             events,
             worker: Some(worker),
-            embedded_host,
         })
     }
 
@@ -322,10 +301,6 @@ impl MpvSession {
 
     pub fn label(&self) -> &str {
         &self.file_name
-    }
-
-    pub fn is_embedded(&self) -> bool {
-        self.embedded_host.is_some()
     }
 
     pub fn focus(&mut self) -> Result<(), String> {
@@ -396,159 +371,6 @@ impl Drop for MpvSession {
         }
         if let Some(path) = self.ipc_path.take() {
             let _ = std::fs::remove_file(path);
-        }
-        self.embedded_host.take();
-    }
-}
-
-#[cfg(windows)]
-fn create_embedded_window() -> Result<EmbeddedHost, String> {
-    #[repr(C)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn EnumWindows(callback: extern "system" fn(isize, isize) -> i32, value: isize) -> i32;
-        fn GetWindowThreadProcessId(window: isize, process: *mut u32) -> u32;
-        fn IsWindowVisible(window: isize) -> i32;
-        fn GetClientRect(window: isize, rect: *mut Rect) -> i32;
-        fn CreateWindowExW(
-            extended_style: u32,
-            class_name: *const u16,
-            window_name: *const u16,
-            style: u32,
-            x: i32,
-            y: i32,
-            width: i32,
-            height: i32,
-            parent: isize,
-            menu: isize,
-            instance: isize,
-            parameter: isize,
-        ) -> isize;
-        fn PeekMessageW(
-            message: *mut Message,
-            window: isize,
-            min: u32,
-            max: u32,
-            remove: u32,
-        ) -> i32;
-        fn TranslateMessage(message: *const Message) -> i32;
-        fn DispatchMessageW(message: *const Message) -> isize;
-        fn DestroyWindow(window: isize) -> i32;
-    }
-    #[repr(C)]
-    struct Point {
-        x: i32,
-        y: i32,
-    }
-    #[repr(C)]
-    struct Message {
-        window: isize,
-        message: u32,
-        w_param: usize,
-        l_param: isize,
-        time: u32,
-        point: Point,
-        private: u32,
-    }
-    extern "system" fn find(window: isize, value: isize) -> i32 {
-        let target = unsafe { &mut *(value as *mut (u32, isize)) };
-        let mut pid = 0;
-        unsafe { GetWindowThreadProcessId(window, &mut pid) };
-        if pid == target.0 && unsafe { IsWindowVisible(window) } != 0 {
-            target.1 = window;
-            0
-        } else {
-            1
-        }
-    }
-    let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
-    let (stop, stop_receiver) = mpsc::channel();
-    let worker = thread::spawn(move || {
-        let mut target = (std::process::id(), 0isize);
-        unsafe { EnumWindows(find, (&mut target as *mut (u32, isize)) as isize) };
-        let mut rect = Rect {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        if target.1 == 0 || unsafe { GetClientRect(target.1, &mut rect) } == 0 {
-            let _ = ready_sender.send(0);
-            return;
-        }
-        let x = 262;
-        let y = 116;
-        let width = (rect.right - x - 32).max(640);
-        let height = ((width * 9 / 16).min(rect.bottom - y - 120)).max(360);
-        let class = "STATIC\0".encode_utf16().collect::<Vec<_>>();
-        let window = unsafe {
-            CreateWindowExW(
-                0,
-                class.as_ptr(),
-                std::ptr::null(),
-                0x4000_0000 | 0x1000_0000 | 0x0400_0000,
-                x,
-                y,
-                width,
-                height,
-                target.1,
-                0,
-                0,
-                0,
-            )
-        };
-        let _ = ready_sender.send(window);
-        if window == 0 {
-            return;
-        }
-        while stop_receiver.try_recv().is_err() {
-            let mut message = Message {
-                window: 0,
-                message: 0,
-                w_param: 0,
-                l_param: 0,
-                time: 0,
-                point: Point { x: 0, y: 0 },
-                private: 0,
-            };
-            while unsafe { PeekMessageW(&mut message, 0, 0, 0, 1) } != 0 {
-                unsafe {
-                    TranslateMessage(&message);
-                    DispatchMessageW(&message);
-                }
-            }
-            thread::sleep(Duration::from_millis(16));
-        }
-        unsafe {
-            DestroyWindow(window);
-        }
-    });
-    let window = ready_receiver
-        .recv_timeout(Duration::from_secs(2))
-        .map_err(|_| "Не удалось создать область встроенного MPV".to_owned())?;
-    if window == 0 {
-        let _ = worker.join();
-        Err("Не удалось создать область встроенного MPV".into())
-    } else {
-        Ok(EmbeddedHost {
-            window,
-            stop,
-            worker: Some(worker),
-        })
-    }
-}
-
-impl Drop for EmbeddedHost {
-    fn drop(&mut self) {
-        let _ = self.stop.send(());
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
         }
     }
 }

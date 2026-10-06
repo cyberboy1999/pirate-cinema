@@ -1,6 +1,8 @@
 # Pirate Cinema — project context
 
-Latest stable release: 0.7.0. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest stable release: 0.7.2. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+
+Release notes for 0.7.2 are kept in `docs/RELEASE_0.7.2.md`; the tag workflow requires that file when publishing the GitHub release.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -42,7 +44,9 @@ Series navigation treats `S00`, OVA and named specials as a real Specials group 
 
 The series screen remembers the last season, episode and auto-next choice per torrent, displays watched/total progress for every season and keeps movies, normal episodes and specials in stable groups. MPV restores both audio and subtitle tracks. Library cards include a direct Continue action that selects the unfinished or next unviewed file without opening the detail page.
 
-On Windows, bundled MPV can render into a native child area inside Pirate Cinema; the setting can switch back to the ordinary separate MPV window, and failure to create the native area falls back automatically. Linux keeps the separate system MPV window. Both modes preserve the same IPC history and auto-next behavior.
+The Windows player uses the Dioxus WebView2 shell with pinned local ArtPlayer and hls.js assets plus TorrServer's GST build. ArtPlayer provides the controls and keeps compact season, episode and audio-track selectors inside the player; hls.js remains the HLS transport through ArtPlayer's `customType` hook. TorrServer remuxes or transcodes torrent media to `/gst/{hash}/master.m3u8`. Playback waits for an 18-second startup buffer and keeps up to 60 seconds ready, which avoids periodic starvation on torrents whose HLS fragments are short and uneven. Resume and audio switching keep TorrServer's complete timeline and apply the saved position only through hls.js, avoiding the previous double seek and zero-based history after changing tracks. The audio selector retries its bounded GST media probe while a fresh pipeline warms up, shows every returned track and changes the GST `audio` stream at the current position. The episode selector uses the existing naturally ordered real-file queue and returns selection to Rust so history and auto-next remain correct. Entering video fullscreen also switches the native application window to borderless fullscreen. The HLS path goes directly to GST instead of running the legacy ten-second raw `/stream` probe first; that probe remains limited to MPV and external-player launches. A five-second GST heartbeat and bounded hls.js network/media recovery keep long torrent sessions active without hiding a terminal error; a successfully loaded fragment clears a stale player error. Playback stays inside the application for MKV, AVI and other torrent containers, saves progress every five seconds and keeps auto-next. The old Win32 MPV `--wid` host was removed because WebView/native-child z-order and teardown could crash the entire UI. When a `portable-data` directory exists beside the executable, the application keeps settings, history and TorrServer data there so local testing cannot lock or overwrite an installed application's profile.
+
+ArtPlayer is localized in Russian, uses a blue timeline and places compact season, episode and audio-track selectors in the player's upper-left corner. Starting playback or changing an episode scrolls and focuses the player automatically.
 
 Release 0.6.3 fixes the file-card CSS cascade: the specific launch-button rule follows the generic file-button rule, so both its normal and hover states remain visibly white.
 
@@ -55,6 +59,10 @@ Linux CI creates one x86_64 AppImage with Pirate Cinema, TorrServer and the requ
 AppImage runtime dependencies are documented on the repository landing page with copyable commands for Debian/Ubuntu, Fedora/RHEL and Arch/CachyOS. Failure to initialize the optional Linux tray must not panic the Dioxus tree; the window remains usable and closes normally when no tray provider is available.
 
 The bundled TorrServer starts with explicit loopback IP, port 8090 and profile path arguments, so its database location no longer depends on inherited process state. Startup failures retain their concrete error in the UI, and the offline status uses a red indicator.
+
+Windows development builds prefer the local `TorrServer-gst-windows-amd64.exe` runtime when it is present beside the application (or in `desktop-rust/vendor/torrserver`), and fall back to the standard TorrServer binary when it is not. The settings page stores two mutually exclusive close actions: minimize to the tray or close fully. A full exit explicitly tears down the TorrServer child owned by Pirate Cinema; the tray action remains available when minimize-to-tray is selected.
+
+The Windows installer carries Microsoft's official x64 Visual C++ Redistributable and runs it silently before the first launch, so clean Windows Sandbox installations do not fail with a missing `VCRUNTIME140_1.dll`.
 
 No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.
 

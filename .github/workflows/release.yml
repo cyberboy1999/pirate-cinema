@@ -28,11 +28,14 @@ jobs:
           7z x runtime.7z -obootstrap -y
           New-Item vendor/mpv,desktop-rust/vendor/torrserver -ItemType Directory -Force | Out-Null
           Copy-Item bootstrap/resources/mpv/* vendor/mpv -Recurse -Force
+          Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile vc_redist.x64.exe
           Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe
           if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne '3B68BA9409C009628BBF747A14C13F2DA4254389264A0B3903E581E897492569') { throw 'TorrServer hash mismatch' }
           if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
-      - run: cargo test --manifest-path desktop-rust/Cargo.toml
-      - run: cargo clippy --manifest-path desktop-rust/Cargo.toml --all-targets -- -D warnings
+      - run: cargo fmt --manifest-path desktop-rust/Cargo.toml -- --check
+      - run: cargo check --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
+      - run: cargo test --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
+      - run: cargo clippy --manifest-path desktop-rust/Cargo.toml --all-targets --all-features -- -D warnings
       - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
       - name: Build production NSIS installer
         shell: pwsh
@@ -43,6 +46,7 @@ jobs:
           Copy-Item desktop-rust/target/release/pirate-cinema.exe stage/
           Copy-Item vendor/mpv/* stage/mpv -Recurse
           Copy-Item desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe stage/torrserver/
+          Copy-Item vc_redist.x64.exe stage/
           Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md stage/
           $makensis="${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           & $makensis "/DAPP_SOURCE=$pwd\stage" "/DAPP_OUTPUT=$pwd\Pirate-Cinema-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/installer.nsi
@@ -76,7 +80,10 @@ jobs:
           curl -fL 'https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage' -o appimagetool-x86_64.AppImage
           echo 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool-x86_64.AppImage' | sha256sum -c -
           chmod 755 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh appimagetool-x86_64.AppImage
-      - run: cargo test --manifest-path desktop-rust/Cargo.toml
+      - run: cargo fmt --manifest-path desktop-rust/Cargo.toml -- --check
+      - run: cargo check --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
+      - run: cargo test --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
+      - run: cargo clippy --manifest-path desktop-rust/Cargo.toml --all-targets --all-features -- -D warnings
       - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
       - name: Build AppImage
         run: |
@@ -133,4 +140,4 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema ${GITHUB_REF_NAME#v}" --notes-file docs/RELEASE_0.7.0.md
+        run: gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema ${GITHUB_REF_NAME#v}" --notes-file "docs/RELEASE_${GITHUB_REF_NAME#v}.md"

@@ -1,11 +1,11 @@
 [package]
 name = "pirate-cinema-core"
-version = "0.7.0"
+version = "0.7.2"
 edition = "2021"
 publish = false
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 dioxus = { version = "0.7.0", features = ["desktop"] }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
