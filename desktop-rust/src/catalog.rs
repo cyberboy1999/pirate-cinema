@@ -337,6 +337,34 @@ fn wikipedia_thumbnails(
         .collect())
 }
 
+fn wikipedia_imdb_id(agent: &ureq::Agent, title: &str) -> Option<String> {
+    let page = json(
+        agent,
+        &format!(
+            "https://ru.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&prop=pageprops&ppprop=wikibase_item&titles={}",
+            encode(title)
+        ),
+    )
+    .ok()?;
+    let item = page
+        .pointer("/query/pages/0/pageprops/wikibase_item")
+        .and_then(Value::as_str)?;
+    let entity = json(
+        agent,
+        &format!(
+            "https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids={}",
+            encode(item)
+        ),
+    )
+    .ok()?;
+    let imdb = entity
+        .pointer(&format!(
+            "/entities/{item}/claims/P345/0/mainsnak/datavalue/value"
+        ))
+        .and_then(Value::as_str)?;
+    valid_imdb(imdb).then(|| imdb.to_owned())
+}
+
 pub fn cached_popular(cache: &Path) -> Vec<Movie> {
     let Ok(bytes) = std::fs::read(cache.join("popular.json")) else {
         return Vec::new();
@@ -386,6 +414,9 @@ pub fn clean_title(raw: &str) -> (String, Option<i64>) {
         if word.is_empty() {
             continue;
         }
+        if release_marker(word) {
+            break;
+        }
         if word.len() == 4 && word.bytes().all(|byte| byte.is_ascii_digit()) {
             let parsed = word.parse::<i64>().ok();
             if parsed.is_some_and(|year| (1900..=2100).contains(&year)) {
@@ -413,6 +444,28 @@ pub fn clean_title(raw: &str) -> (String, Option<i64>) {
         },
         release_year,
     )
+}
+
+fn release_marker(word: &str) -> bool {
+    let word = word.trim_matches(['-', '+', ',']).to_ascii_lowercase();
+    ["сезон", "серия", "season", "episode"]
+        .iter()
+        .any(|marker| word == *marker)
+        || word
+            .strip_prefix('s')
+            .or_else(|| word.strip_prefix('e'))
+            .is_some_and(|suffix| {
+                suffix
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character.is_ascii_digit())
+            })
+        || word.strip_prefix('х').is_some_and(|suffix| {
+            suffix
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_digit())
+        })
 }
 
 fn normalized(value: &str) -> String {
@@ -478,8 +531,16 @@ fn russian_wikipedia(
             {
                 return None;
             }
+            let id = wikipedia_imdb_id(agent, page_title).unwrap_or_else(|| {
+                format!(
+                    "wiki:{}",
+                    page.get("pageid")
+                        .and_then(Value::as_i64)
+                        .unwrap_or_default()
+                )
+            });
             Some(Movie {
-                id: format!("wiki:{}", page.get("pageid")?.as_i64()?),
+                id,
                 title: clean_page_title.to_owned(),
                 original_title: title.to_owned(),
                 year: found_year.or(wanted_year),
@@ -564,7 +625,8 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
         return Ok(None);
     }
     let agent = agent();
-    let wiki = russian_wikipedia(&agent, &clean, wanted_year, series);
+    let wiki = russian_wikipedia(&agent, &clean, wanted_year, series)
+        .or_else(|| russian_wikipedia(&agent, &clean, wanted_year, !series));
     let titles = title_candidates(title);
     let kinds = if series {
         ["series", "movie"]
@@ -681,6 +743,12 @@ pub fn movie_poster_jpeg(movie: &Movie, series: bool) -> Result<Vec<u8>, String>
             urls.push(background.to_owned());
         }
     }
+    if valid_imdb(&movie.id) {
+        urls.push(format!(
+            "https://images.metahub.space/poster/medium/{}/img",
+            movie.id
+        ));
+    }
     for url in urls {
         if let Ok(bytes) = poster_jpeg(&url) {
             return Ok(bytes);
@@ -787,6 +855,18 @@ mod tests {
     }
 
     #[test]
+    fn release_title_stops_before_series_bundle_markers() {
+        assert_eq!(
+            clean_title("Мажор [S01-05 + Мажор. Фильм] (2014-2025) WEB-DL"),
+            ("Мажор".into(), Some(2014))
+        );
+        assert_eq!(
+            title_candidates("Рик и Морти / Rick and Morty [S01-09] (2013-2026) BDRip"),
+            ["Rick and Morty", "Рик и Морти"]
+        );
+    }
+
+    #[test]
     fn wikipedia_article_path_is_decoded_once() {
         assert_eq!(
             decode_path("%D0%94%D1%8E%D0%BD%D0%B0_(%D1%84%D0%B8%D0%BB%D1%8C%D0%BC)"),
@@ -823,6 +903,19 @@ mod tests {
             parse_json_body(b"{", Some("timed out".into())).unwrap_err(),
             "timed out"
         );
+    }
+
+    #[test]
+    #[ignore = "uses public Cinemeta and Wikipedia"]
+    fn live_series_bundle_gets_metadata_and_poster() {
+        let movie = lookup(
+            "Мажор [S01-05 + Мажор. Фильм + Мажор в Сочи] (2014-2025) WEB-DL",
+            true,
+        )
+        .unwrap()
+        .expect("Мажор must resolve through a public source");
+        assert!(movie.overview.is_some());
+        assert!(!movie_poster_jpeg(&movie, true).unwrap().is_empty());
     }
 
     #[test]

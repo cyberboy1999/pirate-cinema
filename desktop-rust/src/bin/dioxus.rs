@@ -2,10 +2,10 @@
 
 use base64::Engine;
 use dioxus::prelude::*;
-use pirate_cinema_core::catalog::{self, Movie};
 use pirate_cinema_core::history::{
     create_local_backup, HistoryStore, MediaMetadata, PlaybackPreferences,
 };
+use pirate_cinema_core::metadata::{self, Movie};
 use pirate_cinema_core::migration::{legacy_profile_paths, migrate_legacy_profiles};
 use pirate_cinema_core::mpv::{self, MpvEvent, MpvSession};
 use pirate_cinema_core::settings::{self, Language, PlayerType, Preferences};
@@ -394,7 +394,7 @@ fn App() -> Element {
     let results = use_signal(Vec::<SearchResult>::new);
     let search_metadata = use_signal(|| None::<Movie>);
     let search_poster = use_signal(String::new);
-    let mut popular = use_signal(catalog::fallback_popular);
+    let mut popular = use_signal(metadata::fallback_popular);
     let mut popular_posters = use_signal(HashMap::<String, String>::new);
     let home_busy = use_signal(|| false);
     let mut selected = use_signal(|| None::<Torrent>);
@@ -784,10 +784,10 @@ fn App() -> Element {
 
     use_effect(move || {
         if let Some(cache) = popular_cache_dir() {
-            let saved = catalog::cached_popular(&cache);
+            let saved = metadata::cached_popular(&cache);
             if !saved.is_empty() {
                 for movie in &saved {
-                    if let Some(bytes) = catalog::cached_poster(&cache, &movie.id) {
+                    if let Some(bytes) = metadata::cached_poster(&cache, &movie.id) {
                         popular_posters
                             .write()
                             .insert(movie.id.clone(), jpeg_data_uri(&bytes));
@@ -929,7 +929,7 @@ fn App() -> Element {
             }
         } else if server.read().torrents.iter().any(|torrent| {
             !torrent.hash.eq_ignore_ascii_case(&item.hash)
-                && catalog::same_release(&torrent.title, &item.title)
+                && metadata::same_release(&torrent.title, &item.title)
         }) {
             pending_duplicate.set(Some((item, open)));
         } else {
@@ -1388,12 +1388,12 @@ fn refresh_popular(
     }
     home_busy.set(true);
     spawn(async move {
-        let loaded = tokio::task::spawn_blocking(catalog::popular).await;
+        let loaded = tokio::task::spawn_blocking(metadata::popular).await;
         if let Ok(items) =
-            loaded.map(|result| result.unwrap_or_else(|_| catalog::fallback_popular()))
+            loaded.map(|result| result.unwrap_or_else(|_| metadata::fallback_popular()))
         {
             if let Some(cache) = popular_cache_dir() {
-                let _ = catalog::cache_popular(&cache, &items);
+                let _ = metadata::cache_popular(&cache, &items);
             }
             popular.set(items.clone());
             for group in items.chunks(4) {
@@ -1407,11 +1407,12 @@ fn refresh_popular(
                                     let cache = popular_cache_dir();
                                     let bytes = cache
                                         .as_deref()
-                                        .and_then(|path| catalog::cached_poster(path, &movie.id))
-                                        .or_else(|| catalog::movie_poster_jpeg(movie, false).ok());
+                                        .and_then(|path| metadata::cached_poster(path, &movie.id))
+                                        .or_else(|| metadata::movie_poster_jpeg(movie, false).ok());
                                     bytes.map(|bytes| {
                                         if let Some(cache) = cache.as_deref() {
-                                            let _ = catalog::cache_poster(cache, &movie.id, &bytes);
+                                            let _ =
+                                                metadata::cache_poster(cache, &movie.id, &bytes);
                                         }
                                         (movie.id.clone(), jpeg_data_uri(&bytes))
                                     })
@@ -2358,17 +2359,18 @@ fn start_search(
             }
         }
         let lookup =
-            tokio::task::spawn_blocking(move || match catalog::lookup(&metadata_query, false) {
+            tokio::task::spawn_blocking(move || match metadata::lookup(&metadata_query, false) {
                 Ok(Some(item)) => Ok(Some(item)),
-                Ok(None) | Err(_) => catalog::lookup(&metadata_query, true),
+                Ok(None) | Err(_) => metadata::lookup(&metadata_query, true),
             })
             .await;
         if let Ok(Ok(Some(item))) = lookup {
             let poster_item = item.clone();
             metadata.set(Some(item));
-            if let Ok(Ok(bytes)) =
-                tokio::task::spawn_blocking(move || catalog::movie_poster_jpeg(&poster_item, false))
-                    .await
+            if let Ok(Ok(bytes)) = tokio::task::spawn_blocking(move || {
+                metadata::movie_poster_jpeg(&poster_item, false)
+            })
+            .await
             {
                 poster.set(jpeg_data_uri(&bytes));
             }
@@ -2975,9 +2977,9 @@ fn sync_library_metadata(
         };
         let movie = titles
             .iter()
-            .find_map(|title| catalog::lookup(title, series).ok().flatten());
+            .find_map(|title| metadata::lookup(title, series).ok().flatten());
         let poster_file = movie.as_ref().and_then(|item| {
-            let bytes = catalog::movie_poster_jpeg(item, series).ok()?;
+            let bytes = metadata::movie_poster_jpeg(item, series).ok()?;
             let name = format!("{}.jpg", torrent.hash);
             std::fs::write(poster_dir.join(&name), bytes).ok()?;
             Some(name)

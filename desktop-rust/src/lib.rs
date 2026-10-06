@@ -1,6 +1,7 @@
 pub const DEFAULT_TORRSERVER_URL: &str = "http://127.0.0.1:8090";
 pub mod catalog;
 pub mod history;
+pub mod metadata;
 pub mod migration;
 pub mod mpv;
 pub mod settings;
