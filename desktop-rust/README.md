@@ -11,7 +11,7 @@ cargo run --manifest-path desktop-rust/Cargo.toml --bin pirate-cinema
 cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
 ```
 
-Windows packaging uses `installer.nsi`. Its stage must contain `pirate-cinema.exe`, `mpv/`, `torrserver/`, `README.md`, `LICENSE`, and `THIRD_PARTY_NOTICES.md`. Generated packages belong in `local-builds/` and must not be committed.
+Windows packaging uses `installer.nsi`. Its stage must contain `pirate-cinema.exe`, `mpv/`, `torrserver/`, `README.md`, `LICENSE`, and `THIRD_PARTY_NOTICES.md`; the release workflow also places the official `vc_redist.x64.exe` beside them. Generated packages belong in `local-builds/` and must not be committed.
 
 ## Data and migration
 

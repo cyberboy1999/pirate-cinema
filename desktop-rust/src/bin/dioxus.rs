@@ -20,7 +20,7 @@ use pirate_cinema_core::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex, OnceLock,
 };
 use std::time::Duration;
@@ -28,6 +28,7 @@ use std::time::Duration;
 static STARTUP_MAGNET: OnceLock<String> = OnceLock::new();
 static INITIAL_PREFERENCES: OnceLock<Preferences> = OnceLock::new();
 static TORRSERVER_PROCESS: OnceLock<Mutex<Option<TorrServerProcess>>> = OnceLock::new();
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static STARTUP_MIGRATION_ERROR: OnceLock<String> = OnceLock::new();
 static STARTUP_TORRSERVER_ERROR: OnceLock<String> = OnceLock::new();
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -135,6 +136,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .settings input, .settings select { min-height:46px;padding: 13px 14px; border: 1px solid #292929; border-radius: 10px; background: #0b0b0b; color: white; }
 .settings label.auto-next{display:flex;align-items:center;gap:10px}.settings .auto-next input[type="checkbox"]{width:18px;height:18px;min-height:0;margin:0;padding:0;flex:0 0 18px;accent-color:#e8e8e8}
 .setting-row{display:grid;grid-template-columns:180px minmax(0,1fr);gap:18px;align-items:center}.setting-row>span{color:#aaa;font-size:14px;text-transform:uppercase;letter-spacing:.6px}.setting-row label{display:contents}.choice-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.choice-row button.selected{border-color:#777;background:#282828;color:#fff}.settings-actions { display:grid;grid-template-columns:1fr 1fr;gap:10px}.settings-card .primary{min-height:46px}.settings-output{display:grid;gap:10px}.server-summary{grid-template-columns:52px minmax(0,1fr);align-items:center}.server-summary img{width:34px;height:34px;object-fit:contain;filter:brightness(0) invert(1);opacity:.82}.server-summary strong{display:block;font-size:17px}.server-summary small{display:block;margin-top:4px;color:#8a8a8a}.settings-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.settings-facts article{padding:15px;border:1px solid #282828;border-radius:11px;background:#111}.settings-facts span,.settings-facts small{display:block;color:#777;font-size:12px}.settings-facts strong{display:block;margin:6px 0;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stacked-options{display:grid;gap:10px}
 .filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 24px; }
 .filters input, .filters select { min-height: 42px; padding: 0 13px; border: 1px solid #292929; border-radius: 10px; background: #0b0b0b; color: white; }
 .filters input { min-width: 240px; }
@@ -256,6 +258,7 @@ fn main() {
     let endpoint =
         std::env::var("TORRSERVER_URL").unwrap_or_else(|_| preferences.torrserver_url.clone());
     preferences.torrserver_url = endpoint.clone();
+    let close_to_tray = preferences.close_to_tray;
     let _ = INITIAL_PREFERENCES.set(preferences);
     let _ = TORRSERVER_PROCESS.set(Mutex::new(None));
     std::thread::spawn(move || {
@@ -266,6 +269,10 @@ fn main() {
             });
         match result {
             Ok(process) => {
+                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                    drop(process);
+                    return;
+                }
                 if let Some(state) = TORRSERVER_PROCESS.get() {
                     if let Ok(mut owned) = state.lock() {
                         *owned = Some(process);
@@ -292,13 +299,18 @@ fn main() {
                         ))
                         .with_window_icon(window_icon),
                 )
-                .with_close_behaviour(dioxus::desktop::WindowCloseBehaviour::WindowHides),
+                .with_close_behaviour(if close_to_tray {
+                    dioxus::desktop::WindowCloseBehaviour::WindowHides
+                } else {
+                    dioxus::desktop::WindowCloseBehaviour::WindowCloses
+                }),
         )
         .launch(App);
 }
 
 #[component]
 fn App() -> Element {
+    let _shutdown_guard = use_hook(|| Arc::new(ShutdownGuard));
     let desktop = dioxus::desktop::use_window();
     let brand_icon = png_data_uri(APP_ICON);
     let home_icon = png_data_uri(HOME_ICON);
@@ -344,6 +356,7 @@ fn App() -> Element {
                             desktop.set_close_behavior(
                                 dioxus::desktop::WindowCloseBehaviour::WindowCloses,
                             );
+                            shutdown_owned_processes();
                             desktop.close();
                             return;
                         }
@@ -665,7 +678,6 @@ fn App() -> Element {
                         .and_then(|id| playback.queue.iter().find(|file| file.id == id))
                         .cloned()
                     {
-                        web_player.set(None);
                         launch_playback(
                             PendingPlayback {
                                 torrent: playback.torrent.clone(),
@@ -694,7 +706,6 @@ fn App() -> Element {
                             .and_then(|position| playback.queue.get(position + 1))
                             .cloned()
                         {
-                            web_player.set(None);
                             launch_playback(
                                 PendingPlayback {
                                     torrent: playback.torrent.clone(),
@@ -1328,6 +1339,14 @@ fn App() -> Element {
     }
 }
 
+struct ShutdownGuard;
+
+impl Drop for ShutdownGuard {
+    fn drop(&mut self) {
+        shutdown_owned_processes();
+    }
+}
+
 #[component]
 fn Welcome(on_complete: EventHandler<Preferences>) -> Element {
     let initial = INITIAL_PREFERENCES
@@ -1358,6 +1377,7 @@ fn Welcome(on_complete: EventHandler<Preferences>) -> Element {
             embedded_player,
             torznab_url: initial.torznab_url.clone(),
             torznab_api_key: initial.torznab_api_key.clone(),
+            close_to_tray: initial.close_to_tray,
         };
         if let Err(message) =
             settings::validate_endpoint(&preferences.torrserver_url).and_then(|_| {
@@ -1972,6 +1992,7 @@ fn Settings(
     let mut player_path = use_signal(|| initial.player_path);
     let mut external_player = use_signal(|| initial.player_type == PlayerType::External);
     let mut embedded_player = use_signal(|| initial.embedded_player);
+    let mut close_to_tray = use_signal(|| initial.close_to_tray);
     let mut status = use_signal(String::new);
     let mut maintenance_busy = use_signal(|| false);
     let mut diagnostics = use_signal(Vec::<String>::new);
@@ -1995,6 +2016,7 @@ fn Settings(
             embedded_player: embedded_player(),
             torznab_url: torznab_url(),
             torznab_api_key: torznab_api_key(),
+            close_to_tray: close_to_tray(),
         };
         let result = settings_path().and_then(|path| settings::save_preferences(&path, &next));
         if let Err(error) = result {
@@ -2214,6 +2236,20 @@ fn Settings(
                         {language().pick(" Воспроизводить внутри приложения через HLS", " Play inside the application over HLS")}
                     }
                 }
+                div { class: "setting-row",
+                    span { {language().pick("При закрытии", "When closing")} }
+                    div { class: "stacked-options",
+                        label { class: "auto-next",
+                            input { r#type: "checkbox", checked: close_to_tray(), onchange: move |event| close_to_tray.set(event.checked()) }
+                            {language().pick(" Сворачивать в трей", " Minimize to tray")}
+                        }
+                        label { class: "auto-next",
+                            input { r#type: "checkbox", checked: !close_to_tray(), onchange: move |event| close_to_tray.set(!event.checked()) }
+                            {language().pick(" Закрывать приложение полностью", " Exit the application completely")}
+                        }
+                    }
+                }
+                p { class: "hint", {language().pick("Варианты взаимоисключающие; настройка применяется после перезапуска.", "These options are mutually exclusive; the setting applies after restart.")} }
                 p { class: "hint", {language().pick("Только встроенный MPV сохраняет точную позицию просмотра через IPC.", "Only bundled MPV saves exact playback position through IPC.")} }
                 if external_player() {
                     div { class: "setting-row",
@@ -2590,6 +2626,18 @@ fn default_preferences() -> Preferences {
         embedded_player: cfg!(windows),
         torznab_url: String::new(),
         torznab_api_key: String::new(),
+        close_to_tray: true,
+    }
+}
+
+fn shutdown_owned_processes() {
+    SHUTDOWN_REQUESTED.store(true, Ordering::Release);
+    if let Some(state) = TORRSERVER_PROCESS.get() {
+        if let Ok(mut owned) = state.lock() {
+            // Taking the value runs TorrServerProcess::drop, which kills and waits
+            // for the bundled child instead of leaving it behind after the UI exits.
+            owned.take();
+        }
     }
 }
 

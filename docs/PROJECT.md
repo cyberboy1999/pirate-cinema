@@ -1,6 +1,6 @@
 # Pirate Cinema — project context
 
-Latest stable release: 0.7.1. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest stable release: 0.7.2. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -57,6 +57,10 @@ Linux CI creates one x86_64 AppImage with Pirate Cinema, TorrServer and the requ
 AppImage runtime dependencies are documented on the repository landing page with copyable commands for Debian/Ubuntu, Fedora/RHEL and Arch/CachyOS. Failure to initialize the optional Linux tray must not panic the Dioxus tree; the window remains usable and closes normally when no tray provider is available.
 
 The bundled TorrServer starts with explicit loopback IP, port 8090 and profile path arguments, so its database location no longer depends on inherited process state. Startup failures retain their concrete error in the UI, and the offline status uses a red indicator.
+
+Windows development builds prefer the local `TorrServer-gst-windows-amd64.exe` runtime when it is present beside the application (or in `desktop-rust/vendor/torrserver`), and fall back to the standard TorrServer binary when it is not. The settings page stores two mutually exclusive close actions: minimize to the tray or close fully. A full exit explicitly tears down the TorrServer child owned by Pirate Cinema; the tray action remains available when minimize-to-tray is selected.
+
+The Windows installer carries Microsoft's official x64 Visual C++ Redistributable and runs it silently before the first launch, so clean Windows Sandbox installations do not fail with a missing `VCRUNTIME140_1.dll`.
 
 No hosting, cloud persistence or automatic publication. Do not commit databases, caches, binaries, installers or secrets. The source repository is `cyberboy1999/pirate-cinema`; publishing still requires explicit user permission.
 

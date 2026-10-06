@@ -13,7 +13,7 @@ Unicode true
   !error "Pass /DAPP_ICON=... with the application icon"
 !endif
 
-Name "Pirate Cinema 0.7.0"
+Name "Pirate Cinema 0.7.2"
 OutFile "${APP_OUTPUT}"
 InstallDir "$PROGRAMFILES64\Pirate Cinema"
 RequestExecutionLevel admin
@@ -23,13 +23,13 @@ ShowInstDetails nevershow
 ShowUninstDetails nevershow
 Icon "${APP_ICON}"
 UninstallIcon "${APP_ICON}"
-VIProductVersion "0.7.0.0"
+VIProductVersion "0.7.2.0"
 VIAddVersionKey "ProductName" "Pirate Cinema"
 VIAddVersionKey "FileDescription" "Pirate Cinema installer"
-VIAddVersionKey "FileVersion" "0.7.0.0"
+VIAddVersionKey "FileVersion" "0.7.2.0"
 VIAddVersionKey "LegalCopyright" "Pirate Cinema contributors"
 
-!define MUI_WELCOMEPAGE_TEXT "Pirate Cinema 0.7.0. Existing media history and TorrServer data remain in place during the update."
+!define MUI_WELCOMEPAGE_TEXT "Pirate Cinema 0.7.2. Existing media history and TorrServer data remain in place during the update."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -53,6 +53,7 @@ Section "Pirate Cinema" SEC_APP
   ; Stop only the bundled server from this installation directory. An external
   ; TorrServer with the same process name must remain untouched.
   nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$target=[IO.Path]::GetFullPath(''$INSTDIR\torrserver\TorrServer-windows-amd64.exe''); Get-Process -Name ''TorrServer-windows-amd64'' -ErrorAction SilentlyContinue | Where-Object { $$_.Path -and [IO.Path]::GetFullPath($$_.Path) -eq $$target } | Stop-Process -Force"'
+  nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$target=[IO.Path]::GetFullPath(''$INSTDIR\torrserver\TorrServer-gst-windows-amd64.exe''); Get-Process -Name ''TorrServer-gst-windows-amd64'' -ErrorAction SilentlyContinue | Where-Object { $$_.Path -and [IO.Path]::GetFullPath($$_.Path) -eq $$target } | Stop-Process -Force"'
   Sleep 700
   IfFileExists "$INSTDIR\Uninstall Pirate Cinema.exe" uninstall_old continue_install
   uninstall_old:
@@ -64,9 +65,15 @@ Section "Pirate Cinema" SEC_APP
   File "${APP_SOURCE}\LICENSE"
   File "${APP_SOURCE}\THIRD_PARTY_NOTICES.md"
   File /oname=pirate-cinema.ico "${APP_ICON}"
+  !ifexist "${APP_SOURCE}\vc_redist.x64.exe"
+    File "${APP_SOURCE}\vc_redist.x64.exe"
+  !endif
 
   SetOutPath "$INSTDIR\torrserver"
   File "${APP_SOURCE}\torrserver\TorrServer-windows-amd64.exe"
+
+  IfFileExists "$INSTDIR\vc_redist.x64.exe" 0 +2
+    ExecWait '"$INSTDIR\vc_redist.x64.exe" /install /quiet /norestart' $0
 
   SetOutPath "$INSTDIR\mpv"
   File "${APP_SOURCE}\mpv\mpv.exe"
@@ -87,7 +94,7 @@ Section "Pirate Cinema" SEC_APP
   CreateShortcut "$DESKTOP\Pirate Cinema.lnk" "$INSTDIR\pirate-cinema.exe" "" "$INSTDIR\pirate-cinema.ico"
   CreateShortcut "$SMPROGRAMS\Pirate Cinema.lnk" "$INSTDIR\pirate-cinema.exe" "" "$INSTDIR\pirate-cinema.ico"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "DisplayName" "Pirate Cinema"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "DisplayVersion" "0.7.0"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "DisplayVersion" "0.7.2"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "UninstallString" "$\"$INSTDIR\Uninstall Pirate Cinema.exe$\""
   WriteRegStr HKCU "Software\Classes\magnet" "" "URL:Magnet link"
@@ -100,6 +107,7 @@ Section "Uninstall"
   nsExec::Exec '"$SYSDIR\taskkill.exe" /IM pirate-cinema.exe /T /F'
   Sleep 700
   nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$target=[IO.Path]::GetFullPath(''$INSTDIR\torrserver\TorrServer-windows-amd64.exe''); Get-Process -Name ''TorrServer-windows-amd64'' -ErrorAction SilentlyContinue | Where-Object { $$_.Path -and [IO.Path]::GetFullPath($$_.Path) -eq $$target } | Stop-Process -Force"'
+  nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$target=[IO.Path]::GetFullPath(''$INSTDIR\torrserver\TorrServer-gst-windows-amd64.exe''); Get-Process -Name ''TorrServer-gst-windows-amd64'' -ErrorAction SilentlyContinue | Where-Object { $$_.Path -and [IO.Path]::GetFullPath($$_.Path) -eq $$target } | Stop-Process -Force"'
   Sleep 700
   Delete "$DESKTOP\Pirate Cinema.lnk"
   Delete "$SMPROGRAMS\Pirate Cinema.lnk"
@@ -108,7 +116,9 @@ Section "Uninstall"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\THIRD_PARTY_NOTICES.md"
   Delete "$INSTDIR\pirate-cinema.ico"
+  Delete "$INSTDIR\vc_redist.x64.exe"
   Delete "$INSTDIR\torrserver\TorrServer-windows-amd64.exe"
+  Delete "$INSTDIR\torrserver\TorrServer-gst-windows-amd64.exe"
   Delete "$INSTDIR\mpv\mpv.exe"
   Delete "$INSTDIR\mpv\d3dcompiler_43.dll"
   Delete "$INSTDIR\mpv\fonts\NotoEmoji-Regular.ttf"
