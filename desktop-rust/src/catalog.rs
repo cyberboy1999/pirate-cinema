@@ -25,7 +25,9 @@ pub struct Movie {
 }
 
 fn agent() -> ureq::Agent {
-    agent_with_timeout(Duration::from_secs(12))
+    // Metadata refresh is an interactive action. A stalled public provider must
+    // not hold the whole library sync hostage for a dozen seconds per request.
+    agent_with_timeout(Duration::from_secs(5))
 }
 
 fn agent_with_timeout(timeout: Duration) -> ureq::Agent {
@@ -578,7 +580,9 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
                 encode(query)
             );
             let Ok(result) = json(&agent, &url) else {
-                continue;
+                // All remaining attempts target the same public service. Retrying
+                // it with another title/type only multiplies the timeout.
+                break 'search;
             };
             provider_responded = true;
             let candidates = parse_catalog(&result);
