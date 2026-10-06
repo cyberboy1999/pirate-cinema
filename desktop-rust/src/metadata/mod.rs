@@ -2,7 +2,10 @@ pub mod models;
 pub mod providers;
 
 use crate::catalog;
-pub use crate::catalog::Movie;
+pub use crate::catalog::{
+    cache_popular, cache_popular_series, cache_poster, cached_popular, cached_popular_series,
+    cached_poster, Movie,
+};
 pub use models::{
     best_image, ExternalIds, ImageCandidate, ImageType, LocalizedText, MediaType, MetadataSource,
 };
@@ -21,20 +24,11 @@ pub fn movie_poster_jpeg(movie: &Movie, series: bool) -> Result<Vec<u8>, String>
 pub fn popular() -> Result<Vec<Movie>, String> {
     catalog::popular()
 }
+pub fn popular_series() -> Result<Vec<Movie>, String> {
+    catalog::popular_series()
+}
 pub fn fallback_popular() -> Vec<Movie> {
     catalog::fallback_popular()
-}
-pub fn cached_popular(cache: &std::path::Path) -> Vec<Movie> {
-    catalog::cached_popular(cache)
-}
-pub fn cache_popular(cache: &std::path::Path, items: &[Movie]) -> Result<(), String> {
-    catalog::cache_popular(cache, items)
-}
-pub fn cached_poster(cache: &std::path::Path, id: &str) -> Option<Vec<u8>> {
-    catalog::cached_poster(cache, id)
-}
-pub fn cache_poster(cache: &std::path::Path, id: &str, bytes: &[u8]) -> Result<(), String> {
-    catalog::cache_poster(cache, id, bytes)
 }
 pub fn same_release(left: &str, right: &str) -> bool {
     catalog::same_release(left, right)

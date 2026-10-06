@@ -227,10 +227,21 @@ fn parse_wikidata_links(payload: &Value) -> WikiLinks {
 }
 
 pub fn popular() -> Result<Vec<Movie>, String> {
+    popular_kind("movie")
+}
+
+pub fn popular_series() -> Result<Vec<Movie>, String> {
+    popular_kind("series")
+}
+
+fn popular_kind(kind: &str) -> Result<Vec<Movie>, String> {
+    if !matches!(kind, "movie" | "series") {
+        return Err("Неизвестный тип каталога".into());
+    }
     let agent = agent_with_timeout(Duration::from_secs(5));
     let mut items = parse_catalog(&json(
         &agent,
-        &format!("{CINEMETA}/catalog/movie/top.json"),
+        &format!("{CINEMETA}/catalog/{kind}/top.json"),
     )?);
     if items.is_empty() {
         return Err("Cinemeta вернула пустой каталог".into());
@@ -366,7 +377,15 @@ fn wikipedia_imdb_id(agent: &ureq::Agent, title: &str) -> Option<String> {
 }
 
 pub fn cached_popular(cache: &Path) -> Vec<Movie> {
-    let Ok(bytes) = std::fs::read(cache.join("popular.json")) else {
+    cached_catalog(cache, "popular")
+}
+
+pub fn cached_popular_series(cache: &Path) -> Vec<Movie> {
+    cached_catalog(cache, "popular-series")
+}
+
+fn cached_catalog(cache: &Path, name: &str) -> Vec<Movie> {
+    let Ok(bytes) = std::fs::read(cache.join(format!("{name}.json"))) else {
         return Vec::new();
     };
     let Ok(items) = serde_json::from_slice::<Vec<Movie>>(&bytes) else {
@@ -380,9 +399,17 @@ pub fn cached_popular(cache: &Path) -> Vec<Movie> {
 }
 
 pub fn cache_popular(cache: &Path, items: &[Movie]) -> Result<(), String> {
+    cache_catalog(cache, "popular", items)
+}
+
+pub fn cache_popular_series(cache: &Path, items: &[Movie]) -> Result<(), String> {
+    cache_catalog(cache, "popular-series", items)
+}
+
+fn cache_catalog(cache: &Path, name: &str, items: &[Movie]) -> Result<(), String> {
     std::fs::create_dir_all(cache).map_err(|error| error.to_string())?;
     let bytes = serde_json::to_vec(items).map_err(|error| error.to_string())?;
-    std::fs::write(cache.join("popular.json"), bytes).map_err(|error| error.to_string())
+    std::fs::write(cache.join(format!("{name}.json")), bytes).map_err(|error| error.to_string())
 }
 
 pub fn cached_poster(cache: &Path, id: &str) -> Option<Vec<u8>> {
@@ -958,6 +985,20 @@ mod tests {
         };
         cache_popular(&cache, &[item]).unwrap();
         assert_eq!(cached_popular(&cache)[0].title, "Фильм");
+        let series = Movie {
+            id: "tt456".into(),
+            title: "Сериал".into(),
+            original_title: "Series".into(),
+            year: Some(2025),
+            rating: None,
+            poster_url: None,
+            alternate_poster_url: None,
+            background_url: None,
+            overview: None,
+            genres: vec![],
+        };
+        cache_popular_series(&cache, &[series]).unwrap();
+        assert_eq!(cached_popular_series(&cache)[0].title, "Сериал");
         let mut jpeg = std::io::Cursor::new(Vec::new());
         image::DynamicImage::new_rgb8(1, 1)
             .write_to(&mut jpeg, image::ImageFormat::Jpeg)
@@ -967,6 +1008,7 @@ mod tests {
         std::fs::write(cache.join("popular.json"), b"{").unwrap();
         assert!(cached_popular(&cache).is_empty());
         std::fs::remove_file(cache.join("popular.json")).unwrap();
+        std::fs::remove_file(cache.join("popular-series.json")).unwrap();
         std::fs::remove_file(cache.join("tt123.jpg")).unwrap();
         std::fs::remove_dir(cache).unwrap();
     }

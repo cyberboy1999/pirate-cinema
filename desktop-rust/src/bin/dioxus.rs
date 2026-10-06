@@ -29,6 +29,7 @@ static STARTUP_MAGNET: OnceLock<String> = OnceLock::new();
 static INITIAL_PREFERENCES: OnceLock<Preferences> = OnceLock::new();
 static TORRSERVER_PROCESS: OnceLock<Mutex<Option<TorrServerProcess>>> = OnceLock::new();
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+static METADATA_SYNC_ACTIVE: AtomicBool = AtomicBool::new(false);
 static STARTUP_MIGRATION_ERROR: OnceLock<String> = OnceLock::new();
 static STARTUP_TORRSERVER_ERROR: OnceLock<String> = OnceLock::new();
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -395,6 +396,7 @@ fn App() -> Element {
     let search_metadata = use_signal(|| None::<Movie>);
     let search_poster = use_signal(String::new);
     let mut popular = use_signal(metadata::fallback_popular);
+    let mut popular_series = use_signal(Vec::<Movie>::new);
     let mut popular_posters = use_signal(HashMap::<String, String>::new);
     let home_busy = use_signal(|| false);
     let mut selected = use_signal(|| None::<Torrent>);
@@ -764,25 +766,25 @@ fn App() -> Element {
     });
 
     use_future(move || async move {
-        tokio::time::sleep(Duration::from_secs(12)).await;
-        let missing = cards
-            .read()
-            .iter()
-            .filter(|card| card.metadata.is_none() || card.poster.is_none())
-            .map(|card| card.torrent.clone())
-            .collect::<Vec<_>>();
-        if missing.is_empty() {
-            return;
+        for _ in 0..20 {
+            let missing = missing_metadata_torrents(&cards());
+            if !missing.is_empty() {
+                let request_endpoint = endpoint();
+                let _ = tokio::task::spawn_blocking(move || {
+                    sync_library_metadata(&request_endpoint, &missing, None)
+                })
+                .await;
+                cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
+                return;
+            }
+            if !server.read().version.is_empty() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_secs(3)).await;
         }
-        let request_endpoint = endpoint();
-        let _ = tokio::task::spawn_blocking(move || {
-            sync_library_metadata(&request_endpoint, &missing, None)
-        })
-        .await;
-        cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
     });
 
-    use_effect(move || {
+    use_future(move || async move {
         if let Some(cache) = popular_cache_dir() {
             let saved = metadata::cached_popular(&cache);
             if !saved.is_empty() {
@@ -795,8 +797,19 @@ fn App() -> Element {
                 }
                 popular.set(saved);
             }
+            let saved_series = metadata::cached_popular_series(&cache);
+            if !saved_series.is_empty() {
+                for series in &saved_series {
+                    if let Some(bytes) = metadata::cached_poster(&cache, &series.id) {
+                        popular_posters
+                            .write()
+                            .insert(series.id.clone(), jpeg_data_uri(&bytes));
+                    }
+                }
+                popular_series.set(saved_series);
+            }
         }
-        refresh_popular(popular, popular_posters, home_busy);
+        refresh_home_catalog(popular, popular_series, popular_posters, home_busy);
         if let Some(magnet) = STARTUP_MAGNET.get().cloned() {
             let title = pirate_cinema_core::magnet_title(&magnet);
             busy.set(true);
@@ -1262,7 +1275,7 @@ fn App() -> Element {
                     }
                 }
                 match page() {
-                    Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), posters: popular_posters(), recent: recent(), cards: cards(), busy: home_busy(), on_refresh: move |_| { let torrents = server.read().torrents.clone(); cards.set(load_library_cards(&torrents).unwrap_or_default()); recent.set(load_continue_items(&torrents).unwrap_or_default()); refresh_popular(popular, popular_posters, home_busy); }, on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
+                    Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), series: popular_series(), posters: popular_posters(), recent: recent(), cards: cards(), busy: home_busy(), on_refresh: move |_| { let torrents = server.read().torrents.clone(); cards.set(load_library_cards(&torrents).unwrap_or_default()); recent.set(load_continue_items(&torrents).unwrap_or_default()); refresh_home_catalog(popular, popular_series, popular_posters, home_busy); }, on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
                     Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
                     Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
@@ -1274,6 +1287,14 @@ fn App() -> Element {
 }
 
 struct ShutdownGuard;
+
+struct MetadataSyncGuard;
+
+impl Drop for MetadataSyncGuard {
+    fn drop(&mut self) {
+        METADATA_SYNC_ACTIVE.store(false, Ordering::Release);
+    }
+}
 
 impl Drop for ShutdownGuard {
     fn drop(&mut self) {
@@ -1378,8 +1399,9 @@ fn popular_cache_dir() -> Option<PathBuf> {
         .map(|path| path.join("cache").join("popular"))
 }
 
-fn refresh_popular(
+fn refresh_home_catalog(
     mut popular: Signal<Vec<Movie>>,
+    mut popular_series: Signal<Vec<Movie>>,
     mut popular_posters: Signal<HashMap<String, String>>,
     mut home_busy: Signal<bool>,
 ) {
@@ -1388,27 +1410,54 @@ fn refresh_popular(
     }
     home_busy.set(true);
     spawn(async move {
-        let loaded = tokio::task::spawn_blocking(metadata::popular).await;
-        if let Ok(items) =
-            loaded.map(|result| result.unwrap_or_else(|_| metadata::fallback_popular()))
-        {
+        let loaded = tokio::task::spawn_blocking(|| {
+            std::thread::scope(|scope| {
+                let movies = scope.spawn(metadata::popular);
+                let series = scope.spawn(metadata::popular_series);
+                (
+                    movies
+                        .join()
+                        .unwrap_or_else(|_| Err("Каталог фильмов недоступен".into())),
+                    series
+                        .join()
+                        .unwrap_or_else(|_| Err("Каталог сериалов недоступен".into())),
+                )
+            })
+        })
+        .await;
+        if let Ok((movies, series)) = loaded {
+            let mut items = Vec::new();
             if let Some(cache) = popular_cache_dir() {
-                let _ = metadata::cache_popular(&cache, &items);
+                if let Ok(movies) = &movies {
+                    let _ = metadata::cache_popular(&cache, movies);
+                }
+                if let Ok(series) = &series {
+                    let _ = metadata::cache_popular_series(&cache, series);
+                }
             }
-            popular.set(items.clone());
-            for group in items.chunks(4) {
+            if let Ok(movies) = movies {
+                popular.set(movies.clone());
+                items.extend(movies.into_iter().map(|movie| (movie, false)));
+            }
+            if let Ok(series) = series {
+                popular_series.set(series.clone());
+                items.extend(series.into_iter().map(|series| (series, true)));
+            }
+            for group in items.chunks(6) {
                 let group = group.to_vec();
                 let loaded = tokio::task::spawn_blocking(move || {
                     std::thread::scope(|scope| {
                         let jobs = group
                             .iter()
-                            .map(|movie| {
+                            .map(|(movie, is_series)| {
                                 scope.spawn(move || {
                                     let cache = popular_cache_dir();
                                     let bytes = cache
                                         .as_deref()
                                         .and_then(|path| metadata::cached_poster(path, &movie.id))
-                                        .or_else(|| metadata::movie_poster_jpeg(movie, false).ok());
+                                        .or_else(|| {
+                                            metadata::movie_poster_jpeg(movie, *is_series).ok()
+                                        });
                                     bytes.map(|bytes| {
                                         if let Some(cache) = cache.as_deref() {
                                             let _ =
@@ -1440,6 +1489,7 @@ fn Home(
     left_icon: String,
     right_icon: String,
     movies: Vec<Movie>,
+    series: Vec<Movie>,
     posters: HashMap<String, String>,
     recent: Vec<ContinueItem>,
     cards: Vec<LibraryCard>,
@@ -1470,17 +1520,17 @@ fn Home(
                 }
             }
             div { class: "section-heading",
-                h1 { {language.pick("Популярное", "Popular")} }
+                h1 { {language.pick("Популярные фильмы", "Popular movies")} }
                 div { class: "shelf-controls",
                     button { aria_label: language.pick("Обновить главную", "Refresh home"), title: language.pick("Обновить главную", "Refresh home"), disabled: busy, onclick: move |event| on_refresh.call(event), "↻" }
-                    button { aria_label: language.pick("Предыдущие фильмы", "Previous movies"), onclick: move |_| { document::eval("document.querySelector('.shelf')?.scrollBy({left:-760,behavior:'smooth'})"); }, img { src: "{left_icon}", alt: "" } }
-                    button { aria_label: language.pick("Следующие фильмы", "Next movies"), onclick: move |_| { document::eval("document.querySelector('.shelf')?.scrollBy({left:760,behavior:'smooth'})"); }, img { src: "{right_icon}", alt: "" } }
+                    button { aria_label: language.pick("Предыдущие фильмы", "Previous movies"), onclick: move |_| { document::eval("document.querySelector('[data-home-shelf=movies]')?.scrollBy({left:-760,behavior:'smooth'})"); }, img { src: "{left_icon}", alt: "" } }
+                    button { aria_label: language.pick("Следующие фильмы", "Next movies"), onclick: move |_| { document::eval("document.querySelector('[data-home-shelf=movies]')?.scrollBy({left:760,behavior:'smooth'})"); }, img { src: "{right_icon}", alt: "" } }
                 }
             }
             if movies.is_empty() {
                 div { class: "panel", {language.pick("Каталог Cinemeta загружается…", "Loading the Cinemeta catalogue…")} }
             } else {
-                div { class: "shelf",
+                div { class: "shelf", "data-home-shelf": "movies",
                     for movie in movies {
                         button { class: "card", onclick: { let title = movie.original_title.clone(); move |_| on_movie.call(title.clone()) },
                             div { class: "poster",
@@ -1488,6 +1538,20 @@ fn Home(
                             }
                             strong { title: "{movie.title}", "{movie.title}" }
                             small { "{movie.year.map(|year| year.to_string()).unwrap_or_default()} · " {language.pick("Фильм", "Movie")} }
+                        }
+                    }
+                }
+            }
+            if !series.is_empty() {
+                h2 { {language.pick("Популярные сериалы", "Popular series")} }
+                div { class: "shelf", "data-home-shelf": "series",
+                    for movie in series {
+                        button { class: "card", onclick: { let title = movie.original_title.clone(); move |_| on_movie.call(title.clone()) },
+                            div { class: "poster",
+                                if let Some(poster) = posters.get(&movie.id).or(movie.alternate_poster_url.as_ref()).or(movie.poster_url.as_ref()) { img { src: "{poster}", alt: "" } } else { "▶" }
+                            }
+                            strong { title: "{movie.title}", "{movie.title}" }
+                            small { "{movie.year.map(|year| year.to_string()).unwrap_or_default()} · " {language.pick("Сериал", "Series")} }
                         }
                     }
                 }
@@ -2940,6 +3004,13 @@ fn sync_library_metadata(
     torrents: &[Torrent],
     progress: Option<&AtomicUsize>,
 ) -> Result<(usize, usize, Vec<LibraryCard>), String> {
+    if METADATA_SYNC_ACTIVE
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Err("Обновление карточек уже выполняется".into());
+    }
+    let _sync_guard = MetadataSyncGuard;
     let path = history_path()?;
     let history = HistoryStore::open(&path).map_err(|error| error.to_string())?;
     let poster_dir = path
@@ -3055,6 +3126,14 @@ fn metadata_queries(stored_title: Option<&str>, torrent_title: &str) -> Vec<Stri
         .collect::<Vec<_>>();
     titles.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
     titles
+}
+
+fn missing_metadata_torrents(cards: &[LibraryCard]) -> Vec<Torrent> {
+    cards
+        .iter()
+        .filter(|card| card.metadata.is_none() || card.poster.is_none())
+        .map(|card| card.torrent.clone())
+        .collect()
 }
 
 fn load_file_history(hash: &str, files: Vec<VideoFile>) -> Vec<PlayableFile> {
@@ -3173,7 +3252,8 @@ fn infer_series(title: &str, files: &[VideoFile]) -> bool {
 mod tests {
     use super::{
         file_episode, file_season, gstreamer_hls_url, history_path, infer_series, metadata_queries,
-        release_quality, short_hash, sync_library_metadata, use_web_player, uses_raw_stream_probe,
+        missing_metadata_torrents, release_quality, short_hash, sync_library_metadata,
+        use_web_player, uses_raw_stream_probe, LibraryCard,
     };
     use pirate_cinema_core::{history::HistoryStore, settings::PlayerType, Torrent, VideoFile};
 
@@ -3246,6 +3326,41 @@ mod tests {
             ["Сёгун", "Shogun"]
         );
         assert_eq!(metadata_queries(Some("  "), "Тачки"), ["Тачки"]);
+    }
+
+    #[test]
+    fn startup_refresh_selects_only_incomplete_cards() {
+        let complete = LibraryCard {
+            torrent: Torrent {
+                hash: "a".repeat(40),
+                title: "Готово".into(),
+            },
+            metadata: Some(pirate_cinema_core::history::MediaMetadata {
+                title: "Готово".into(),
+                overview: Some("Описание".into()),
+                year: None,
+                rating: None,
+                poster_file: Some("a.jpg".into()),
+                genres: vec![],
+            }),
+            media_type: Some("movie".into()),
+            viewed: false,
+            poster: Some("data:image/jpeg;base64,x".into()),
+        };
+        let incomplete = LibraryCard {
+            torrent: Torrent {
+                hash: "b".repeat(40),
+                title: "Без постера".into(),
+            },
+            metadata: complete.metadata.clone(),
+            media_type: Some("movie".into()),
+            viewed: false,
+            poster: None,
+        };
+        assert_eq!(
+            missing_metadata_torrents(&[complete, incomplete])[0].title,
+            "Без постера"
+        );
     }
 
     #[test]
