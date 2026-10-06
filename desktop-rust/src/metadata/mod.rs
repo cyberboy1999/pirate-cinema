@@ -39,6 +39,9 @@ pub fn cache_poster(cache: &std::path::Path, id: &str, bytes: &[u8]) -> Result<(
 pub fn same_release(left: &str, right: &str) -> bool {
     catalog::same_release(left, right)
 }
+pub fn title_candidates(title: &str) -> Vec<String> {
+    catalog::title_candidates(title)
+}
 
 #[derive(Default)]
 pub struct MetadataManager;

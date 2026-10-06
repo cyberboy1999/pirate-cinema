@@ -3051,7 +3051,7 @@ fn metadata_queries(stored_title: Option<&str>, torrent_title: &str) -> Vec<Stri
         .chain(std::iter::once(torrent_title))
         .map(str::trim)
         .filter(|title| !title.is_empty())
-        .map(str::to_owned)
+        .flat_map(metadata::title_candidates)
         .collect::<Vec<_>>();
     titles.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
     titles
@@ -3243,7 +3243,7 @@ mod tests {
     fn refresh_tries_the_saved_title_then_the_original_release_title() {
         assert_eq!(
             metadata_queries(Some("Сёгун"), "Shogun.2024.S01.1080p"),
-            ["Сёгун", "Shogun.2024.S01.1080p"]
+            ["Сёгун", "Shogun"]
         );
         assert_eq!(metadata_queries(Some("  "), "Тачки"), ["Тачки"]);
     }

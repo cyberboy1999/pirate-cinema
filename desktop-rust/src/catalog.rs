@@ -713,7 +713,7 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
     Ok(Some(item))
 }
 
-fn title_candidates(title: &str) -> Vec<String> {
+pub fn title_candidates(title: &str) -> Vec<String> {
     let mut titles = title
         .split(" / ")
         .take(2)

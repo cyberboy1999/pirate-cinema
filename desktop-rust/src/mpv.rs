@@ -497,7 +497,7 @@ pub fn capture_poster(
         .map_err(|error| format!("Не удалось запустить MPV для постера: {error}"))?;
     // Poster capture is a fallback during metadata refresh, not playback. Keep
     // it bounded so one stalled torrent cannot make every card appear stuck.
-    let deadline = Instant::now() + Duration::from_secs(12);
+    let deadline = Instant::now() + Duration::from_secs(6);
     loop {
         if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
             if !status.success() {
