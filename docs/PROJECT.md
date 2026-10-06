@@ -34,6 +34,8 @@ The home shelf has a compact refresh action beside its navigation arrows. It rel
 
 The public Cinemeta catalogue has its own five-second timeout and falls back to the cached/bundled shelf when its redirected chunked response stalls. Cinemeta metadata, search and poster endpoints remain independent. Full metadata synchronization reports the current card count while processing large TorrServer libraries, and the home refresh action has a separate busy state so it stays available during that operation.
 
+Library metadata refresh tries a saved corrected title and then the original torrent title. A failed public metadata request no longer prevents the local MPV poster-frame fallback; repeated Cinemeta title/type requests stop after the first service failure, and public metadata/poster calls are bounded to five seconds. `live_refresh_writes_a_description_and_poster` is an ignored live test that verifies a clean temporary profile receives both fields from Cinemeta/Wikipedia.
+
 The bundled TorrServer remains running when the optional RuTor settings call fails after startup; only an actual startup or health failure marks it offline. The in-app Windows updater launches the downloaded system-wide NSIS package through an explicit UAC `runas` request instead of surfacing Windows error 740 as a launch failure.
 
 Linux release packaging pins appimagetool 1.9.1 and verifies its published SHA-256; it does not depend on the mutable `continuous` asset.

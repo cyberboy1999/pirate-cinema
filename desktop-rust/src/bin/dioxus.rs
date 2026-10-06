@@ -3024,9 +3024,10 @@ fn sync_library_metadata(
         let current = history
             .metadata(&torrent.hash)
             .map_err(|error| error.to_string())?;
-        let title = current
-            .as_ref()
-            .map_or(torrent.title.as_str(), |item| item.title.as_str());
+        let titles = metadata_queries(
+            current.as_ref().map(|item| item.title.as_str()),
+            &torrent.title,
+        );
         let stored_type = history
             .media_type(&torrent.hash)
             .map_err(|error| error.to_string())?;
@@ -3040,13 +3041,9 @@ fn sync_library_metadata(
                 .map_err(|error| error.to_string())?;
             detected
         };
-        let movie = match catalog::lookup(title, series) {
-            Ok(movie) => movie,
-            Err(_) => {
-                failed += 1;
-                continue;
-            }
-        };
+        let movie = titles
+            .iter()
+            .find_map(|title| catalog::lookup(title, series).ok().flatten());
         let poster_file = movie.as_ref().and_then(|item| {
             let bytes = catalog::movie_poster_jpeg(item, series).ok()?;
             let name = format!("{}.jpg", torrent.hash);
@@ -3075,7 +3072,10 @@ fn sync_library_metadata(
         let Some(movie) = movie else {
             if let Some(poster_file) = poster_file {
                 let metadata = MediaMetadata {
-                    title: title.split(" / ").next().unwrap_or(title).to_owned(),
+                    title: titles
+                        .first()
+                        .map(|title| title.split(" / ").next().unwrap_or(title).to_owned())
+                        .unwrap_or_else(|| torrent.title.clone()),
                     overview: current.and_then(|item| item.overview),
                     year: None,
                     rating: None,
@@ -3109,6 +3109,18 @@ fn sync_library_metadata(
     }
     let cards = load_library_cards(torrents)?;
     Ok((updated, failed, cards))
+}
+
+fn metadata_queries(stored_title: Option<&str>, torrent_title: &str) -> Vec<String> {
+    let mut titles = stored_title
+        .into_iter()
+        .chain(std::iter::once(torrent_title))
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    titles.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    titles
 }
 
 fn load_file_history(hash: &str, files: Vec<VideoFile>) -> Vec<PlayableFile> {
@@ -3226,11 +3238,10 @@ fn infer_series(title: &str, files: &[VideoFile]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        file_episode, file_season, gstreamer_hls_url, infer_series, release_quality, short_hash,
-        use_web_player, uses_raw_stream_probe,
+        file_episode, file_season, gstreamer_hls_url, history_path, infer_series, metadata_queries,
+        release_quality, short_hash, sync_library_metadata, use_web_player, uses_raw_stream_probe,
     };
-    use pirate_cinema_core::settings::PlayerType;
-    use pirate_cinema_core::VideoFile;
+    use pirate_cinema_core::{history::HistoryStore, settings::PlayerType, Torrent, VideoFile};
 
     #[test]
     fn short_hash_never_splits_utf8_or_overflows() {
@@ -3292,5 +3303,45 @@ mod tests {
             gstreamer_hls_url("http://127.0.0.1:8090/", "abc", 7, 42),
             "http://127.0.0.1:8090/gst/abc/master.m3u8?index=7&seconds=42"
         );
+    }
+
+    #[test]
+    fn refresh_tries_the_saved_title_then_the_original_release_title() {
+        assert_eq!(
+            metadata_queries(Some("Сёгун"), "Shogun.2024.S01.1080p"),
+            ["Сёгун", "Shogun.2024.S01.1080p"]
+        );
+        assert_eq!(metadata_queries(Some("  "), "Тачки"), ["Тачки"]);
+    }
+
+    #[test]
+    #[ignore = "uses public Cinemeta and Wikipedia"]
+    fn live_refresh_writes_a_description_and_poster() {
+        let root = std::env::temp_dir().join(format!(
+            "pirate-cinema-metadata-refresh-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        unsafe { std::env::set_var("PIRATE_CINEMA_DATA_DIR", &root) };
+        let torrent = Torrent {
+            hash: "a".repeat(40),
+            title: "Сёгун / Shogun (2024)".into(),
+        };
+        let history = HistoryStore::open(&history_path().unwrap()).unwrap();
+        history.set_media_type(&torrent.hash, "series").unwrap();
+        let (updated, failed, cards) =
+            sync_library_metadata("http://127.0.0.1:8090", &[torrent], None).unwrap();
+        assert_eq!((updated, failed), (1, 0));
+        let card = cards.first().unwrap();
+        assert!(card
+            .metadata
+            .as_ref()
+            .and_then(|item| item.overview.as_ref())
+            .is_some());
+        assert!(card.poster.is_some());
+        drop(cards);
+        drop(history);
+        unsafe { std::env::remove_var("PIRATE_CINEMA_DATA_DIR") };
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
