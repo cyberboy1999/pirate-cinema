@@ -2890,7 +2890,11 @@ fn control_player(
 fn load_library_cards(torrents: &[Torrent]) -> Result<Vec<LibraryCard>, String> {
     let history_path = history_path()?;
     let history = HistoryStore::open(&history_path).map_err(|error| error.to_string())?;
-    let poster_dir = history_path.parent().unwrap().join("cache").join("posters");
+    let poster_dir = history_path
+        .parent()
+        .ok_or_else(|| "Не удалось определить каталог локального кэша постеров".to_owned())?
+        .join("cache")
+        .join("posters");
     Ok(torrents
         .iter()
         .cloned()
