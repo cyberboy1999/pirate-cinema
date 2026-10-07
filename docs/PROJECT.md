@@ -9,9 +9,11 @@ complexity; then record only durable, confirmed new knowledge. Current source
 and project rules override memory. The repository keeps shared project memory;
 Codex session context remains local and is not committed.
 
-Latest stable release: 0.7.2. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest stable release: 0.7.2; 0.7.3 is being prepared. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 Release notes for 0.7.2 are kept in `docs/RELEASE_0.7.2.md`; the tag workflow requires that file when publishing the GitHub release.
+
+The Windows release workflow now verifies and stages both the ordinary and GST MatriX.144 binaries; NSIS installs both and the application prefers GST. The first successful library refresh configures HLS transcoding and checks GST `/gst/echo` even when a pre-existing TorrServer is reused, but only when current saved settings select the embedded bundled player. A GST failure appears as a player warning without incorrectly marking the server offline. Playback checks GST again before opening the embedded player. The official Windows GST binary contains its runtime; no separate system GStreamer installer is required. The release workflow runs on manual dispatch or a version tag, not on every branch push.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 

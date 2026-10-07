@@ -3,7 +3,6 @@ name: Build Pirate Cinema release
 on:
   workflow_dispatch:
   push:
-    branches: ["codex/rust-0.6.0-release"]
     tags: ["v*"]
 
 permissions:
@@ -31,6 +30,8 @@ jobs:
           Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile vc_redist.x64.exe
           Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe
           if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne '3B68BA9409C009628BBF747A14C13F2DA4254389264A0B3903E581E897492569') { throw 'TorrServer hash mismatch' }
+          Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-gst-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-gst-windows-amd64.exe
+          if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-gst-windows-amd64.exe -Algorithm SHA256).Hash -ne 'EA092A6CA2D98188F6CC1FB2BC1F45A396FE91EFF397A3CE82EDE88E9C4304D5') { throw 'TorrServer GST hash mismatch' }
           if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
       - run: cargo fmt --manifest-path desktop-rust/Cargo.toml -- --check
       - run: cargo check --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
@@ -46,6 +47,7 @@ jobs:
           Copy-Item desktop-rust/target/release/pirate-cinema.exe stage/
           Copy-Item vendor/mpv/* stage/mpv -Recurse
           Copy-Item desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe stage/torrserver/
+          Copy-Item desktop-rust/vendor/torrserver/TorrServer-gst-windows-amd64.exe stage/torrserver/
           Copy-Item vc_redist.x64.exe stage/
           Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md stage/
           $makensis="${env:ProgramFiles(x86)}\NSIS\makensis.exe"

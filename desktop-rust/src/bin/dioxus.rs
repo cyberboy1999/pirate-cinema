@@ -2138,7 +2138,7 @@ fn Settings(
                 div {
                     h2 { "TorrServer" }
                     strong { "{endpoint_edit}" }
-                    if server().error.is_empty() && !server().version.is_empty() {
+                    if !server().version.is_empty() {
                         small { if language() == Language::Russian { "Подключён · {server().version} · раздач: {server().torrents.len()}" } else { "Connected · {server().version} · torrents: {server().torrents.len()}" } }
                     } else if server().error.is_empty() {
                         small { {language().pick("Проверяем подключение…", "Checking connection…")} }
@@ -2178,15 +2178,35 @@ fn refresh_server(
     busy.set(true);
     spawn(async move {
         let request_endpoint = endpoint.clone();
-        let result = tokio::task::spawn_blocking(move || read_torrserver(&request_endpoint)).await;
+        let check_gst = cfg!(windows)
+            && settings_path()
+                .ok()
+                .and_then(|path| settings::load_preferences(&path).ok())
+                .or_else(|| INITIAL_PREFERENCES.get().cloned())
+                .is_some_and(|preferences| {
+                    preferences.embedded_player && preferences.player_type != PlayerType::External
+                });
+        let result = tokio::task::spawn_blocking(move || {
+            read_torrserver(&request_endpoint).map(|(version, torrents)| {
+                let gst_error = if check_gst {
+                    ensure_gstreamer(&request_endpoint).err()
+                } else {
+                    None
+                };
+                (version, torrents, gst_error)
+            })
+        })
+        .await;
         server.set(match result {
-            Ok(Ok((version, torrents))) => {
+            Ok(Ok((version, torrents, gst_error))) => {
                 cards.set(load_library_cards(&torrents).unwrap_or_default());
                 recent.set(load_continue_items(&torrents).unwrap_or_default());
                 ServerState {
                     version,
                     torrents,
-                    error: String::new(),
+                    error: gst_error
+                        .map(|error| format!("Встроенный HLS-плеер: {error}"))
+                        .unwrap_or_default(),
                 }
             }
             Ok(Err(error)) => ServerState {
@@ -2720,6 +2740,19 @@ fn ensure_gstreamer(endpoint: &str) -> Result<(), String> {
             .post(format!("{}/gst/settings", endpoint.trim_end_matches('/')))
             .send_json(serde_json::json!({"action": "set", "config": config}))
             .map_err(|error| format!("Не удалось настроить HLS-транскодирование: {error}"))?;
+    }
+    let mut status = agent
+        .get(format!("{}/gst/echo", endpoint.trim_end_matches('/')))
+        .call()
+        .map_err(|error| format!("Не удалось проверить встроенный GStreamer: {error}"))?;
+    let status: serde_json::Value = status
+        .body_mut()
+        .read_json()
+        .map_err(|error| format!("Некорректный ответ GStreamer: {error}"))?;
+    if status["gstreamer"]["works"] != true || status["gst_discoverer"]["works"] != true {
+        return Err(
+            "Встроенный GStreamer TorrServer не работает; проверьте установку приложения".into(),
+        );
     }
     Ok(())
 }
