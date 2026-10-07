@@ -510,7 +510,7 @@ pub fn capture_poster(
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_file(&frame);
-            return Err("Получение кадра превысило 12 секунд".into());
+            return Err("Получение кадра превысило 6 секунд".into());
         }
         thread::sleep(Duration::from_millis(100));
     }

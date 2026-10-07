@@ -17,7 +17,7 @@ use pirate_cinema_core::{
     magnet_title, probe_stream, read_torrserver, remove_torrent, search_all_sources, stream_url,
     torrent_video_files, ReleaseUpdate, SearchResult, Torrent, VideoFile, DEFAULT_TORRSERVER_URL,
 };
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -41,12 +41,6 @@ const LIBRARY_ICON: &[u8] =
     include_bytes!("../../assets/icons/video-camera_icon-icons.com_53843.png");
 const SETTINGS_ICON: &[u8] = include_bytes!(
     "../../assets/icons/3643771-configuration-configure-gear-set-setting_113449.png"
-);
-const LEFT_ICON: &[u8] = include_bytes!(
-    "../../assets/icons/arrow_arrows_back_direction_left_navigation_right_icon_123237.png"
-);
-const RIGHT_ICON: &[u8] = include_bytes!(
-    "../../assets/icons/arrow_arrows_back_direction_left_navigation_right_icon_123236.png"
 );
 const ONLINE_ICON: &[u8] = include_bytes!("../../assets/icons/online_4158.png");
 const HLS_JS: &str = include_str!("../../assets/hls.min.js");
@@ -100,14 +94,7 @@ h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
 .card small { display: block; margin-top: 6px; color: #888; font-size:13px; }
 .card small.viewed { color: #71cc91; }
 .card-open{display:block;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left}
-.shelf { display: grid; grid-auto-flow: column; grid-auto-columns: 176px; grid-template-rows: repeat(2, auto); gap: 28px 18px; overflow-x: auto; padding: 4px 2px 18px; scrollbar-color: #333 transparent; scroll-snap-type:x proximity; }
-.section-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}.section-heading h1,.section-heading h2{margin:0}.shelf-controls{display:flex;gap:9px}.shelf-controls button{width:44px;height:44px;display:grid;place-items:center;border:1px solid #303030;border-radius:11px;background:#171717;color:#bbb}.shelf-controls button img{width:22px;height:22px;filter:invert(1);opacity:.75}.shelf-controls button:hover{background:#242424;color:#fff}.shelf-controls button:hover img{opacity:1}
-.continue-list { display: grid; gap: 8px; margin: 0 0 34px; max-width: 820px; }
-.continue-item { display: grid; grid-template-columns: minmax(0, 1fr) 220px auto; gap: 16px; align-items: center; padding: 14px 16px; border: 1px solid #242424; border-radius: 12px; background: #101010; text-align: left; }
-.continue-item small { display: block; margin-top: 5px; color: #888; }
-.continue-item progress { width: 100%; accent-color: #ddd; }
-.continue-item span { color: #bbb; }
-.continue-hero{width:100%;min-height:230px;margin:0 0 34px;padding:28px 30px;display:grid;align-content:end;justify-items:start;gap:7px;border:1px solid #292929;border-radius:18px;background:linear-gradient(120deg,#171717,#090909);background-position:right center;background-repeat:no-repeat;background-size:auto 125%;color:#fff;text-align:left;overflow:hidden}.continue-hero strong{font-size:30px;letter-spacing:-.7px}.continue-hero small,.continue-hero p{max-width:560px;margin:0;color:#aaa}.continue-hero progress{width:min(500px,60%);height:7px;margin-top:8px;accent-color:#eee}.continue-hero .hero-action{margin-top:7px;padding:10px 15px;border-radius:9px;background:#eee;color:#090909;font-weight:700}
+.home-recent{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:22px 18px;max-width:1320px}
 .empty, .panel { border: 1px solid #242424; border-radius: 16px; padding: 26px; background: #101010; color: #999; }
 .results { display: grid; gap: 8px; }
 .search-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:34px;align-items:start}.search-feature{position:sticky;top:24px}.search-feature .poster{width:100%;margin-bottom:18px}.search-feature h1{font-size:32px;margin:0 0 8px}.search-feature .overview{font-size:14px;line-height:1.55}.search-results h2{margin:0 0 18px;font-size:25px}
@@ -316,8 +303,6 @@ fn App() -> Element {
     let home_icon = png_data_uri(HOME_ICON);
     let library_icon = png_data_uri(LIBRARY_ICON);
     let settings_icon = png_data_uri(SETTINGS_ICON);
-    let left_icon = png_data_uri(LEFT_ICON);
-    let right_icon = png_data_uri(RIGHT_ICON);
     let online_icon = png_data_uri(ONLINE_ICON);
     let tray = use_hook(|| {
         let menu = tray_icon::menu::Menu::new();
@@ -395,10 +380,6 @@ fn App() -> Element {
     let results = use_signal(Vec::<SearchResult>::new);
     let search_metadata = use_signal(|| None::<Movie>);
     let search_poster = use_signal(String::new);
-    let mut popular = use_signal(metadata::fallback_popular);
-    let mut popular_series = use_signal(Vec::<Movie>::new);
-    let mut popular_posters = use_signal(HashMap::<String, String>::new);
-    let home_busy = use_signal(|| false);
     let mut selected = use_signal(|| None::<Torrent>);
     let mut files = use_signal(Vec::<PlayableFile>::new);
     let mut players = use_signal(Vec::<OwnedPlayer>::new);
@@ -785,31 +766,6 @@ fn App() -> Element {
     });
 
     use_future(move || async move {
-        if let Some(cache) = popular_cache_dir() {
-            let saved = metadata::cached_popular(&cache);
-            if !saved.is_empty() {
-                for movie in &saved {
-                    if let Some(bytes) = metadata::cached_poster(&cache, &movie.id) {
-                        popular_posters
-                            .write()
-                            .insert(movie.id.clone(), jpeg_data_uri(&bytes));
-                    }
-                }
-                popular.set(saved);
-            }
-            let saved_series = metadata::cached_popular_series(&cache);
-            if !saved_series.is_empty() {
-                for series in &saved_series {
-                    if let Some(bytes) = metadata::cached_poster(&cache, &series.id) {
-                        popular_posters
-                            .write()
-                            .insert(series.id.clone(), jpeg_data_uri(&bytes));
-                    }
-                }
-                popular_series.set(saved_series);
-            }
-        }
-        refresh_home_catalog(popular, popular_series, popular_posters, home_busy);
         if let Some(magnet) = STARTUP_MAGNET.get().cloned() {
             let title = pirate_cinema_core::magnet_title(&magnet);
             busy.set(true);
@@ -1275,7 +1231,7 @@ fn App() -> Element {
                     }
                 }
                 match page() {
-                    Page::Home => rsx! { Home { language: language(), left_icon: left_icon.clone(), right_icon: right_icon.clone(), movies: popular(), series: popular_series(), posters: popular_posters(), recent: recent(), cards: cards(), busy: home_busy(), on_refresh: move |_| { let torrents = server.read().torrents.clone(); cards.set(load_library_cards(&torrents).unwrap_or_default()); recent.set(load_continue_items(&torrents).unwrap_or_default()); refresh_home_catalog(popular, popular_series, popular_posters, home_busy); }, on_movie: move |title: String| { query.set(title.clone()); start_search(title, endpoint(), page, busy, results, search_metadata, search_poster, server); }, on_open: open_saved } },
+                    Page::Home => rsx! { Home { language: language(), recent: recent(), cards: cards(), on_open: open_saved } },
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
                     Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
                     Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
@@ -1392,178 +1348,39 @@ fn jpeg_data_uri(bytes: &[u8]) -> String {
     )
 }
 
-fn popular_cache_dir() -> Option<PathBuf> {
-    history_path()
-        .ok()?
-        .parent()
-        .map(|path| path.join("cache").join("popular"))
-}
-
-fn refresh_home_catalog(
-    mut popular: Signal<Vec<Movie>>,
-    mut popular_series: Signal<Vec<Movie>>,
-    mut popular_posters: Signal<HashMap<String, String>>,
-    mut home_busy: Signal<bool>,
-) {
-    if home_busy() {
-        return;
-    }
-    home_busy.set(true);
-    spawn(async move {
-        let loaded = tokio::task::spawn_blocking(|| {
-            std::thread::scope(|scope| {
-                let movies = scope.spawn(metadata::popular);
-                let series = scope.spawn(metadata::popular_series);
-                (
-                    movies
-                        .join()
-                        .unwrap_or_else(|_| Err("Каталог фильмов недоступен".into())),
-                    series
-                        .join()
-                        .unwrap_or_else(|_| Err("Каталог сериалов недоступен".into())),
-                )
-            })
-        })
-        .await;
-        if let Ok((movies, series)) = loaded {
-            let mut items = Vec::new();
-            if let Some(cache) = popular_cache_dir() {
-                if let Ok(movies) = &movies {
-                    let _ = metadata::cache_popular(&cache, movies);
-                }
-                if let Ok(series) = &series {
-                    let _ = metadata::cache_popular_series(&cache, series);
-                }
-            }
-            if let Ok(movies) = movies {
-                popular.set(movies.clone());
-                items.extend(movies.into_iter().map(|movie| (movie, false)));
-            }
-            if let Ok(series) = series {
-                popular_series.set(series.clone());
-                items.extend(series.into_iter().map(|series| (series, true)));
-            }
-            for group in items.chunks(6) {
-                let group = group.to_vec();
-                let loaded = tokio::task::spawn_blocking(move || {
-                    std::thread::scope(|scope| {
-                        let jobs = group
-                            .iter()
-                            .map(|(movie, is_series)| {
-                                scope.spawn(move || {
-                                    let cache = popular_cache_dir();
-                                    let bytes = cache
-                                        .as_deref()
-                                        .and_then(|path| metadata::cached_poster(path, &movie.id))
-                                        .or_else(|| {
-                                            metadata::movie_poster_jpeg(movie, *is_series).ok()
-                                        });
-                                    bytes.map(|bytes| {
-                                        if let Some(cache) = cache.as_deref() {
-                                            let _ =
-                                                metadata::cache_poster(cache, &movie.id, &bytes);
-                                        }
-                                        (movie.id.clone(), jpeg_data_uri(&bytes))
-                                    })
-                                })
-                            })
-                            .collect::<Vec<_>>();
-                        jobs.into_iter()
-                            .filter_map(|job| job.join().ok().flatten())
-                            .collect::<Vec<_>>()
-                    })
-                })
-                .await;
-                if let Ok(posters) = loaded {
-                    popular_posters.write().extend(posters);
-                }
-            }
-        }
-        home_busy.set(false);
-    });
-}
-
 #[component]
 fn Home(
     language: Language,
-    left_icon: String,
-    right_icon: String,
-    movies: Vec<Movie>,
-    series: Vec<Movie>,
-    posters: HashMap<String, String>,
     recent: Vec<ContinueItem>,
     cards: Vec<LibraryCard>,
-    busy: bool,
-    on_refresh: EventHandler<MouseEvent>,
-    on_movie: EventHandler<String>,
     on_open: EventHandler<Torrent>,
 ) -> Element {
-    let featured = recent.first().cloned();
-    let featured_poster = featured.as_ref().and_then(|item| {
-        cards
-            .iter()
-            .find(|card| card.torrent.hash.eq_ignore_ascii_case(&item.torrent.hash))
-            .and_then(|card| card.poster.clone())
-    });
+    let recently_played = recent
+        .into_iter()
+        .filter_map(|item| {
+            cards
+                .iter()
+                .find(|card| card.torrent.hash.eq_ignore_ascii_case(&item.torrent.hash))
+                .cloned()
+                .map(|card| (item, card))
+        })
+        .collect::<Vec<_>>();
     rsx! {
         section { class: "page",
-            if let Some(item) = featured {
-                button {
-                    class: "continue-hero",
-                    style: if let Some(poster) = featured_poster { format!("background-image:linear-gradient(90deg,rgba(5,5,5,.98),rgba(5,5,5,.72) 58%,rgba(5,5,5,.18)),url('{poster}')") } else { String::new() },
-                    onclick: { let torrent = item.torrent.clone(); move |_| on_open.call(torrent.clone()) },
-                    span { class: "eyebrow", {language.pick("Продолжить просмотр", "Continue watching")} }
-                    strong { "{item.title}" }
-                    small { "{item.file_name} · {clock(item.position)} / {clock(item.duration)}" }
-                    progress { max: "{item.duration.max(1)}", value: "{item.position}" }
-                    span { class: "hero-action", {language.pick("Продолжить", "Continue")} }
-                }
-            }
-            div { class: "section-heading",
-                h1 { {language.pick("Популярные фильмы", "Popular movies")} }
-                div { class: "shelf-controls",
-                    button { aria_label: language.pick("Обновить главную", "Refresh home"), title: language.pick("Обновить главную", "Refresh home"), disabled: busy, onclick: move |event| on_refresh.call(event), "↻" }
-                    button { aria_label: language.pick("Предыдущие фильмы", "Previous movies"), onclick: move |_| { document::eval("document.querySelector('[data-home-shelf=movies]')?.scrollBy({left:-760,behavior:'smooth'})"); }, img { src: "{left_icon}", alt: "" } }
-                    button { aria_label: language.pick("Следующие фильмы", "Next movies"), onclick: move |_| { document::eval("document.querySelector('[data-home-shelf=movies]')?.scrollBy({left:760,behavior:'smooth'})"); }, img { src: "{right_icon}", alt: "" } }
-                }
-            }
-            if movies.is_empty() {
-                div { class: "panel", {language.pick("Каталог Cinemeta загружается…", "Loading the Cinemeta catalogue…")} }
+            span { class: "eyebrow", {language.pick("Локальная медиатека", "Local media library")} }
+            h1 { {language.pick("Недавно запускали", "Recently played")} }
+            p { class: "lead", {language.pick("Фильмы и сериалы из вашей локальной истории.", "Movies and series from your local history.")} }
+            if recently_played.is_empty() {
+                div { class: "panel", {language.pick("Здесь появятся фильмы и сериалы после первого запуска.", "Movies and series will appear here after the first launch.")} }
             } else {
-                div { class: "shelf", "data-home-shelf": "movies",
-                    for movie in movies {
-                        button { class: "card", onclick: { let title = movie.original_title.clone(); move |_| on_movie.call(title.clone()) },
+                div { class: "home-recent",
+                    for (item, card) in recently_played {
+                        button { class: "card", onclick: { let torrent = item.torrent.clone(); move |_| on_open.call(torrent.clone()) },
                             div { class: "poster",
-                                if let Some(poster) = posters.get(&movie.id).or(movie.alternate_poster_url.as_ref()).or(movie.poster_url.as_ref()) { img { src: "{poster}", alt: "" } } else { "▶" }
+                                if let Some(poster) = card.poster { img { src: "{poster}", alt: "" } } else { "▶" }
                             }
-                            strong { title: "{movie.title}", "{movie.title}" }
-                            small { "{movie.year.map(|year| year.to_string()).unwrap_or_default()} · " {language.pick("Фильм", "Movie")} }
-                        }
-                    }
-                }
-            }
-            if !series.is_empty() {
-                h2 { {language.pick("Популярные сериалы", "Popular series")} }
-                div { class: "shelf", "data-home-shelf": "series",
-                    for movie in series {
-                        button { class: "card", onclick: { let title = movie.original_title.clone(); move |_| on_movie.call(title.clone()) },
-                            div { class: "poster",
-                                if let Some(poster) = posters.get(&movie.id).or(movie.alternate_poster_url.as_ref()).or(movie.poster_url.as_ref()) { img { src: "{poster}", alt: "" } } else { "▶" }
-                            }
-                            strong { title: "{movie.title}", "{movie.title}" }
-                            small { "{movie.year.map(|year| year.to_string()).unwrap_or_default()} · " {language.pick("Сериал", "Series")} }
-                        }
-                    }
-                }
-            }
-            if recent.len() > 1 {
-                h2 { {language.pick("Продолжить просмотр", "Continue watching")} }
-                div { class: "continue-list",
-                    for item in recent.into_iter().skip(1) {
-                        button { class: "continue-item", onclick: { let torrent = item.torrent.clone(); move |_| on_open.call(torrent.clone()) },
-                            div { strong { "{item.title}" } small { "{item.file_name} · {clock(item.position)} / {clock(item.duration)}" } }
-                            progress { max: "{item.duration.max(1)}", value: "{item.position}" }
-                            span { {language.pick("Открыть", "Open")} }
+                            strong { title: "{item.title}", "{item.title}" }
+                            small { "{item.file_name} · {clock(item.position)} / {clock(item.duration)}" }
                         }
                     }
                 }
@@ -2974,11 +2791,15 @@ fn load_library_cards(torrents: &[Torrent]) -> Result<Vec<LibraryCard>, String> 
 
 fn load_continue_items(torrents: &[Torrent]) -> Result<Vec<ContinueItem>, String> {
     let history = HistoryStore::open(&history_path()?).map_err(|error| error.to_string())?;
+    let mut seen = HashSet::new();
     Ok(history
-        .recent(6)
+        .recently_played(24)
         .map_err(|error| error.to_string())?
         .into_iter()
         .filter_map(|item| {
+            if !seen.insert(item.torrent_hash.clone()) {
+                return None;
+            }
             let torrent = torrents
                 .iter()
                 .find(|torrent| torrent.hash == item.torrent_hash)?
@@ -2996,6 +2817,7 @@ fn load_continue_items(torrents: &[Torrent]) -> Result<Vec<ContinueItem>, String
                 duration: item.playback_duration,
             })
         })
+        .take(12)
         .collect())
 }
 

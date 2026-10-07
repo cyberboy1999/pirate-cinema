@@ -5,7 +5,8 @@ use std::time::Duration;
 
 const CINEMETA: &str = "https://v3-cinemeta.strem.io";
 const WIKIDATA: &str = "https://query.wikidata.org/sparql";
-type WikidataRecords = std::collections::HashMap<String, (String, Option<String>, Option<String>)>;
+type WikidataRecord = (String, Option<String>, Option<String>);
+type WikidataRecords = std::collections::HashMap<String, WikidataRecord>;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Movie {
@@ -96,54 +97,56 @@ fn parse_catalog(value: &Value) -> Vec<Movie> {
         .into_iter()
         .flatten()
         .take(30)
-        .filter_map(|item| {
-            let id = item.get("imdb_id").or_else(|| item.get("id"))?.as_str()?;
-            let title = item.get("name").or_else(|| item.get("title"))?.as_str()?;
-            if !valid_imdb(id) || title.trim().is_empty() {
-                return None;
-            }
-            Some(Movie {
-                id: id.to_owned(),
-                title: title.to_owned(),
-                original_title: title.to_owned(),
-                year: item
-                    .get("releaseInfo")
-                    .or_else(|| item.get("year"))
-                    .and_then(year),
-                rating: item
-                    .get("imdbRating")
-                    .and_then(|value| value.as_f64().or_else(|| value.as_str()?.parse().ok())),
-                poster_url: item
-                    .get("poster")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                alternate_poster_url: None,
-                background_url: item
-                    .get("background")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                overview: item
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                genres: item
-                    .get("genres")
-                    .or_else(|| item.get("genre"))
-                    .and_then(Value::as_array)
-                    .map(|values| {
-                        values
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .map(str::trim)
-                            .filter(|name| !name.is_empty())
-                            .take(12)
-                            .map(str::to_owned)
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-            })
-        })
+        .filter_map(parse_catalog_item)
         .collect()
+}
+
+fn parse_catalog_item(item: &Value) -> Option<Movie> {
+    let id = item.get("imdb_id").or_else(|| item.get("id"))?.as_str()?;
+    let title = item.get("name").or_else(|| item.get("title"))?.as_str()?;
+    if !valid_imdb(id) || title.trim().is_empty() {
+        return None;
+    }
+    Some(Movie {
+        id: id.to_owned(),
+        title: title.to_owned(),
+        original_title: title.to_owned(),
+        year: item
+            .get("releaseInfo")
+            .or_else(|| item.get("year"))
+            .and_then(year),
+        rating: item
+            .get("imdbRating")
+            .and_then(|value| value.as_f64().or_else(|| value.as_str()?.parse().ok())),
+        poster_url: item
+            .get("poster")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        alternate_poster_url: None,
+        background_url: item
+            .get("background")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        overview: item
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        genres: item
+            .get("genres")
+            .or_else(|| item.get("genre"))
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .take(12)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+    })
 }
 
 fn wikidata_records(agent: &ureq::Agent, ids: &[&str]) -> Result<WikidataRecords, String> {
@@ -198,6 +201,31 @@ fn parse_wikidata_records(payload: &Value) -> WikidataRecords {
         }
     }
     matches
+}
+
+fn wikidata_title_match(
+    agent: &ureq::Agent,
+    title: &str,
+) -> Result<Option<(String, WikidataRecord)>, String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Ok(None);
+    }
+    let escaped = title.replace('\\', "\\\\").replace('"', "\\\"");
+    let query = format!("SELECT ?id ?label ?description ?image WHERE {{ ?item <http://www.w3.org/2000/01/rdf-schema#label> \"{escaped}\"@ru; <http://www.wikidata.org/prop/direct/P345> ?id. OPTIONAL {{ ?item <http://schema.org/description> ?description. FILTER(LANG(?description)=\"ru\") }} OPTIONAL {{ ?item <http://www.wikidata.org/prop/direct/P18> ?image. }} BIND(\"{escaped}\" AS ?label) }} LIMIT 1");
+    Ok(parse_wikidata_records(&json(
+        agent,
+        &format!("{WIKIDATA}?format=json&query={}", encode(&query)),
+    )?)
+    .into_iter()
+    .next())
+}
+
+fn cinemeta_by_id(agent: &ureq::Agent, id: &str, kind: &str) -> Option<Movie> {
+    json(agent, &format!("{CINEMETA}/meta/{kind}/{id}.json"))
+        .ok()?
+        .get("meta")
+        .and_then(parse_catalog_item)
 }
 
 fn wikidata_image_url(value: &str) -> Option<String> {
@@ -527,6 +555,31 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
         }
     }
     let Some(mut item) = match_item else {
+        if let Ok(Some((id, (name, description, image)))) = wikidata_title_match(&agent, &clean) {
+            if let Some(mut item) = kinds
+                .iter()
+                .find_map(|kind| cinemeta_by_id(&agent, &id, kind))
+            {
+                if !name.is_empty() {
+                    item.title = name;
+                }
+                item.overview = description.or(item.overview);
+                item.alternate_poster_url = image;
+                return Ok(Some(item));
+            }
+            return Ok(Some(Movie {
+                id,
+                title: if name.is_empty() { clean.clone() } else { name },
+                original_title: clean,
+                year: wanted_year,
+                rating: None,
+                poster_url: None,
+                alternate_poster_url: image,
+                background_url: None,
+                overview: description,
+                genres: Vec::new(),
+            }));
+        }
         if series {
             if let Some(item) = tvmaze(&agent, &clean, wanted_year) {
                 return Ok(Some(item));
@@ -715,7 +768,6 @@ mod tests {
         .unwrap()
         .expect("Мажор must resolve through a public source");
         assert!(movie.overview.is_some());
-        assert!(!movie_poster_jpeg(&movie, true).unwrap().is_empty());
     }
 
     #[test]

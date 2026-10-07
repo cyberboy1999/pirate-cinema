@@ -24,8 +24,11 @@ they conflict.
 - `catalog`, `metadata`, `history`, `settings`, `mpv`, `migration` and
   `torrserver_process` separate public metadata, local persistence, playback,
   migration and owned-process responsibilities.
-- Metadata uses no-key Cinemeta, TVmaze and Wikidata. Network failures must not
-  block playback; poster-frame fallback remains bounded.
+- Metadata uses no-key Cinemeta, TVmaze and Wikidata. Cinemeta is primary;
+  TVmaze is used for unmatched series. Network failures must not block playback;
+  poster-frame fallback remains bounded.
+- The home page is local-first and derives recently launched titles from
+  SQLite; do not reintroduce a public popular-content carousel there.
 - Preserve per-file SQLite history, MPV IPC behavior, safe migration, and the
   ownership rule for background processes.
 
