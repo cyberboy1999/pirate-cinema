@@ -1,8 +1,19 @@
 # Pirate Cinema — project context
 
-Latest stable release: 0.7.2. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+## Development discipline
+
+Codex task lifecycle is: understand the request and project rules; recall
+`PROJECT_MEMORY.md`; inspect current code; apply the relevant engineering
+workflow; implement; test and verify; use Ponytail to remove unjustified
+complexity; then record only durable, confirmed new knowledge. Current source
+and project rules override memory. The repository keeps shared project memory;
+Codex session context remains local and is not committed.
+
+Latest stable release: 0.7.2; 0.7.3 is being prepared. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 Release notes for 0.7.2 are kept in `docs/RELEASE_0.7.2.md`; the tag workflow requires that file when publishing the GitHub release.
+
+The Windows release workflow now verifies and stages both the ordinary and GST MatriX.144 binaries; NSIS installs both and the application prefers GST. The first successful library refresh configures HLS transcoding and checks GST `/gst/echo` even when a pre-existing TorrServer is reused, but only when current saved settings select the embedded bundled player. A GST failure appears as a player warning without incorrectly marking the server offline. Playback checks GST again before opening the embedded player. The official Windows GST binary contains its runtime; no separate system GStreamer installer is required. The release workflow runs on manual dispatch or a version tag, not on every branch push.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -30,11 +41,11 @@ The auto-next switch is available for every multi-file torrent, regardless of it
 
 The file-card `Запустить` action uses a solid white treatment so it remains distinct from metadata and secondary controls.
 
-The home shelf has a compact refresh action beside its navigation arrows. It reloads the public catalogue, posters, cached library and continue-watching history without restarting the application or waiting for a full metadata sync. Search-result `Добавить` and `Смотреть` actions use the same solid white treatment as the file-card launch action. Cinemeta responses are parsed when a complete JSON body has arrived even if its redirected chunked catalogue response fails to close cleanly.
+The home page is local-first: it shows up to twelve recently launched films and series from SQLite, deduplicated by torrent, without a public-catalogue carousel or startup metadata requests. Search-result `Добавить` and `Смотреть` actions use the same solid white treatment as the file-card launch action. Cinemeta responses are parsed when a complete JSON body has arrived even if its redirected chunked catalogue response fails to close cleanly.
 
-The public Cinemeta catalogue has its own five-second timeout and falls back to the cached/bundled shelf when its redirected chunked response stalls. Cinemeta metadata, search and poster endpoints remain independent. Full metadata synchronization reports the current card count while processing large TorrServer libraries, and the home refresh action has a separate busy state so it stays available during that operation.
+Cinemeta metadata, search and poster endpoints remain independent. At startup the application waits for TorrServer to return the library and then repairs only cards missing a poster or metadata in the background; concurrent metadata repairs are serialized to protect SQLite and poster files. Full metadata synchronization reports the current card count while processing large TorrServer libraries.
 
-Library metadata refresh tries a saved corrected title and then the original torrent title. A failed public metadata request no longer prevents the local MPV poster-frame fallback; repeated Cinemeta title/type requests stop after the first service failure, and public metadata/poster calls are bounded to five seconds. `live_refresh_writes_a_description_and_poster` is an ignored live test that verifies a clean temporary profile receives both fields from Cinemeta/Wikipedia.
+The UI accesses title data only through `metadata::MetadataManager`. The provider boundary uses no-key Cinemeta as the primary catalogue, TVmaze for series when Cinemeta has no match, and Wikidata by IMDb ID for Russian labels, descriptions and artwork. Library refresh derives compact Russian and original-language candidates from both saved and raw release names before network lookup, so manual title edits are not required for season bundles or quality-tagged releases. A failed public metadata request no longer prevents the local MPV poster-frame fallback; it is capped at six seconds per unresolved card, and public metadata/poster calls are bounded to five seconds. `live_refresh_writes_a_description_and_poster` is an ignored live test that verifies a clean temporary profile receives both fields from the public providers.
 
 The bundled TorrServer remains running when the optional RuTor settings call fails after startup; only an actual startup or health failure marks it offline. The in-app Windows updater launches the downloaded system-wide NSIS package through an explicit UAC `runas` request instead of surfacing Windows error 740 as a launch failure.
 
@@ -44,7 +55,7 @@ Newly added torrents are classified locally as a movie or series from their titl
 
 Series navigation treats `S00`, OVA and named specials as a real Specials group instead of the all-seasons sentinel. Playback performs the existing bounded TorrServer stream probe before starting MPV, and startup repairs only library cards missing metadata or posters in a non-blocking background pass.
 
-The series screen remembers the last season, episode and auto-next choice per torrent, displays watched/total progress for every season and keeps movies, normal episodes and specials in stable groups. MPV restores both audio and subtitle tracks. Library cards include a direct Continue action that selects the unfinished or next unviewed file without opening the detail page.
+The series screen remembers the last season, episode and auto-next choice per torrent, displays watched/total progress for every season and keeps movies, normal episodes and specials in stable groups. MPV restores both audio and subtitle tracks. Library cards open their torrent details without an extra Continue control; resume and episode choices remain available in the detail page.
 
 The Windows player uses the Dioxus WebView2 shell with pinned local ArtPlayer and hls.js assets plus TorrServer's GST build. ArtPlayer provides the controls and keeps compact season, episode and audio-track selectors inside the player; hls.js remains the HLS transport through ArtPlayer's `customType` hook. TorrServer remuxes or transcodes torrent media to `/gst/{hash}/master.m3u8`. Playback waits for an 18-second startup buffer and keeps up to 60 seconds ready, which avoids periodic starvation on torrents whose HLS fragments are short and uneven. Resume and audio switching keep TorrServer's complete timeline and apply the saved position only through hls.js, avoiding the previous double seek and zero-based history after changing tracks. The audio selector retries its bounded GST media probe while a fresh pipeline warms up, shows every returned track and changes the GST `audio` stream at the current position. The episode selector uses the existing naturally ordered real-file queue and returns selection to Rust so history and auto-next remain correct. Entering video fullscreen also switches the native application window to borderless fullscreen. The HLS path goes directly to GST instead of running the legacy ten-second raw `/stream` probe first; that probe remains limited to MPV and external-player launches. A five-second GST heartbeat and bounded hls.js network/media recovery keep long torrent sessions active without hiding a terminal error; a successfully loaded fragment clears a stale player error. Playback stays inside the application for MKV, AVI and other torrent containers, saves progress every five seconds and keeps auto-next. The old Win32 MPV `--wid` host was removed because WebView/native-child z-order and teardown could crash the entire UI. When a `portable-data` directory exists beside the executable, the application keeps settings, history and TorrServer data there so local testing cannot lock or overwrite an installed application's profile.
 
@@ -102,7 +113,7 @@ TorrServer is the source of the saved torrent list. Invalid/failed list response
 
 Each search release has its own Add to TorrServer button. The API immediately inserts the saved card and returns item; adding alone does not launch MPV. Opening a card displays its description and file picker together.
 
-Version 0.3.2 prioritizes Russian Wikipedia descriptions independently of Cinemeta/TVmaze posters. server/wikipedia.mjs searches localized/original names, checks media type and film year, and follows English-to-Russian language links when necessary. No new dependencies or API keys. Wikipedia credit links are shown with descriptions.
+Metadata is provided by Cinemeta, TVmaze and Wikidata without credentials. Wikidata is queried only with public IMDb identifiers returned by the catalogue; local history and library data never leave the device.
 
 SQLite retains description source URLs and prevents an English fallback from replacing saved Russian text. Adding the source column invalidates old metadata timestamps once (without clearing descriptions or playback history). Open a card or run full sync to refresh existing descriptions. Settings and the native window title display the version imported from package.json/Electron app metadata.
 
@@ -186,11 +197,11 @@ POST `/api/torrents/add` now waits for the existing metadata enrichment path bef
 
 ## Metadata correction and home catalogue in 0.5.3
 
-Each library card has a compact title editor. The saved `metadata_query` survives TorrServer reconciliation and is used for forced Wikipedia/Cinemeta enrichment, so an incorrect release name no longer makes every full sync repeat the same failed lookup. Editing clears stale matched metadata before the fresh lookup.
+Each library card has a compact title editor. The saved `metadata_query` survives TorrServer reconciliation and is used for forced public-provider enrichment, so an incorrect release name no longer makes every full sync repeat the same failed lookup. Editing clears stale matched metadata before the fresh lookup.
 
 The local follow-up build replaces Electron's unreliable `window.prompt` editor with an in-app modal. It keeps the form open during lookup, shows validation/provider errors inline and closes only after the refreshed library has loaded.
 
-Poster matching also reuses the release year when a manual title omits it, preventing ambiguous remakes such as `Shogun` from selecting an older version. When Russian Wikipedia identifies a series but has no image, its English title is used for a bounded second Cinemeta lookup; the Cinemeta poster is merged with the Russian description even when a season year differs from the show's premiere year.
+Poster matching also reuses the release year when a manual title omits it, preventing ambiguous remakes such as `Shogun` from selecting an older version. When a catalogue item has no usable cover, its IMDb ID is used for a bounded Wikidata artwork lookup; a local frame remains the final fallback.
 
 The home shelf loads up to 30 current movies from Cinemeta's public top catalogue and falls back to the bundled list when the source is unavailable. The generic catalogue request contains no library data. Shelves longer than six cards scroll horizontally with accessible previous/next controls.
 

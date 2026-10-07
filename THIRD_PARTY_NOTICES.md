@@ -13,6 +13,9 @@ component remains governed by its own license.
 - Distributed file: `TorrServer-windows-amd64.exe`
 - SHA-256: `3b68ba9409c009628bbf747a14c13f2da4254389264a0b3903e581e897492569`
 
+- Distributed file: `TorrServer-gst-windows-amd64.exe` (includes the embedded GStreamer runtime)
+  - SHA-256: `ea092a6ca2d98188f6cc1fb2bc1f45a396fe91eff397a3ce82ede88e9c4304d5`
+
 The Linux packages contain the official `TorrServer-linux-amd64` binary from the
 same release under GPL-3.0.
 
@@ -82,8 +85,6 @@ https://github.com/zhw2590582/ArtPlayer/tree/v5.4.0. The vendored
 
 ## Metadata and artwork
 
-- Text excerpts attributed to Wikipedia are available under CC BY-SA 4.0 and
-  are linked to their source articles in the application.
 - `public/pirate-cinema-logo.png` is derived from a user-provided third-party
   logo. It is not covered by Pirate Cinema's source-code license, and Pirate
   Cinema is not affiliated with or endorsed by The Pirate Bay.

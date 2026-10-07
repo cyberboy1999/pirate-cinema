@@ -636,6 +636,25 @@ impl HistoryStore {
         rows
     }
 
+    pub fn recently_played(&self, limit: usize) -> rusqlite::Result<Vec<RecentPlayback>> {
+        let mut statement = self.db.prepare(
+            "SELECT torrent_hash,file_index,file_name,playback_timecode,playback_duration
+             FROM media_file_history ORDER BY last_played_at DESC LIMIT ?1",
+        )?;
+        let rows = statement
+            .query_map([limit.min(50) as i64], |row| {
+                Ok(RecentPlayback {
+                    torrent_hash: row.get(0)?,
+                    file_index: row.get(1)?,
+                    file_name: row.get(2)?,
+                    playback_timecode: row.get::<_, Option<i64>>(3)?.unwrap_or(0),
+                    playback_duration: row.get::<_, Option<i64>>(4)?.unwrap_or(0),
+                })
+            })?
+            .collect();
+        rows
+    }
+
     pub fn media_type(&self, hash: &str) -> rusqlite::Result<Option<String>> {
         let hash = checked_key(hash, 0)?;
         self.db
@@ -1220,5 +1239,6 @@ mod tests {
         assert_eq!(db.recent(10).unwrap().len(), 1);
         db.save_progress(&hash, 1, 995, 1000).unwrap();
         assert!(db.recent(10).unwrap().is_empty());
+        assert_eq!(db.recently_played(10).unwrap().len(), 1);
     }
 }

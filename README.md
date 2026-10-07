@@ -4,9 +4,9 @@
 
 ![Главный экран Pirate Cinema](docs/images/pirate-cinema-home.png)
 
-Pirate Cinema — локальное настольное приложение на Rust для поиска, добавления и просмотра раздач через TorrServer. Видео открывается в MPV, а история каждого файла хранится локально в SQLite.
+Pirate Cinema — локальное настольное приложение на Rust для поиска, добавления и просмотра раздач через TorrServer. На Windows видео открывается во встроенном плеере или MPV; история каждого файла хранится локально в SQLite.
 
-Текущий production-релиз: **0.7.2**. Он включает встроенный GST-TorrServer, корректный автопереход между сериями, завершение принадлежащих приложению процессов и установку Visual C++ Runtime на Windows.
+Windows-установщик включает GST-сборку TorrServer со встроенным GStreamer и Visual C++ Runtime. Отдельно устанавливать GStreamer на Windows не нужно.
 
 ## Возможности
 
@@ -20,7 +20,7 @@ Pirate Cinema — локальное настольное приложение �
 - локальные резервные копии, диагностика, обновления и системный трей;
 - русский и английский интерфейс.
 
-Все пользовательские данные остаются на компьютере. Pirate Cinema обращается к Cinemeta, Wikipedia и TVmaze только за общедоступными названиями, описаниями и изображениями; история просмотра им не передаётся.
+Все пользовательские данные остаются на компьютере. Pirate Cinema обращается к Cinemeta, TVmaze и Wikidata только за общедоступными названиями, описаниями и изображениями; история просмотра им не передаётся.
 
 ## Установка
 
@@ -93,7 +93,7 @@ Pirate Cinema is a local Rust desktop application for searching, adding, and str
 - local backup, diagnostics, updates, and system tray;
 - Russian and English interfaces.
 
-Playback history stays on the computer. Cinemeta, Wikipedia, and TVmaze receive only public metadata queries, never the local history database.
+Playback history stays on the computer. Cinemeta, TVmaze, and Wikidata receive only public metadata queries, never the local history database.
 
 ### Installation
 

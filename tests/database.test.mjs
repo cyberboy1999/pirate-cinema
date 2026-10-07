@@ -9,11 +9,11 @@ test("persists media metadata and playback progress in SQLite",()=>{
   const root=mkdtempSync(join(tmpdir(),"pirate-cinema-db-test-"));
   try{
     const db=new MediaDatabase(join(root,"media.db"));
-    db.upsert({torrentHash:"abc",torrentName:"Dune.Part.Two.2024.mkv",metadataProvider:"tmdb",providerId:"693134",title:"Dune: Part Two",year:2024,mediaType:"movie",genres:["Sci-Fi"],matchConfidence:.98,isActive:false});
+    db.upsert({torrentHash:"abc",torrentName:"Dune.Part.Two.2024.mkv",metadataProvider:"cinemeta",providerId:"tt15239678",title:"Dune: Part Two",year:2024,mediaType:"movie",genres:["Sci-Fi"],matchConfidence:.98,isActive:false});
     db.updateViewed("abc",{timecode:7200,duration:9960,lastPlayedAt:"2026-08-15T00:00:00.000Z"});
     const [item]=db.list();
-    assert.equal(item.metadataProvider,"tmdb");
-    assert.equal(item.providerId,"693134");
+    assert.equal(item.metadataProvider,"cinemeta");
+    assert.equal(item.providerId,"tt15239678");
     assert.equal(item.progress,72);
     assert.equal(db.stats().continuing,1);
     db.close();

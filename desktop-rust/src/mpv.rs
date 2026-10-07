@@ -497,7 +497,7 @@ pub fn capture_poster(
         .map_err(|error| format!("Не удалось запустить MPV для постера: {error}"))?;
     // Poster capture is a fallback during metadata refresh, not playback. Keep
     // it bounded so one stalled torrent cannot make every card appear stuck.
-    let deadline = Instant::now() + Duration::from_secs(12);
+    let deadline = Instant::now() + Duration::from_secs(6);
     loop {
         if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
             if !status.success() {
@@ -510,7 +510,7 @@ pub fn capture_poster(
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_file(&frame);
-            return Err("Получение кадра превысило 12 секунд".into());
+            return Err("Получение кадра превысило 6 секунд".into());
         }
         thread::sleep(Duration::from_millis(100));
     }
