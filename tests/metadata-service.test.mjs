@@ -13,6 +13,6 @@ test("loads poster and details from Cinemeta without a key",async()=>{
 });
 
 test("uses Wikidata only as an IMDb-linked metadata fallback",async()=>{
-  const originalFetch=globalThis.fetch;globalThis.fetch=async value=>new Response(JSON.stringify({results:{bindings:[{label:{value:"Дюна"},description:{value:"Научная фантастика"},image:{value:"https://commons.wikimedia.org/wiki/Special:FilePath/Dune_poster.jpg"}}]}}));
+  const originalFetch=globalThis.fetch;globalThis.fetch=async()=>new Response(JSON.stringify({results:{bindings:[{label:{value:"Дюна"},description:{value:"Научная фантастика"},image:{value:"https://commons.wikimedia.org/wiki/Special:FilePath/Dune_poster.jpg"}}]}}));
   try{const item=await findWikidata("tt1160419");assert.equal(item?.title,"Дюна");assert.equal(item?.posterUrl,"https://www.wikidata.org/wiki/Special:FilePath/Dune%20poster.jpg");assert.equal(await findWikidata("not-imdb"),null)}finally{globalThis.fetch=originalFetch}
 });

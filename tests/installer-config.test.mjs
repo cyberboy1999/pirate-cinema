@@ -2,58 +2,44 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 
-test("both NSIS installers elevate before replacing locked application files",()=>{
-  const config=readFileSync("electron-builder.yml","utf8");
-  const hook=readFileSync("build/installer.nsh","utf8");
-  assert.match(config,/perMachine:\s*true/);
-  assert.match(config,/include:\s*build\/installer\.nsh/);
-  assert.match(hook,/WM_CLOSE/);
-  assert.match(hook,/taskkill\.exe.*Pirate Cinema\.exe/);
+const read = (path) => readFileSync(path, "utf8");
+
+test("Windows installer is elevated and carries the complete Rust runtime", () => {
+  const installer = read("desktop-rust/installer.nsi");
+  assert.match(installer, /RequestExecutionLevel admin/);
+  assert.match(installer, /File "\$\{APP_SOURCE\}\\pirate-cinema\.exe"/);
+  assert.match(installer, /File "\$\{APP_SOURCE\}\\vc_redist\.x64\.exe"/);
+  assert.match(installer, /File "\$\{APP_SOURCE\}\\torrserver\\TorrServer-windows-amd64\.exe"/);
+  assert.match(installer, /CreateShortcut "\$DESKTOP\\Pirate Cinema\.lnk"/);
 });
 
-test("release workflow verifies bundled binaries and publishes updater metadata",()=>{
-  const config=readFileSync("electron-builder.yml","utf8");const workflow=readFileSync(".github/workflows/release.yml","utf8");
-  assert.match(config,/provider:\s*github/);
-  assert.match(workflow,/TorrServer hash mismatch/);
-  assert.match(workflow,/MPV hash mismatch/);
-  assert.match(workflow,/release\/latest\.yml/);
+test("release workflow verifies runtimes and publishes only the supported artifacts", () => {
+  const workflow = read(".github/workflows/release.yml");
+  assert.match(workflow, /TorrServer hash mismatch/);
+  assert.match(workflow, /MPV hash mismatch/);
+  assert.match(workflow, /appimagetool-x86_64\.AppImage/);
+  assert.match(workflow, /sha256sum -c/);
+  assert.match(workflow, /desktop-rust\/packaging\/build-appimage\.sh/);
+  assert.match(workflow, /needs: \[windows, linux, arch-smoke\]/);
+  assert.match(workflow, /xvfb-run/);
+  assert.doesNotMatch(workflow, /nsis-web|PKGBUILD|--linux deb rpm/);
 });
 
-test("Linux release verifies packages and creates freedesktop shortcuts",()=>{
-  const config=readFileSync("electron-builder-linux.yml","utf8");
-  const workflow=readFileSync(".github/workflows/release.yml","utf8");
-  const installer=readFileSync("scripts/install-linux.sh","utf8");
-  assert.match(config,/target:\s*deb/);assert.match(config,/target:\s*rpm/);
-  assert.match(config,/depends:\s*\[mpv, ffmpeg\]/);
-  assert.match(workflow,/8b61aa8e85eb6c5caee3b484160f27d82da28bc6b2f0d6703a8914293824afe0/);
-  assert.match(workflow,/SHA256SUMS/);assert.match(installer,/sha256sum -c/);
-  assert.match(installer,/xdg-user-dir DESKTOP/);
+test("release inputs never include a user database or TorrServer state", () => {
+  const installer = read("desktop-rust/installer.nsi");
+  const workflow = read(".github/workflows/release.yml");
+  for (const source of [installer, workflow]) {
+    assert.doesNotMatch(source, /config\.db/);
+    assert.doesNotMatch(source, /viewed\.json/);
+  }
+  assert.doesNotMatch(workflow, /bootstrap\/resources\/torrserver/);
 });
 
-test("Arch release publishes a checksummed PKGBUILD with pacman dependencies",()=>{
-  const config=readFileSync("electron-builder-arch.yml","utf8");
-  const workflow=readFileSync(".github/workflows/release.yml","utf8");
-  const pkgbuild=readFileSync("packaging/arch/PKGBUILD.in","utf8");
-  assert.match(config,/target:\s*tar\.gz/);assert.match(workflow,/Build unified release/);
-  assert.match(workflow,/tar -xzf/);assert.match(workflow,/s\/@SHA256@/);
-  assert.match(pkgbuild,/depends=.*'mpv'.*'ffmpeg'/);assert.match(pkgbuild,/sha256sums=\('@SHA256@'\)/);
-  assert.match(pkgbuild,/pirate-cinema\.desktop/);
-  assert.match(pkgbuild,/chmod 755 .*TorrServer-linux-amd64/);
-  assert.doesNotMatch(readFileSync("electron/main.mjs","utf8"),/chmodSync/);
-});
-
-test("unified release starts with empty user databases",()=>{
-  const windows=readFileSync("electron-builder.yml","utf8");
-  const linux=readFileSync("electron-builder-linux.yml","utf8");
-  const workflow=readFileSync(".github/workflows/release.yml","utf8");
-  for(const source of [windows,linux]){assert.doesNotMatch(source,/config\.db/);assert.doesNotMatch(source,/viewed\.json/)}
-  assert.doesNotMatch(workflow,/bootstrap\/resources\/torrserver\/\*/);
-  assert.match(workflow,/needs: \[windows, linux\]/);
-});
-
-test("Electron keeps the app available from the system tray",()=>{
-  const main=readFileSync("electron/main.mjs","utf8");
-  assert.match(main,/new Tray\(/);
-  assert.match(main,/mainWindow\.hide\(\)/);
-  assert.match(main,/label:"Выйти"/);
+test("AppImage build keeps the required runtime layout and launcher", () => {
+  const script = read("desktop-rust/packaging/build-appimage.sh");
+  assert.match(script, /install -m755 "\$binary" "\$appdir\/usr\/bin\/pirate-cinema"/);
+  assert.match(script, /TorrServer-linux-amd64/);
+  assert.match(script, /libxdo\.so\.3/);
+  assert.match(script, /LD_LIBRARY_PATH/);
+  assert.match(script, /Pirate-Cinema-\$version-x86_64\.AppImage/);
 });
