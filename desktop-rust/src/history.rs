@@ -509,6 +509,11 @@ impl HistoryStore {
                 torrent_hash TEXT PRIMARY KEY,
                 track_id INTEGER NOT NULL CHECK(track_id > 0)
             );
+            CREATE TABLE IF NOT EXISTS media_web_audio_preferences (
+                torrent_hash TEXT PRIMARY KEY,
+                language TEXT NOT NULL,
+                title TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS media_playback_preferences (
                 torrent_hash TEXT PRIMARY KEY,
                 season INTEGER,
@@ -717,11 +722,22 @@ impl HistoryStore {
             .as_ref()
             .filter(|item| item.title != original_title)
             .map_or(remote.title.as_str(), |item| item.title.as_str());
-        let overview = remote
+        let previous_overview = current.as_ref().and_then(|item| item.overview.as_deref());
+        let new_overview = remote
             .overview
             .as_deref()
-            .filter(|text| !text.trim().is_empty())
-            .or_else(|| current.as_ref().and_then(|item| item.overview.as_deref()));
+            .filter(|text| !text.trim().is_empty());
+        let has_cyrillic = |text: &str| {
+            text.chars()
+                .any(|ch| ('А'..='я').contains(&ch) || ch == 'ё' || ch == 'Ё')
+        };
+        let overview = match (previous_overview, new_overview) {
+            (Some(previous), Some(new)) if has_cyrillic(previous) && !has_cyrillic(new) => {
+                Some(previous)
+            }
+            (_, Some(new)) => Some(new),
+            (previous, None) => previous,
+        };
         let year = remote
             .year
             .or_else(|| current.as_ref().and_then(|item| item.year));
@@ -784,6 +800,33 @@ impl HistoryStore {
                 |row| row.get(0),
             )
             .optional()
+    }
+
+    pub fn web_audio_preference(&self, hash: &str) -> rusqlite::Result<Option<(String, String)>> {
+        let hash = checked_key(hash, 0)?;
+        self.db
+            .query_row(
+                "SELECT language,title FROM media_web_audio_preferences WHERE torrent_hash=?1",
+                [hash],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+    }
+
+    pub fn save_web_audio_preference(
+        &self,
+        hash: &str,
+        language: &str,
+        title: &str,
+    ) -> rusqlite::Result<()> {
+        let hash = checked_key(hash, 0)?;
+        if language.len() > 128 || title.len() > 512 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "audio preference".into(),
+            ));
+        }
+        self.db.execute("INSERT INTO media_web_audio_preferences(torrent_hash,language,title) VALUES(?1,?2,?3) ON CONFLICT(torrent_hash) DO UPDATE SET language=excluded.language,title=excluded.title", params![hash,language,title])?;
+        Ok(())
     }
 
     pub fn save_audio_track(&self, hash: &str, track_id: i64) -> rusqlite::Result<()> {
@@ -873,6 +916,26 @@ fn checked_key(hash: &str, file_index: i64) -> rusqlite::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_audio_identity_is_separate_from_mpv_track_numbers() {
+        let db = HistoryStore::open_in_memory().unwrap();
+        let hash = "0123456789abcdef0123456789abcdef01234567";
+        db.save_audio_track(hash, 2).unwrap();
+        db.save_web_audio_preference(hash, "rus", "Studio A")
+            .unwrap();
+        assert_eq!(
+            db.web_audio_preference(hash).unwrap(),
+            Some(("rus".into(), "Studio A".into()))
+        );
+        assert_eq!(db.audio_track(hash).unwrap(), Some(2));
+        assert!(db
+            .save_web_audio_preference(hash, "rus", &"x".repeat(513))
+            .is_err());
+        assert!(db
+            .save_web_audio_preference("invalid", "rus", "Studio A")
+            .is_err());
+    }
 
     #[test]
     fn imports_electron_history_without_overwriting_rust_or_source() {
@@ -1227,6 +1290,22 @@ mod tests {
         assert_eq!(metadata.overview.as_deref(), Some("Описание на русском"));
         assert_eq!(metadata.poster_file.as_deref(), Some("poster.jpg"));
         assert_eq!(metadata.genres, vec!["Драма"]);
+        db.merge_remote_metadata(
+            &hash,
+            "Original.Release.2024",
+            &MediaMetadata {
+                title: "English title".into(),
+                overview: Some("English overview".into()),
+                year: None,
+                rating: None,
+                poster_file: None,
+                genres: Vec::new(),
+            },
+        )
+        .unwrap();
+        let metadata = db.metadata(&hash).unwrap().unwrap();
+        assert_eq!(metadata.overview.as_deref(), Some("Описание на русском"));
+        assert_eq!(metadata.poster_file.as_deref(), Some("poster.jpg"));
         db.set_media_type(&hash, "series").unwrap();
         assert_eq!(db.media_type(&hash).unwrap().as_deref(), Some("series"));
         assert!(db.set_media_type(&hash, "other").is_err());

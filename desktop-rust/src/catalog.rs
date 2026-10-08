@@ -5,7 +5,13 @@ use std::time::Duration;
 
 const CINEMETA: &str = "https://v3-cinemeta.strem.io";
 const WIKIDATA: &str = "https://query.wikidata.org/sparql";
-type WikidataRecord = (String, Option<String>, Option<String>);
+type WikidataRecord = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+);
 type WikidataRecords = std::collections::HashMap<String, WikidataRecord>;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -164,11 +170,15 @@ fn wikidata_records(agent: &ureq::Agent, ids: &[&str]) -> Result<WikidataRecords
         .map(|id| format!("\"{id}\""))
         .collect::<Vec<_>>()
         .join(" ");
-    let query = format!("SELECT ?id ?label ?description ?image WHERE {{ VALUES ?id {{ {values} }} ?item <http://www.wikidata.org/prop/direct/P345> ?id. OPTIONAL {{ ?item <http://www.w3.org/2000/01/rdf-schema#label> ?label. FILTER(LANG(?label)=\"ru\") }} OPTIONAL {{ ?item <http://schema.org/description> ?description. FILTER(LANG(?description)=\"ru\") }} OPTIONAL {{ ?item <http://www.wikidata.org/prop/direct/P18> ?image. }} }}");
-    let payload = json(
-        agent,
-        &format!("{WIKIDATA}?format=json&query={}", encode(&query)),
-    )?;
+    let query = format!("SELECT ?id ?label ?description ?image ?article WHERE {{ VALUES ?id {{ {values} }} ?item <http://www.wikidata.org/prop/direct/P345> ?id. OPTIONAL {{ ?item <http://www.w3.org/2000/01/rdf-schema#label> ?label. FILTER(LANG(?label)=\"ru\") }} OPTIONAL {{ ?item <http://schema.org/description> ?description. FILTER(LANG(?description)=\"ru\") }} OPTIONAL {{ ?item <http://www.wikidata.org/prop/direct/P18> ?image. }} OPTIONAL {{ ?article <http://schema.org/about> ?item; <http://schema.org/inLanguage> \"ru\"; <http://schema.org/isPartOf> <https://ru.wikipedia.org/>. }} }}");
+    let url = format!("{WIKIDATA}?format=json&query={}", encode(&query));
+    let payload = json(agent, &url).or_else(|error| {
+        if ids.len() == 1 && error.contains("timeout") {
+            json(agent, &url)
+        } else {
+            Err(error)
+        }
+    })?;
     Ok(parse_wikidata_records(&payload))
 }
 
@@ -197,7 +207,22 @@ fn parse_wikidata_records(payload: &Value) -> WikidataRecords {
                 .pointer("/image/value")
                 .and_then(Value::as_str)
                 .and_then(wikidata_image_url);
-            matches.insert(id.to_owned(), (label.trim().to_owned(), description, image));
+            let article = row
+                .pointer("/article/value")
+                .and_then(Value::as_str)
+                .filter(|url| url.starts_with("https://ru.wikipedia.org/wiki/"))
+                .map(str::to_owned);
+            let release_year = row.pointer("/date/value").and_then(year);
+            matches.insert(
+                id.to_owned(),
+                (
+                    label.trim().to_owned(),
+                    description,
+                    image,
+                    article,
+                    release_year,
+                ),
+            );
         }
     }
     matches
@@ -212,13 +237,16 @@ fn wikidata_title_match(
         return Ok(None);
     }
     let escaped = title.replace('\\', "\\\\").replace('"', "\\\"");
-    let query = format!("SELECT ?id ?label ?description ?image WHERE {{ ?item <http://www.w3.org/2000/01/rdf-schema#label> \"{escaped}\"@ru; <http://www.wikidata.org/prop/direct/P345> ?id. OPTIONAL {{ ?item <http://schema.org/description> ?description. FILTER(LANG(?description)=\"ru\") }} OPTIONAL {{ ?item <http://www.wikidata.org/prop/direct/P18> ?image. }} BIND(\"{escaped}\" AS ?label) }} LIMIT 1");
-    Ok(parse_wikidata_records(&json(
-        agent,
-        &format!("{WIKIDATA}?format=json&query={}", encode(&query)),
-    )?)
-    .into_iter()
-    .next())
+    let query = format!("SELECT ?id ?label ?description ?image ?article ?date WHERE {{ ?item <http://www.w3.org/2000/01/rdf-schema#label> \"{escaped}\"@ru; <http://www.wikidata.org/prop/direct/P345> ?id. OPTIONAL {{ ?item <http://schema.org/description> ?description. FILTER(LANG(?description)=\"ru\") }} OPTIONAL {{ ?item <http://www.wikidata.org/prop/direct/P18> ?image. }} OPTIONAL {{ ?article <http://schema.org/about> ?item; <http://schema.org/inLanguage> \"ru\"; <http://schema.org/isPartOf> <https://ru.wikipedia.org/>. }} OPTIONAL {{ {{ ?item <http://www.wikidata.org/prop/direct/P577> ?date }} UNION {{ ?item <http://www.wikidata.org/prop/direct/P571> ?date }} }} BIND(\"{escaped}\" AS ?label) }} LIMIT 1");
+    let url = format!("{WIKIDATA}?format=json&query={}", encode(&query));
+    let payload = json(agent, &url).or_else(|error| {
+        if error.contains("timeout") {
+            json(agent, &url)
+        } else {
+            Err(error)
+        }
+    })?;
+    Ok(parse_wikidata_records(&payload).into_iter().next())
 }
 
 fn cinemeta_by_id(agent: &ureq::Agent, id: &str, kind: &str) -> Option<Movie> {
@@ -236,6 +264,43 @@ fn wikidata_image_url(value: &str) -> Option<String> {
             encode(&file)
         )
     })
+}
+
+fn wikipedia_summary(agent: &ureq::Agent, article: &str) -> Option<(String, String)> {
+    let page = article.strip_prefix("https://ru.wikipedia.org/wiki/")?;
+    if page.is_empty() || page.contains(['?', '#', '/']) {
+        return None;
+    }
+    let summary = json(
+        agent,
+        &format!("https://ru.wikipedia.org/api/rest_v1/page/summary/{page}"),
+    )
+    .ok()?;
+    if summary.get("type").and_then(Value::as_str) == Some("disambiguation") {
+        return None;
+    }
+    let title = summary.get("title")?.as_str()?.trim();
+    let extract = summary.get("extract")?.as_str()?.trim();
+    (!title.is_empty() && !extract.is_empty()).then(|| (title.to_owned(), extract.to_owned()))
+}
+
+fn apply_russian_metadata(item: &mut Movie, record: &WikidataRecord, agent: &ureq::Agent) {
+    let (name, description, image, article, _) = record;
+    if !name.is_empty() {
+        item.title = name.clone();
+    }
+    item.overview = article
+        .as_deref()
+        .and_then(|url| wikipedia_summary(agent, url))
+        .map(|(title, overview)| {
+            item.title = title;
+            overview
+        })
+        .or_else(|| description.clone())
+        .or_else(|| item.overview.take());
+    if item.alternate_poster_url.is_none() {
+        item.alternate_poster_url = image.clone();
+    }
 }
 
 pub fn popular() -> Result<Vec<Movie>, String> {
@@ -264,7 +329,7 @@ fn popular_kind(kind: &str) -> Result<Vec<Movie>, String> {
         .collect::<Vec<_>>();
     if let Ok(records) = wikidata_records(&agent, &ids) {
         for item in &mut items {
-            if let Some((name, description, image)) = records.get(&item.id) {
+            if let Some((name, description, image, _, _)) = records.get(&item.id) {
                 if !name.is_empty() {
                     item.title = name.clone();
                 }
@@ -444,6 +509,27 @@ fn normalized(value: &str) -> String {
         .join(" ")
 }
 
+pub(crate) fn title_matches(query: &str, candidate: &str) -> bool {
+    let left = normalized(query);
+    let right = normalized(candidate);
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    let left: std::collections::HashSet<_> = left
+        .split_whitespace()
+        .filter(|word| !matches!(*word, "and" | "и"))
+        .collect();
+    let right: std::collections::HashSet<_> = right
+        .split_whitespace()
+        .filter(|word| !matches!(*word, "and" | "и"))
+        .collect();
+    if left.len() == 1 || right.len() == 1 {
+        return left == right;
+    }
+    let overlap = left.intersection(&right).count();
+    (overlap as f64 / left.len().max(right.len()) as f64) >= 0.8
+}
+
 pub fn same_release(left: &str, right: &str) -> bool {
     let (left, left_year) = clean_title(left);
     let (right, right_year) = clean_title(right);
@@ -465,7 +551,10 @@ fn tvmaze(agent: &ureq::Agent, title: &str, wanted_year: Option<i64>) -> Option<
             .and_then(Value::as_str)
             .and_then(|date| date.get(..4))
             .and_then(|year| year.parse::<i64>().ok());
-        if wanted_year.is_some_and(|wanted| year.is_some_and(|found| (found - wanted).abs() > 1)) {
+        if !title_matches(title, name)
+            || wanted_year
+                .is_some_and(|wanted| year.is_some_and(|found| (found - wanted).abs() > 1))
+        {
             return None;
         }
         Some(Movie {
@@ -544,7 +633,7 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
             provider_responded = true;
             let candidates = parse_catalog(&result);
             match_item = candidates.into_iter().find(|candidate| {
-                normalized(&candidate.title) == normalized(query)
+                title_matches(query, &candidate.title)
                     && wanted_year.is_none_or(|year| {
                         candidate.year.is_none_or(|found| (found - year).abs() <= 1)
                     })
@@ -555,30 +644,36 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
         }
     }
     let Some(mut item) = match_item else {
-        if let Ok(Some((id, (name, description, image)))) = wikidata_title_match(&agent, &clean) {
+        if let Ok(Some((id, record))) = wikidata_title_match(&agent, &clean) {
             if let Some(mut item) = kinds
                 .iter()
                 .find_map(|kind| cinemeta_by_id(&agent, &id, kind))
             {
-                if !name.is_empty() {
-                    item.title = name;
+                if wanted_year
+                    .is_none_or(|year| item.year.is_some_and(|found| (found - year).abs() <= 1))
+                {
+                    apply_russian_metadata(&mut item, &record, &agent);
+                    return Ok(Some(item));
                 }
-                item.overview = description.or(item.overview);
-                item.alternate_poster_url = image;
+            }
+            if wanted_year
+                .is_none_or(|year| record.4.is_some_and(|found| (found - year).abs() <= 1))
+            {
+                let mut item = Movie {
+                    id,
+                    title: clean.clone(),
+                    original_title: clean.clone(),
+                    year: record.4.or(wanted_year),
+                    rating: None,
+                    poster_url: None,
+                    alternate_poster_url: None,
+                    background_url: None,
+                    overview: None,
+                    genres: Vec::new(),
+                };
+                apply_russian_metadata(&mut item, &record, &agent);
                 return Ok(Some(item));
             }
-            return Ok(Some(Movie {
-                id,
-                title: if name.is_empty() { clean.clone() } else { name },
-                original_title: clean,
-                year: wanted_year,
-                rating: None,
-                poster_url: None,
-                alternate_poster_url: image,
-                background_url: None,
-                overview: description,
-                genres: Vec::new(),
-            }));
         }
         if series {
             if let Some(item) = tvmaze(&agent, &clean, wanted_year) {
@@ -592,16 +687,8 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
         };
     };
     if let Ok(records) = wikidata_records(&agent, &[&item.id]) {
-        if let Some((name, description, image)) = records.get(&item.id) {
-            if !name.is_empty() {
-                item.title = name.clone();
-            }
-            if item.overview.is_none() {
-                item.overview = description.clone();
-            }
-            if item.alternate_poster_url.is_none() {
-                item.alternate_poster_url = image.clone();
-            }
+        if let Some(record) = records.get(&item.id) {
+            apply_russian_metadata(&mut item, record, &agent);
         }
     }
     Ok(Some(item))
@@ -736,7 +823,9 @@ mod tests {
             Some(&(
                 "Фильм".into(),
                 Some("Описание".into()),
-                Some("https://www.wikidata.org/wiki/Special:FilePath/Test%20film.jpg".into())
+                Some("https://www.wikidata.org/wiki/Special:FilePath/Test%20film.jpg".into()),
+                None,
+                None
             ))
         );
     }
@@ -744,6 +833,28 @@ mod tests {
     #[test]
     fn tvmaze_summary_is_plain_text() {
         assert_eq!(strip_html("<p>One &amp; <b>two</b></p>"), "One & two");
+    }
+
+    #[test]
+    fn metadata_match_rejects_unrelated_titles() {
+        assert!(title_matches("Rick and Morty", "Rick & Morty"));
+        assert!(!title_matches("The Walking Dead", "Fear the Walking Dead"));
+        assert!(!title_matches("Cars", "Cars 2"));
+        assert!(!title_matches("The Thing", "Thing"));
+    }
+
+    #[test]
+    #[ignore = "uses public Cinemeta, Wikidata and Russian Wikipedia"]
+    fn live_rick_and_morty_has_russian_summary_and_poster() {
+        let movie = lookup("Рик и Морти / Rick and Morty (2013)", true)
+            .unwrap()
+            .expect("series should match");
+        assert_eq!(movie.id, "tt2861424");
+        assert!(movie
+            .overview
+            .as_deref()
+            .is_some_and(|text| text.chars().count() > 80 && text.contains('Р')));
+        assert!(!movie_poster_jpeg(&movie, true).unwrap().is_empty());
     }
 
     #[test]

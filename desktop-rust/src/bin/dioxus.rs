@@ -30,6 +30,7 @@ static INITIAL_PREFERENCES: OnceLock<Preferences> = OnceLock::new();
 static TORRSERVER_PROCESS: OnceLock<Mutex<Option<TorrServerProcess>>> = OnceLock::new();
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static METADATA_SYNC_ACTIVE: AtomicBool = AtomicBool::new(false);
+static PLAYBACK_VISIBLE: AtomicBool = AtomicBool::new(true);
 static STARTUP_MIGRATION_ERROR: OnceLock<String> = OnceLock::new();
 static STARTUP_TORRSERVER_ERROR: OnceLock<String> = OnceLock::new();
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -45,6 +46,7 @@ const SETTINGS_ICON: &[u8] = include_bytes!(
 const ONLINE_ICON: &[u8] = include_bytes!("../../assets/icons/online_4158.png");
 const HLS_JS: &str = include_str!("../../assets/hls.min.js");
 const ARTPLAYER_JS: &str = include_str!("../../assets/artplayer.js");
+const PLAYER_STATE_JS: &str = include_str!("../../assets/player-state.js");
 
 const CSS: &str = r#"
 :root { color-scheme: dark; font-family: Inter, "Segoe UI", sans-serif; font-size:17px; background: #050505; color: #f2f2f2; }
@@ -131,7 +133,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .player-strip { margin: 14px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); gap: 8px; align-items: center; padding: 10px; border: 1px solid #242424; border-radius: 12px; background: #0d0d0d; }
 .player-strip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-strip button { min-height: 34px; border: 1px solid #303030; border-radius: 8px; background: #191919; }
-.web-player{margin-top:14px;padding:12px;border:1px solid #292929;border-radius:12px;background:#090909}.web-player header{display:flex;align-items:center;gap:10px;margin-bottom:10px}.web-player header strong{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.artplayer-host{width:100%;height:min(72vh,760px);min-height:420px;border-radius:9px;overflow:hidden;background:#000}.art-video-player{--art-theme:#287cff}.pc-player-topbar{position:absolute;z-index:80;top:12px;left:12px;display:flex;gap:6px;max-width:calc(100% - 24px);padding:5px;border:1px solid #ffffff26;border-radius:9px;background:#090909d9;backdrop-filter:blur(8px);opacity:.42;transition:opacity .18s}.art-video-player:hover .pc-player-topbar,.pc-player-topbar:focus-within{opacity:1}.pc-player-topbar select{width:auto;min-width:96px;max-width:190px;height:32px;padding:0 28px 0 10px;border:1px solid #ffffff29;border-radius:7px;background:#181818;color:#fff;font:600 13px system-ui;cursor:pointer}.pc-player-topbar .pc-season{min-width:105px}.pc-player-topbar .pc-episode{min-width:112px}.pc-player-topbar .pc-audio{min-width:130px;max-width:240px}
+.web-player{margin-top:14px;padding:12px;border:1px solid #292929;border-radius:12px;background:#090909}.web-player header{display:flex;align-items:center;gap:10px;margin-bottom:10px}.web-player header strong{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.artplayer-host{width:100%;height:min(72vh,760px);min-height:420px;border-radius:9px;overflow:hidden;background:#000}.web-player.mini{position:fixed;z-index:100;right:20px;bottom:20px;width:min(420px,calc(100vw - 40px));margin:0;box-shadow:0 14px 48px #000b}.web-player.mini .artplayer-host{height:220px;min-height:0}.web-player.mini .pc-player-topbar{display:none}.art-video-player{--art-theme:#287cff}.pc-player-topbar{position:absolute;z-index:80;top:12px;left:12px;display:flex;gap:6px;max-width:calc(100% - 24px);padding:5px;border:1px solid #ffffff26;border-radius:9px;background:#090909d9;backdrop-filter:blur(8px);opacity:.42;transition:opacity .18s}.art-video-player:hover .pc-player-topbar,.pc-player-topbar:focus-within{opacity:1}.pc-player-topbar select{width:auto;min-width:96px;max-width:190px;height:32px;padding:0 28px 0 10px;border:1px solid #ffffff29;border-radius:7px;background:#181818;color:#fff;font:600 13px system-ui;cursor:pointer}.pc-player-topbar .pc-season{min-width:105px}.pc-player-topbar .pc-episode{min-width:112px}.pc-player-topbar .pc-audio{min-width:130px;max-width:240px}
+.pc-next-episode{position:absolute;z-index:80;right:18px;bottom:74px;display:none;padding:10px 16px;border:0;border-radius:8px;background:#f2f2f2;color:#111;font:700 14px system-ui;cursor:pointer;box-shadow:0 4px 18px #0009}.pc-next-episode:hover{background:#fff}.pc-next-episode:focus-visible{outline:2px solid #287cff;outline-offset:2px}
+.pc-auto-next{display:flex;align-items:center;white-space:nowrap;font:600 13px system-ui;gap:4px;padding:0 6px}.pc-auto-next input{width:16px;height:16px;accent-color:#287cff}.pc-stream-status{position:absolute;z-index:75;bottom:80px;left:18px;max-width:65%;padding:8px 12px;background:#111d;border-radius:8px;font:14px system-ui}.pc-stream-status[hidden]{display:none}.pc-stream-status button{margin-left:10px;padding:5px 9px;background:#fff;color:#111;border:0;border-radius:5px}
 .season-progress{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 18px}.season-progress span{padding:8px 11px;border:1px solid #292929;border-radius:9px;background:#101010;color:#aaa;font-size:13px}
 @media (max-width: 900px) { .shell { grid-template-columns: 78px 1fr; } .brand { margin-inline:auto;font-size: 0; } .brand img{width:34px;height:34px}.nav button { justify-content:center;overflow: hidden; white-space: nowrap; } .nav button span { display: none; } .content { padding: 24px 22px; } .topbar{grid-template-columns:1fr}.status{justify-self:start}.search-layout{grid-template-columns:1fr}.search-feature{position:static;display:grid;grid-template-columns:130px 1fr;gap:18px}.setting-row{grid-template-columns:1fr;gap:7px}.settings-actions,.choice-row,.settings-facts{grid-template-columns:1fr}.file { grid-template-columns: 1fr 1fr; } .file > div { grid-column: 1 / -1; } }
 "#;
@@ -142,6 +146,7 @@ enum Page {
     Search,
     Library,
     Detail,
+    Player,
     Settings,
 }
 
@@ -321,6 +326,7 @@ fn App() -> Element {
                 .ok()?,
         ))
     });
+    let has_tray = tray.is_some();
     use_future({
         let desktop = desktop.clone();
         move || {
@@ -338,6 +344,7 @@ fn App() -> Element {
                             desktop.window.set_visible(true);
                             desktop.window.set_focus();
                         } else if event.id == "exit" {
+                            flush_web_progress().await;
                             desktop.set_close_behavior(
                                 dioxus::desktop::WindowCloseBehaviour::WindowCloses,
                             );
@@ -384,6 +391,56 @@ fn App() -> Element {
     let mut files = use_signal(Vec::<PlayableFile>::new);
     let mut players = use_signal(Vec::<OwnedPlayer>::new);
     let mut web_player = use_signal(|| None::<WebPlayback>);
+    let mut closing = use_signal(|| false);
+    let close_window = desktop.clone();
+    let _close_hook = dioxus::desktop::use_wry_event_handler(move |event, _| {
+        use dioxus::desktop::tao::event::{Event, WindowEvent};
+        if let Event::WindowEvent {
+            window_id,
+            event: WindowEvent::CloseRequested,
+            ..
+        } = event
+        {
+            if *window_id != close_window.window.id()
+                || *closing.peek()
+                || web_player.peek().is_none()
+            {
+                return;
+            }
+            let close_to_tray = settings_path()
+                .ok()
+                .and_then(|path| settings::load_preferences(&path).ok())
+                .map(|preferences| preferences.close_to_tray)
+                .unwrap_or(true);
+            if close_to_tray && has_tray {
+                return;
+            }
+            closing.set(true);
+            close_window.set_close_behavior(dioxus::desktop::WindowCloseBehaviour::WindowHides);
+            let close_window = close_window.clone();
+            spawn(async move {
+                flush_web_progress().await;
+                close_window
+                    .set_close_behavior(dioxus::desktop::WindowCloseBehaviour::WindowCloses);
+                close_window.close();
+            });
+        }
+    });
+    let visibility_window = desktop.clone();
+    use_future(move || {
+        let visibility_window = visibility_window.clone();
+        async move {
+            loop {
+                let visible = visibility_window.window.is_visible()
+                    && !visibility_window.window.is_minimized();
+                PLAYBACK_VISIBLE.store(visible, Ordering::Release);
+                let mut eval = document::eval(&format!("if(window.__pirateCinemaVisible !== {visible}) {{ window.__pirateCinemaVisible={visible}; window.dispatchEvent(new Event('pc-visibility')); }} dioxus.send(true);"));
+                let _ = eval.recv::<bool>().await;
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        }
+    });
+    let mut return_page = use_signal(|| Page::Library);
     let mut busy = use_signal(|| false);
     let mut metadata_status = use_signal(String::new);
     let mut pending_duplicate = use_signal(|| None::<(SearchResult, bool)>);
@@ -399,6 +456,10 @@ fn App() -> Element {
         let Some(playback) = web_player() else {
             return;
         };
+        if *page.peek() != Page::Player {
+            return_page.set(*page.peek());
+            page.set(Page::Player);
+        }
         let key = format!("{}-{}", playback.torrent.hash, playback.file.id);
         let selector = serde_json::to_string(&key).unwrap_or_else(|_| "\"\"".into());
         let episodes = playback
@@ -413,12 +474,33 @@ fn App() -> Element {
             })
             .collect::<Vec<_>>();
         let episodes = serde_json::to_string(&episodes).unwrap_or_else(|_| "[]".into());
+        let next_episode_id = next_episode(&playback.queue, playback.file.id).map(|file| file.id);
+        let next_episode_id =
+            serde_json::to_string(&next_episode_id).unwrap_or_else(|_| "null".into());
+        let torrent_hash =
+            serde_json::to_string(&playback.torrent.hash).unwrap_or_else(|_| "\"\"".into());
+        let current_file_id = playback.file.id;
+        let audio_preference = history_path()
+            .ok()
+            .and_then(|path| HistoryStore::open(&path).ok())
+            .and_then(|history| {
+                history
+                    .web_audio_preference(&playback.torrent.hash)
+                    .ok()
+                    .flatten()
+            })
+            .map(|(language, title)| serde_json::json!({"language":language,"title":title}));
+        let audio_preference =
+            serde_json::to_string(&audio_preference).unwrap_or_else(|_| "null".into());
+        let auto_next = playback.auto_next;
         let script = format!(
             r#"
-            {hls_js}
-            {artplayer_js}
+            {player_state_js}
             const key = {selector};
             const episodes = {episodes};
+            const torrentHash = {torrent_hash};
+            let currentFileId = {current_file_id};
+            let nextEpisodeId = {next_episode_id};
             let container = null;
             for (let attempt = 0; attempt < 50; attempt++) {{
                 container = document.querySelector(`[data-playback-key="${{key}}"]`);
@@ -426,17 +508,40 @@ fn App() -> Element {
                 await new Promise(resolve => setTimeout(resolve, 100));
             }}
             if (!container) return;
+            if (window.__pirateCinemaContainer === container && window.__pirateCinemaTorrent === torrentHash && window.__pirateCinemaSwitch) {{
+                await window.__pirateCinemaSwitch(currentFileId, nextEpisodeId);
+                return;
+            }}
+            {hls_js}
+            {artplayer_js}
             if (!window.Artplayer || !window.Hls || !window.Hls.isSupported()) {{
                 dioxus.send({{ kind: 'error', message: 'WebView2 не поддерживает ArtPlayer или Media Source Extensions' }});
                 return;
             }}
+            if (window.__pirateCinemaDispose) window.__pirateCinemaDispose();
             if (window.__pirateCinemaArt) window.__pirateCinemaArt.destroy();
             if (window.__pirateCinemaHls) window.__pirateCinemaHls.destroy();
+            window.__pirateCinemaSwitch = null;
+            window.__pirateCinemaTorrent = torrentHash;
+            window.__pirateCinemaContainer = container;
+            let switching = false;
+            let sourceReady = false;
+            let failSwitch = null;
+            let audioPreference = {audio_preference};
+            let autoNext = {auto_next};
+            let selectedAudio = null;
+            let audioTracks = [];
+            let restoringAudio = false;
+            let preparedFile = null;
+            let pendingEnd = false;
+            let retryPosition = 0;
+            const canStart = () => window.PiratePlayerState.canStart(window.__pirateCinemaVisible, document.hidden);
             let hls = null;
             let video = null;
             let recoveryAttempts = 0;
             let playbackStarted = false;
             let streamHealthy = false;
+            let restorePositionListener = null;
             const bufferedAhead = () => {{
                 if (!video) return 0;
                 const position = video.currentTime || 0;
@@ -448,13 +553,15 @@ fn App() -> Element {
                 return 0;
             }};
             const startWhenBuffered = () => {{
-                if (playbackStarted || bufferedAhead() < 18) return;
+                if (playbackStarted || !canStart() || !window.PiratePlayerState.startupReady(video.duration, video.currentTime || 0, bufferedAhead())) return;
                 playbackStarted = true;
                 video.play().catch(() => {{ playbackStarted = false; }});
             }};
             const attachHls = (target, url) => {{
                 if (hls) hls.destroy();
+                if (video && restorePositionListener) video.removeEventListener('loadedmetadata',restorePositionListener);
                 video = target;
+                sourceReady = false;
                 recoveryAttempts = 0;
                 playbackStarted = false;
                 streamHealthy = false;
@@ -476,6 +583,7 @@ fn App() -> Element {
                         video.currentTime = startPosition;
                     }}
                 }};
+                restorePositionListener=restorePosition;
                 target.addEventListener('loadedmetadata', restorePosition, {{ once: true }});
                 hls.on(window.Hls.Events.FRAG_BUFFERED, startWhenBuffered);
                 hls.on(window.Hls.Events.FRAG_LOADED, () => {{
@@ -496,6 +604,13 @@ fn App() -> Element {
                         return;
                     }}
                     dioxus.send({{ kind: 'error', message: data.details || data.type || 'Ошибка HLS' }});
+                    showStatus('Не удалось загрузить поток', true);
+                    if (failSwitch) failSwitch(new Error(data.details || 'Ошибка HLS'));
+                }});
+                hls.subtitleDisplay = true;
+                hls.on(window.Hls.Events.SUBTITLE_TRACKS_UPDATED, (_event, data) => {{
+                    subtitleTracks = data.subtitleTracks || [];
+                    updateSubtitles();
                 }});
                 hls.loadSource(source.toString());
                 hls.attachMedia(target);
@@ -537,6 +652,114 @@ fn App() -> Element {
                 customType: {{ m3u8: attachHls }}
             }});
             window.__pirateCinemaArt = art;
+            // ArtPlayer's customType callback runs asynchronously after construction.
+            video = art.template.$video;
+            video.addEventListener('loadedmetadata', () => {{sourceReady=true;}});
+            let subtitleTracks = [];
+            let subtitleBlob = null;
+            let localSubtitleTrack = null;
+            const localSubtitle = document.createElement('input');
+            localSubtitle.type='file'; localSubtitle.accept='.srt,.vtt';
+            const clearLocalSubtitle = () => {{
+                art.subtitle.show=false;
+                if(localSubtitleTrack) localSubtitleTrack.remove();
+                localSubtitleTrack=null;
+                if (subtitleBlob) URL.revokeObjectURL(subtitleBlob);
+                subtitleBlob=null;
+            }};
+            localSubtitle.addEventListener('change', async () => {{
+                const file=localSubtitle.files?.[0];
+                if (!file) return;
+                if (file.size > 2 * 1024 * 1024 || !/\.(srt|vtt)$/i.test(file.name)) {{ art.notice.show='Нужен SRT/VTT размером до 2 МБ'; return; }}
+                const fileId=currentFileId;
+                const text=await file.text();
+                if (fileId !== currentFileId) return;
+                clearLocalSubtitle();
+                if(hls) hls.subtitleTrack=-1;
+                subtitleBlob=URL.createObjectURL(new Blob([window.PiratePlayerState.subtitleVtt(text)],{{type:'text/vtt'}}));
+                // Native track avoids ArtPlayer's textTracks[0] assumption with HLS subtitles.
+                localSubtitleTrack=document.createElement('track');
+                localSubtitleTrack.kind='subtitles';
+                localSubtitleTrack.label=file.name;
+                localSubtitleTrack.src=subtitleBlob;
+                video.append(localSubtitleTrack);
+                localSubtitleTrack.track.mode='showing';
+                art.notice.show=file.name;
+                localSubtitle.value='';
+            }});
+            const subtitleSetting = {{
+                name:'pc-subtitles',html:'Субтитры',selector:[{{html:'Отключены',value:-1}},{{html:'Локальный SRT/VTT…',value:-2}}],
+                onSelect: item => {{
+                    if(item.value===-2) {{localSubtitle.click();return 'Локальный файл';}}
+                    clearLocalSubtitle();
+                    if(hls) {{hls.subtitleDisplay=true;hls.subtitleTrack=item.value;}}
+                    return item.html;
+                }}
+            }};
+            art.setting.add(subtitleSetting);
+            const updateSubtitles = () => art.setting.update({{...subtitleSetting,selector:[
+                {{html:'Отключены',value:-1}},
+                ...subtitleTracks.map((track,index) => ({{html:String(track.name || track.lang || `Дорожка ${{index+1}}`).replace(/[<>&"']/g,''),value:index}})),
+                {{html:'Локальный SRT/VTT…',value:-2}}
+            ]}});
+            const saveProgress = () => {{
+                if (!switching && sourceReady && art.duration > 0) dioxus.send({{ kind:'progress', file_id:currentFileId, position:art.currentTime || 0, duration:art.duration || 0 }});
+            }};
+            window.__pirateCinemaSave = saveProgress;
+            window.__pirateCinemaSnapshot = () => switching || !sourceReady || art.duration <= 0 ? null : ({{hash:torrentHash,file_id:currentFileId,position:art.currentTime || 0,duration:art.duration || 0}});
+            const status = document.createElement('div');
+            status.className = 'pc-stream-status';
+            status.setAttribute('role', 'status');
+            const statusText = document.createElement('span');
+            const retryButton = document.createElement('button');
+            retryButton.textContent = 'Повторить';
+            retryButton.type = 'button';
+            retryButton.hidden = true;
+            status.append(statusText, retryButton);
+            art.template.$player.append(status);
+            const showStatus = (text, retry = false) => {{ statusText.textContent=text; retryButton.hidden=!retry; status.hidden=!text; }};
+            showStatus(canStart() ? 'Подготовка потока…' : 'Ожидание восстановления окна…');
+            art.on('video:playing', () => showStatus(''));
+            art.on('video:waiting', () => {{ retryPosition = art.currentTime || retryPosition; showStatus('Буферизация…'); }});
+            art.on('video:pause', saveProgress);
+            art.on('video:seeked', saveProgress);
+            art.on('video:play', () => {{ if (!canStart()) {{ art.pause(); showStatus('Ожидание восстановления окна…'); }} }});
+            const onVisibility = () => {{
+                saveProgress();
+                if (canStart()) {{
+                    if (pendingEnd && autoNext) {{ pendingEnd=false; dioxus.send({{kind:'ended',source_file_id:currentFileId,auto_next:autoNext}}); }}
+                    else startWhenBuffered();
+                }}
+            }};
+            document.addEventListener('visibilitychange', onVisibility);
+            window.addEventListener('pc-visibility', onVisibility);
+            const retryStream = () => {{
+                if (switching) return;
+                saveProgress();
+                retryPosition = art.currentTime || retryPosition;
+                const url = new URL(art.url || container.dataset.hlsUrl);
+                url.searchParams.set('seconds', String(Math.floor(retryPosition)));
+                art.pause();
+                attachHls(art.template.$video, url.toString());
+                showStatus('Переподключение…');
+            }};
+            retryButton.addEventListener('click', retryStream);
+            const switchSource = url => new Promise((resolve,reject) => {{
+                switching=true;
+                art.pause();
+                const ready=() => finish();
+                const finish=error => {{
+                    clearTimeout(timer);
+                    video.removeEventListener('loadedmetadata',ready);
+                    failSwitch=null;
+                    switching=false;
+                    if(error) reject(error); else resolve();
+                }};
+                const timer=setTimeout(() => finish(new Error('Поток не подготовлен за 40 секунд')),40000);
+                failSwitch=finish;
+                video.addEventListener('loadedmetadata',ready,{{once:true}});
+                try {{ art.url=url; }} catch(error) {{ finish(error); }}
+            }});
             const topbar = document.createElement('div');
             topbar.className = 'pc-player-topbar';
             const addSelect = (className, label) => {{
@@ -551,15 +774,18 @@ fn App() -> Element {
                 const match = item.name.match(/\bS(\d{{1,2}})E(\d{{1,3}})\b/i);
                 return {{ ...item, season: match ? Number(match[1]) : 1, episode: match ? Number(match[2]) : index + 1 }};
             }});
+            let seasonSelect = null;
+            let episodeSelect = null;
+            let selectedSeason = parsedEpisodes.find(item => item.id === currentFileId)?.season ?? 1;
+            let fillEpisodes = () => {{}};
             if (episodes.length > 1) {{
                 const seasons = [...new Set(parsedEpisodes.map(item => item.season))];
-                let selectedSeason = parsedEpisodes.find(item => item.current)?.season ?? seasons[0];
-                let seasonSelect = null;
-                const episodeSelect = addSelect('pc-episode', 'Выбор серии');
-                const fillEpisodes = () => {{
+                selectedSeason = parsedEpisodes.find(item => item.id === currentFileId)?.season ?? seasons[0];
+                episodeSelect = addSelect('pc-episode', 'Выбор серии');
+                fillEpisodes = () => {{
                     const choices = parsedEpisodes.filter(item => item.season === selectedSeason);
-                    episodeSelect.replaceChildren(...choices.map(item => new Option(`Серия ${{item.episode}}`, String(item.id), false, item.current)));
-                    if (!choices.some(item => item.current)) episodeSelect.value = String(choices[0]?.id ?? '');
+                    episodeSelect.replaceChildren(...choices.map(item => new Option(`Серия ${{item.episode}}`, String(item.id), false, item.id === currentFileId)));
+                    if (!choices.some(item => item.id === currentFileId)) episodeSelect.value = String(choices[0]?.id ?? '');
                 }};
                 if (seasons.length > 1) {{
                     seasonSelect = addSelect('pc-season', 'Выбор сезона');
@@ -569,67 +795,233 @@ fn App() -> Element {
                 }}
                 fillEpisodes();
                 episodeSelect.addEventListener('change', () => {{
+                    if (switching) {{ fillEpisodes(); return; }}
                     const fileId = Number(episodeSelect.value);
-                    if (!parsedEpisodes.find(item => item.id === fileId)?.current) dioxus.send({{ kind: 'episode', file_id: fileId }});
+                    if (fileId !== currentFileId && canStart()) {{ saveProgress(); dioxus.send({{ kind: 'episode', file_id: fileId, source_file_id: currentFileId,auto_next:autoNext }}); }}
                 }});
             }}
             const audioSelect = addSelect('pc-audio', 'Выбор озвучки');
             audioSelect.append(new Option('Озвучка…', ''));
             art.template.$player.append(topbar);
+            const autoLabel = document.createElement('label');
+            autoLabel.className='pc-auto-next';
+            const autoCheck=document.createElement('input');
+            autoCheck.type='checkbox'; autoCheck.checked=autoNext;
+            autoLabel.append(autoCheck, ' Автопереход');
+            if (episodes.length > 1) topbar.append(autoLabel);
+            autoCheck.addEventListener('change', () => {{ autoNext=autoCheck.checked; dioxus.send({{kind:'auto_next',active:autoNext}}); }});
+            const nextButton = document.createElement('button');
+            nextButton.className = 'pc-next-episode';
+            nextButton.type = 'button';
+            nextButton.textContent = 'Следующая серия';
+            nextButton.setAttribute('aria-label', 'Следующая серия');
+            art.template.$player.append(nextButton);
+            const updateNextButton = () => {{
+                const duration = art.duration;
+                const remaining = duration - art.currentTime;
+                nextButton.style.display = !switching && nextEpisodeId !== null && Number.isFinite(duration) && duration > 0 && remaining > 0 && remaining <= 120 ? 'block' : 'none';
+                if (nextEpisodeId !== null && window.PiratePlayerState.shouldPrepare(remaining, bufferedAhead(), canStart(), preparedFile === nextEpisodeId)) {{
+                    preparedFile=nextEpisodeId;
+                    const probe = new URL(container.dataset.probeUrl);
+                    probe.searchParams.set('index', String(nextEpisodeId));
+                    fetch(probe, {{signal:AbortSignal.timeout(4000)}}).catch(() => {{}});
+                }}
+            }};
+            art.template.$video.addEventListener('timeupdate', updateNextButton);
+            art.template.$video.addEventListener('durationchange', updateNextButton);
+            nextButton.addEventListener('click', () => {{
+                if (switching || !canStart() || nextEpisodeId === null) return;
+                saveProgress();
+                dioxus.send({{ kind: 'episode', file_id: nextEpisodeId, source_file_id: currentFileId, resume: false,auto_next:autoNext }});
+            }});
             requestAnimationFrame(() => {{
+                if (!canStart()) return;
                 window.focus();
                 container.scrollIntoView({{ block: 'start', behavior: 'smooth' }});
                 container.tabIndex = -1;
                 container.focus({{ preventScroll: true }});
             }});
             art.on('fullscreen', active => dioxus.send({{ kind: 'fullscreen', active }}));
-            art.on('video:ended', () => dioxus.send({{ kind: 'ended' }}));
+            art.on('video:ended', () => {{
+                saveProgress();
+                if (!switching && autoNext) {{
+                    if (canStart()) dioxus.send({{ kind: 'ended', source_file_id: currentFileId,auto_next:autoNext }});
+                    else pendingEnd=true;
+                }}
+            }});
+            audioSelect.addEventListener('change', () => {{
+                if (switching) return;
+                saveProgress();
+                const track = audioTracks.find(track => String(track.Index) === audioSelect.value);
+                if (track && !restoringAudio) {{
+                    audioPreference={{language:track.Language || '',title:track.Title || ''}};
+                    dioxus.send({{kind:'audio_preference',...audioPreference}});
+                }}
+                selectedAudio=audioSelect.value;
+                restoringAudio=false;
+                const next = new URL(container.dataset.hlsUrl);
+                next.searchParams.set('audio', audioSelect.value);
+                next.searchParams.set('seconds', String(Math.floor(art.currentTime || 0)));
+                switchSource(next.toString())
+                    .catch(error => {{ if(window.__pirateCinemaArt !== art) return; showStatus(String(error),true); dioxus.send({{ kind: 'error', message: String(error) }}); }});
+            }});
             const loadAudioTracks = async () => {{
+                const probeUrl = container.dataset.probeUrl;
                 for (let attempt = 0; attempt < 4; attempt++) {{
                     try {{
-                        const response = await fetch(container.dataset.probeUrl);
+                        const response = await fetch(probeUrl, {{signal:AbortSignal.timeout(5000)}});
                         const info = response.ok ? await response.json() : null;
+                        if (window.__pirateCinemaArt !== art || probeUrl !== container.dataset.probeUrl) return;
                         const tracks = (info?.Tracks || []).filter(track => String(track.Type).toLowerCase() === 'audio');
                         if (!tracks.length) throw new Error('audio tracks unavailable');
+                        audioTracks=tracks.map((track,index) => ({{...track,Index:track.Index ?? index}}));
                         audioSelect.replaceChildren(...tracks.map((track, index) => new Option(
                             [track.Title, track.Language, track.Channels ? `${{track.Channels}} ch` : ''].filter(Boolean).join(' · ') || `Дорожка ${{index + 1}}`,
                             String(track.Index ?? index)
                         )));
-                        audioSelect.addEventListener('change', () => {{
-                            const next = new URL(container.dataset.hlsUrl);
-                            next.searchParams.set('audio', audioSelect.value);
-                            next.searchParams.set('seconds', String(Math.floor(art.currentTime || 0)));
-                            art.pause();
-                            art.switchUrl(next.toString()).catch(error => dioxus.send({{ kind: 'error', message: String(error) }}));
-                        }});
+                        const preferred=window.PiratePlayerState.preferredTrack(audioTracks,audioPreference);
+                        if (preferred >= 0) {{
+                            audioSelect.value=String(audioTracks[preferred].Index);
+                            if (selectedAudio !== audioSelect.value && !switching) {{ restoringAudio=true; audioSelect.dispatchEvent(new Event('change')); }}
+                        }}
                         return;
                     }} catch (_) {{
                         if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 2000));
                     }}
                 }}
+                if (window.__pirateCinemaArt !== art || probeUrl !== container.dataset.probeUrl) return;
                 audioSelect.replaceChildren(new Option('Озвучка недоступна', ''));
                 audioSelect.disabled = true;
             }};
+            window.__pirateCinemaSwitch = async (fileId, followingId) => {{
+                switching = true;
+                pendingEnd=false;
+                clearLocalSubtitle();
+                subtitleTracks=[];
+                updateSubtitles();
+                selectedAudio=null;
+                retryPosition=0;
+                preparedFile=null;
+                currentFileId = fileId;
+                nextEpisodeId = followingId;
+                nextButton.style.display = 'none';
+                const current = parsedEpisodes.find(item => item.id === fileId);
+                if (current && episodeSelect) {{
+                    selectedSeason = current.season;
+                    if (seasonSelect) seasonSelect.value = String(selectedSeason);
+                    fillEpisodes();
+                }}
+                audioSelect.disabled = false;
+                audioSelect.replaceChildren(new Option('Озвучка…', ''));
+                try {{
+                    await switchSource(container.dataset.hlsUrl);
+                    void loadAudioTracks();
+                }} catch (error) {{
+                    if(window.__pirateCinemaArt !== art) return;
+                    showStatus(String(error),true);
+                    dioxus.send({{ kind: 'error', message: String(error) }});
+                }} finally {{
+                    switching = false;
+                }}
+            }};
             void loadAudioTracks();
-            while (document.contains(container) && container.dataset.playbackKey === key) {{
+            const dispose = () => {{
+                document.removeEventListener('visibilitychange',onVisibility);
+                window.removeEventListener('pc-visibility',onVisibility);
+                clearLocalSubtitle();
+                if(failSwitch) failSwitch(new Error('Плеер закрыт'));
+            }};
+            window.__pirateCinemaDispose=dispose;
+            while (document.contains(container) && window.__pirateCinemaArt === art) {{
                 await new Promise(resolve => setTimeout(resolve, 5000));
-                fetch(container.dataset.heartbeatUrl).catch(() => {{}});
-                dioxus.send({{ kind: 'progress', position: art.currentTime || 0, duration: art.duration || 0 }});
-                if (video.ended) break;
+                fetch(container.dataset.heartbeatUrl, {{signal:AbortSignal.timeout(4000)}}).then(async response => {{
+                    if (!response.ok || status.hidden || !retryButton.hidden) return;
+                    const state=await response.json();
+                    if ((state.active_peers ?? state.ActivePeers) === 0) showStatus('Поиск пиров…');
+                }}).catch(() => {{}});
+                saveProgress();
             }}
-            if (window.__pirateCinemaHls === hls) window.__pirateCinemaHls = null;
-            if (window.__pirateCinemaArt === art) window.__pirateCinemaArt = null;
-            if (hls) hls.destroy();
-            art.destroy();
+            dispose();
+            if (window.__pirateCinemaArt === art) {{
+                window.__pirateCinemaArt = null;
+                window.__pirateCinemaSwitch = null;
+                window.__pirateCinemaTorrent = null;
+                window.__pirateCinemaContainer = null;
+                window.__pirateCinemaSave = null;
+                window.__pirateCinemaSnapshot = null;
+                window.__pirateCinemaDispose = null;
+                if (window.__pirateCinemaHls === hls) window.__pirateCinemaHls = null;
+                if (hls) hls.destroy();
+                art.destroy();
+            }}
             "#,
             hls_js = HLS_JS,
             artplayer_js = ARTPLAYER_JS,
-            episodes = episodes
+            episodes = episodes,
+            next_episode_id = next_episode_id,
+            torrent_hash = torrent_hash,
+            current_file_id = current_file_id,
+            player_state_js = PLAYER_STATE_JS,
+            audio_preference = audio_preference,
+            auto_next = auto_next
         );
         let player_window = desktop.clone();
         spawn(async move {
             let mut eval = document::eval(&script);
             while let Ok(value) = eval.recv::<serde_json::Value>().await {
+                let Some(current_playback) = web_player.read().clone() else {
+                    break;
+                };
+                if current_playback.torrent.hash != playback.torrent.hash {
+                    break;
+                }
+                let playback = current_playback;
+                if value.get("kind").and_then(|item| item.as_str()) == Some("audio_preference") {
+                    if let Ok(path) = history_path() {
+                        if let Ok(history) = HistoryStore::open(&path) {
+                            let _ = history.save_web_audio_preference(
+                                &playback.torrent.hash,
+                                value
+                                    .get("language")
+                                    .and_then(|item| item.as_str())
+                                    .unwrap_or(""),
+                                value
+                                    .get("title")
+                                    .and_then(|item| item.as_str())
+                                    .unwrap_or(""),
+                            );
+                        }
+                    }
+                    continue;
+                }
+                if value.get("kind").and_then(|item| item.as_str()) == Some("auto_next") {
+                    if let Ok(path) = history_path() {
+                        if let Ok(history) = HistoryStore::open(&path) {
+                            if let Ok(mut preferences) =
+                                history.playback_preferences(&playback.torrent.hash)
+                            {
+                                preferences.auto_next = value
+                                    .get("active")
+                                    .and_then(|item| item.as_bool())
+                                    .unwrap_or(false);
+                                let _ = history.save_playback_preferences(
+                                    &playback.torrent.hash,
+                                    &preferences,
+                                );
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if matches!(
+                    value.get("kind").and_then(|item| item.as_str()),
+                    Some("episode" | "ended")
+                ) && (busy()
+                    || value.get("source_file_id").and_then(|item| item.as_i64())
+                        != Some(playback.file.id))
+                {
+                    continue;
+                }
                 if value.get("kind").and_then(|item| item.as_str()) == Some("fullscreen") {
                     player_window.set_fullscreen(
                         value
@@ -664,9 +1056,15 @@ fn App() -> Element {
                             PendingPlayback {
                                 torrent: playback.torrent.clone(),
                                 file,
-                                resume: true,
+                                resume: value
+                                    .get("resume")
+                                    .and_then(|item| item.as_bool())
+                                    .unwrap_or(true),
                                 queue: playback.queue.clone(),
-                                auto_next: playback.auto_next,
+                                auto_next: value
+                                    .get("auto_next")
+                                    .and_then(|item| item.as_bool())
+                                    .unwrap_or(playback.auto_next),
                                 force_mpv: false,
                             },
                             endpoint(),
@@ -675,12 +1073,15 @@ fn App() -> Element {
                             web_player,
                             server,
                         );
-                        break;
                     }
                     continue;
                 }
                 if value.get("kind").and_then(|item| item.as_str()) == Some("ended") {
-                    if playback.auto_next {
+                    if value
+                        .get("auto_next")
+                        .and_then(|item| item.as_bool())
+                        .unwrap_or(playback.auto_next)
+                    {
                         if let Some(file) = playback
                             .queue
                             .iter()
@@ -705,7 +1106,10 @@ fn App() -> Element {
                             );
                         }
                     }
-                    break;
+                    continue;
+                }
+                if value.get("file_id").and_then(|item| item.as_i64()) != Some(playback.file.id) {
+                    continue;
                 }
                 let position = value
                     .get("position")
@@ -960,7 +1364,8 @@ fn App() -> Element {
         if web_player.read().as_ref().is_some_and(|playback| {
             playback.torrent.hash == torrent.hash && playback.file.id == file.id
         }) {
-            server.write().error = "Этот файл уже открыт во встроенном плеере".into();
+            return_page.set(page());
+            page.set(Page::Player);
             return;
         }
         if let Some(session) = players
@@ -1214,10 +1619,15 @@ fn App() -> Element {
                     }
                 }
                 if let Some(playback) = web_player() {
-                    div { class: "web-player",
+                    div { class: if page() == Page::Player { "web-player" } else { "web-player mini" },
                         header {
                             strong { title: "{playback.file.name}", "{playback.file.name}" }
-                            button { class: "secondary", onclick: move |_| web_player.set(None), {language().pick("Закрыть", "Close")} }
+                            if page() != Page::Player {
+                                button { class: "secondary", onclick: move |_| { return_page.set(page()); page.set(Page::Player); }, {language().pick("Развернуть", "Expand")} }
+                            } else {
+                                button { class: "secondary", onclick: move |_| page.set(return_page()), {language().pick("Свернуть", "Minimize")} }
+                            }
+                            button { class: "secondary", onclick: move |_| { spawn(async move { flush_web_progress().await; web_player.set(None); if page() == Page::Player { page.set(return_page()); } }); }, {language().pick("Закрыть", "Close")} }
                         }
                         div {
                             class: "artplayer-host",
@@ -1235,6 +1645,7 @@ fn App() -> Element {
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
                     Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
                     Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
+                    Page::Player => rsx! { h1 { {language().pick("Просмотр", "Now playing")} } },
                     Page::Settings => rsx! { Settings { language, endpoint, busy, server, cards, recent, metadata_status, online_icon: online_icon.clone(), on_sync: sync_metadata } },
                 }
             }
@@ -1815,6 +2226,21 @@ fn Settings(
     let mut update_status = use_signal(String::new);
     let mut update_url = use_signal(String::new);
     let mut available_update = use_signal(|| None::<ReleaseUpdate>);
+    let window = dioxus::desktop::use_window();
+    let exit_fullscreen = move |_| {
+        window.set_fullscreen(false);
+        spawn(async move {
+            let mut eval = document::eval(
+                r#"
+                const art = window.__pirateCinemaArt;
+                if (art) { art.fullscreen = false; art.fullscreenWeb = false; }
+                if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+                dioxus.send(true);
+            "#,
+            );
+            let _ = eval.recv::<bool>().await;
+        });
+    };
 
     let save = move |_| {
         let next = Preferences {
@@ -2050,6 +2476,7 @@ fn Settings(
                         {language().pick(" Воспроизводить внутри приложения через HLS", " Play inside the application over HLS")}
                     }
                 }
+                button { class: "secondary", onclick: exit_fullscreen, {language().pick("Выйти из полноэкранного режима", "Exit fullscreen")} }
                 div { class: "setting-row",
                     span { {language().pick("При закрытии", "When closing")} }
                     div { class: "stacked-options",
@@ -2560,6 +2987,26 @@ fn open_external_url(url: &str) -> Result<(), String> {
         .map_err(|error| format!("Не удалось открыть браузер: {error}"))
 }
 
+async fn flush_web_progress() {
+    let mut eval = document::eval("dioxus.send(window.__pirateCinemaSnapshot?.() || null);");
+    if let Ok(Ok(value)) =
+        tokio::time::timeout(Duration::from_millis(700), eval.recv::<serde_json::Value>()).await
+    {
+        if let (Some(hash), Some(file_id), Some(position), Some(duration)) = (
+            value.get("hash").and_then(|value| value.as_str()),
+            value.get("file_id").and_then(|value| value.as_i64()),
+            value.get("position").and_then(|value| value.as_f64()),
+            value.get("duration").and_then(|value| value.as_f64()),
+        ) {
+            if let Ok(path) = history_path() {
+                if let Ok(history) = HistoryStore::open(&path) {
+                    let _ = history.save_progress(hash, file_id, position as i64, duration as i64);
+                }
+            }
+        }
+    }
+}
+
 fn launch_playback(
     request: PendingPlayback,
     endpoint: String,
@@ -2568,6 +3015,11 @@ fn launch_playback(
     mut web_player: Signal<Option<WebPlayback>>,
     mut server: Signal<ServerState>,
 ) {
+    let window = dioxus::desktop::window();
+    if window.window.is_minimized() || !window.window.is_visible() {
+        server.write().error = "Восстановите окно приложения, чтобы начать воспроизведение".into();
+        return;
+    }
     let PendingPlayback {
         torrent,
         file,
@@ -2578,6 +3030,7 @@ fn launch_playback(
     } = request;
     busy.set(true);
     spawn(async move {
+        flush_web_progress().await;
         let player_torrent = torrent.clone();
         let player_file = file.clone();
         let web_queue = queue.clone();
@@ -2593,6 +3046,9 @@ fn launch_playback(
                     .map_err(|error| format!("Поток пока недоступен: {error}"))?;
             }
             if preferences.player_type == PlayerType::External {
+                if !PLAYBACK_VISIBLE.load(Ordering::Acquire) {
+                    return Err("Воспроизведение не запущено: окно свёрнуто".into());
+                }
                 settings::validate_player(preferences.player_type, &preferences.player_path)?;
                 let url = stream_url(&endpoint, &torrent.hash, &file)?;
                 std::process::Command::new(preferences.player_path.trim())
@@ -2645,6 +3101,9 @@ fn launch_playback(
                     heartbeat_url,
                     position,
                 }));
+            }
+            if !PLAYBACK_VISIBLE.load(Ordering::Acquire) {
+                return Err("Воспроизведение не запущено: окно свёрнуто".into());
             }
             MpvSession::launch(
                 &mpv::bundled_executable()?,
@@ -2729,6 +3188,7 @@ fn ensure_gstreamer(endpoint: &str) -> Result<(), String> {
         "TranscodeAVI",
         "HDRToSDR",
         "X264Ultrafast",
+        "Subtitles",
     ] {
         if config.get(name).and_then(|value| value.as_bool()) != Some(true) {
             config.insert(name.into(), serde_json::Value::Bool(true));
@@ -3095,6 +3555,14 @@ fn is_episode(path: &str) -> bool {
     file_season(path).is_some() || file_episode(path).is_some()
 }
 
+fn next_episode(queue: &[VideoFile], current_id: i64) -> Option<&VideoFile> {
+    let position = queue.iter().position(|file| file.id == current_id)?;
+    is_episode(&queue[position].path).then_some(())?;
+    queue[position + 1..]
+        .iter()
+        .find(|file| is_episode(&file.path))
+}
+
 fn infer_series(title: &str, files: &[VideoFile]) -> bool {
     let episodic = files.iter().filter(|file| is_episode(&file.path)).count();
     episodic > 1
@@ -3107,8 +3575,8 @@ fn infer_series(title: &str, files: &[VideoFile]) -> bool {
 mod tests {
     use super::{
         file_episode, file_season, gstreamer_hls_url, history_path, infer_series, metadata_queries,
-        missing_metadata_torrents, release_quality, short_hash, sync_library_metadata,
-        use_web_player, uses_raw_stream_probe, LibraryCard,
+        missing_metadata_torrents, next_episode, release_quality, short_hash,
+        sync_library_metadata, use_web_player, uses_raw_stream_probe, LibraryCard,
     };
     use pirate_cinema_core::{history::HistoryStore, settings::PlayerType, Torrent, VideoFile};
 
@@ -3150,6 +3618,23 @@ mod tests {
         assert_eq!(release_quality("Movie.1080i.HDTV"), "1080p");
         assert_eq!(release_quality("Movie.720p.WEB-DL"), "720p");
         assert_eq!(release_quality("Movie.DVDRip"), "Другое");
+    }
+
+    #[test]
+    fn next_episode_skips_movies_and_stops_after_the_last_episode() {
+        let files = ["Show.S01E01.mkv", "Film.mkv", "Show.S01E02.mkv"]
+            .into_iter()
+            .enumerate()
+            .map(|(id, path)| VideoFile {
+                id: id as i64,
+                name: path.into(),
+                path: path.into(),
+                length: 1,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(next_episode(&files, 0).map(|file| file.id), Some(2));
+        assert!(next_episode(&files, 1).is_none());
+        assert!(next_episode(&files, 2).is_none());
     }
 
     #[test]

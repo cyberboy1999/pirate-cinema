@@ -13,7 +13,7 @@ Unicode true
   !error "Pass /DAPP_ICON=... with the application icon"
 !endif
 
-Name "Pirate Cinema 0.7.3"
+Name "Pirate Cinema 0.7.4"
 OutFile "${APP_OUTPUT}"
 InstallDir "$PROGRAMFILES64\Pirate Cinema"
 RequestExecutionLevel admin
@@ -23,13 +23,13 @@ ShowInstDetails nevershow
 ShowUninstDetails nevershow
 Icon "${APP_ICON}"
 UninstallIcon "${APP_ICON}"
-VIProductVersion "0.7.3.0"
+VIProductVersion "0.7.4.0"
 VIAddVersionKey "ProductName" "Pirate Cinema"
 VIAddVersionKey "FileDescription" "Pirate Cinema installer"
-VIAddVersionKey "FileVersion" "0.7.3.0"
+VIAddVersionKey "FileVersion" "0.7.4.0"
 VIAddVersionKey "LegalCopyright" "Pirate Cinema contributors"
 
-!define MUI_WELCOMEPAGE_TEXT "Pirate Cinema 0.7.3. Existing media history and TorrServer data remain in place during the update."
+!define MUI_WELCOMEPAGE_TEXT "Pirate Cinema 0.7.4. Existing media history and TorrServer data remain in place during the update."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -95,7 +95,7 @@ Section "Pirate Cinema" SEC_APP
   CreateShortcut "$DESKTOP\Pirate Cinema.lnk" "$INSTDIR\pirate-cinema.exe" "" "$INSTDIR\pirate-cinema.ico"
   CreateShortcut "$SMPROGRAMS\Pirate Cinema.lnk" "$INSTDIR\pirate-cinema.exe" "" "$INSTDIR\pirate-cinema.ico"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "DisplayName" "Pirate Cinema"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "DisplayVersion" "0.7.3"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "DisplayVersion" "0.7.4"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PirateCinema" "UninstallString" "$\"$INSTDIR\Uninstall Pirate Cinema.exe$\""
   WriteRegStr HKCU "Software\Classes\magnet" "" "URL:Magnet link"
