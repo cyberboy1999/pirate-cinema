@@ -20,6 +20,24 @@ Pirate Cinema — локальное настольное приложение �
 
 Все пользовательские данные остаются на компьютере. Pirate Cinema обращается к Cinemeta, Wikipedia и TVmaze только за общедоступными названиями, описаниями и изображениями; история просмотра им не передаётся.
 
+## Как устроено приложение
+
+- **Rust и Dioxus Desktop** — интерфейс и основная логика;
+- **TorrServer GST** — локальное получение и потоковая передача торрентов;
+- **MPV** — воспроизведение видео и отслеживание прогресса через IPC;
+- **SQLite** — локальная история просмотра и метаданные медиатеки;
+- **WebView2** — отображение интерфейса на Windows;
+- **Cinemeta, Wikipedia и TVmaze** — публичные описания и постеры;
+- **Jackett/Prowlarr** — необязательный пользовательский источник поиска через Torznab.
+
+```text
+Dioxus UI -> Rust Core -> TorrServer -> видеопоток -> MPV
+                     \-> SQLite
+                     \-> сервисы метаданных
+```
+
+Windows-установщик содержит Pirate Cinema, MPV, необходимые библиотеки и только GST-версию TorrServer. Linux-пакеты используют системные MPV и FFmpeg. Пользовательские базы, настройки и кэш в пакеты не входят. Лицензии комплектных компонентов находятся в [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
 ## Установка 0.6.0
 
 Готовые пакеты находятся в [последнем релизе](https://github.com/cyberboy1999/pirate-cinema/releases/latest). Все сборки предназначены для 64-битных систем.
@@ -80,6 +98,24 @@ Pirate Cinema is a local Rust desktop application for searching, adding, and str
 - Russian and English interfaces.
 
 Playback history stays on the computer. Cinemeta, Wikipedia, and TVmaze receive only public metadata queries, never the local history database.
+
+### How the application works
+
+- **Rust and Dioxus Desktop** provide the interface and application logic;
+- **TorrServer GST** retrieves torrents locally and exposes their video streams;
+- **MPV** plays video and reports progress over IPC;
+- **SQLite** stores local playback history and library metadata;
+- **WebView2** renders the interface on Windows;
+- **Cinemeta, Wikipedia, and TVmaze** provide public descriptions and posters;
+- **Jackett/Prowlarr** is an optional user-configured search source through Torznab.
+
+```text
+Dioxus UI -> Rust Core -> TorrServer -> video stream -> MPV
+                     \-> SQLite
+                     \-> metadata services
+```
+
+The Windows installer contains Pirate Cinema, MPV, required libraries, and only the GST build of TorrServer. Linux packages use system MPV and FFmpeg. User databases, preferences, and caches are never included. Bundled component licenses are listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ### Installing 0.6.0
 
