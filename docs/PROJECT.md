@@ -19,7 +19,7 @@ complexity; then record only durable, confirmed new knowledge. Current source
 and project rules override memory. The repository keeps shared project memory;
 Codex session context remains local and is not committed.
 
-Latest published release: 0.7.4; 0.7.5 is being prepared. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest published release: 0.7.5. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 Release notes for 0.7.2 are kept in `docs/RELEASE_0.7.2.md`; the tag workflow requires that file when publishing the GitHub release.
 
