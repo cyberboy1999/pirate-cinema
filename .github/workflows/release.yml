@@ -22,6 +22,7 @@ jobs:
           node desktop-rust/tests/player-state.cjs
           node desktop-rust/tests/player-switch.cjs
           node desktop-rust/tests/player-controller.cjs
+          node desktop-rust/tests/diagnostics-copy.cjs
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -36,8 +37,6 @@ jobs:
           New-Item vendor/mpv,desktop-rust/vendor/torrserver -ItemType Directory -Force | Out-Null
           Copy-Item bootstrap/resources/mpv/* vendor/mpv -Recurse -Force
           Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile vc_redist.x64.exe
-          Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe
-          if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne '3B68BA9409C009628BBF747A14C13F2DA4254389264A0B3903E581E897492569') { throw 'TorrServer hash mismatch' }
           Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-gst-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-gst-windows-amd64.exe
           if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-gst-windows-amd64.exe -Algorithm SHA256).Hash -ne 'EA092A6CA2D98188F6CC1FB2BC1F45A396FE91EFF397A3CE82EDE88E9C4304D5') { throw 'TorrServer GST hash mismatch' }
           if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
@@ -54,7 +53,6 @@ jobs:
           New-Item stage/mpv,stage/torrserver -ItemType Directory -Force | Out-Null
           Copy-Item desktop-rust/target/release/pirate-cinema.exe stage/
           Copy-Item vendor/mpv/* stage/mpv -Recurse
-          Copy-Item desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe stage/torrserver/
           Copy-Item desktop-rust/vendor/torrserver/TorrServer-gst-windows-amd64.exe stage/torrserver/
           Copy-Item vc_redist.x64.exe stage/
           Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md stage/
@@ -78,6 +76,7 @@ jobs:
           node desktop-rust/tests/player-state.cjs
           node desktop-rust/tests/player-switch.cjs
           node desktop-rust/tests/player-controller.cjs
+          node desktop-rust/tests/diagnostics-copy.cjs
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)" = "$GITHUB_REF_NAME"

@@ -28,11 +28,13 @@ use std::time::Duration;
 static STARTUP_MAGNET: OnceLock<String> = OnceLock::new();
 static INITIAL_PREFERENCES: OnceLock<Preferences> = OnceLock::new();
 static TORRSERVER_PROCESS: OnceLock<Mutex<Option<TorrServerProcess>>> = OnceLock::new();
+static TORRSERVER_STARTING: AtomicBool = AtomicBool::new(false);
+static TORRSERVER_GENERATION: AtomicUsize = AtomicUsize::new(0);
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static METADATA_SYNC_ACTIVE: AtomicBool = AtomicBool::new(false);
 static PLAYBACK_VISIBLE: AtomicBool = AtomicBool::new(true);
 static STARTUP_MIGRATION_ERROR: OnceLock<String> = OnceLock::new();
-static STARTUP_TORRSERVER_ERROR: OnceLock<String> = OnceLock::new();
+static STARTUP_TORRSERVER_ERROR: Mutex<Option<String>> = Mutex::new(None);
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const APP_ICON: &[u8] = include_bytes!("../../../public/favicon.png");
 const HOME_ICON: &[u8] = include_bytes!(
@@ -83,6 +85,7 @@ button { color: inherit; cursor: pointer; }
 .status img{width:21px;height:21px;object-fit:contain;filter:invert(78%) sepia(29%) saturate(725%) hue-rotate(91deg);}
 .status.offline{color:#ef6464}
 .status.offline img{filter:invert(48%) sepia(92%) saturate(1088%) hue-rotate(323deg) brightness(100%)}
+.server-control{justify-self:end;display:grid;justify-items:end;gap:5px}.server-restart{background:transparent;border:0;padding:2px 0;color:#999;font-size:12px}.server-restart:hover{color:#fff}.server-restart:disabled{opacity:.45;cursor:default}
 .page { margin-top: 48px; }
 .eyebrow { color: #747474; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
 h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
@@ -155,6 +158,33 @@ struct ServerState {
     version: String,
     torrents: Vec<Torrent>,
     error: String,
+}
+
+impl ServerState {
+    fn restart_failed(&mut self, error: String) {
+        self.version.clear();
+        self.error = error;
+    }
+
+    fn apply_health(&mut self, result: Result<String, String>, requested: usize, current: usize) {
+        if requested != current {
+            return;
+        }
+        match result {
+            Ok(version) => {
+                self.version = version;
+                if self.error.starts_with("TorrServer офлайн: ") {
+                    self.error.clear();
+                }
+            }
+            Err(error) => {
+                self.version.clear();
+                if self.error.is_empty() {
+                    self.error = format!("TorrServer офлайн: {error}");
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -247,12 +277,21 @@ fn main() {
         .ok()
         .and_then(|path| settings::load_preferences(&path).ok())
         .unwrap_or_else(default_preferences);
+    if preferences.torrserver_url.trim_end_matches('/') == "http://127.0.0.1:8090" {
+        preferences.torrserver_url = DEFAULT_TORRSERVER_URL.to_owned();
+        if let Ok(path) = settings_path() {
+            if let Err(error) = settings::save_preferences(&path, &preferences) {
+                eprintln!("Не удалось сохранить новый порт TorrServer: {error}");
+            }
+        }
+    }
     let endpoint =
         std::env::var("TORRSERVER_URL").unwrap_or_else(|_| preferences.torrserver_url.clone());
     preferences.torrserver_url = endpoint.clone();
     let close_to_tray = preferences.close_to_tray;
     let _ = INITIAL_PREFERENCES.set(preferences);
     let _ = TORRSERVER_PROCESS.set(Mutex::new(None));
+    TORRSERVER_STARTING.store(true, Ordering::Release);
     std::thread::spawn(move || {
         let result = bundled_torrserver()
             .and_then(|executable| default_data_dir().map(|data_dir| (executable, data_dir)))
@@ -267,14 +306,19 @@ fn main() {
                 }
                 if let Some(state) = TORRSERVER_PROCESS.get() {
                     if let Ok(mut owned) = state.lock() {
-                        *owned = Some(process);
+                        if !SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                            *owned = Some(process);
+                        }
                     }
                 }
             }
             Err(error) => {
-                let _ = STARTUP_TORRSERVER_ERROR.set(error);
+                if let Ok(mut state) = STARTUP_TORRSERVER_ERROR.lock() {
+                    *state = Some(error);
+                }
             }
         }
+        TORRSERVER_STARTING.store(false, Ordering::Release);
     });
     let window_icon =
         dioxus::desktop::icon_from_memory::<dioxus::desktop::tao::window::Icon>(APP_ICON).ok();
@@ -1151,6 +1195,30 @@ fn App() -> Element {
     });
 
     use_future(move || async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if busy() || TORRSERVER_STARTING.load(Ordering::Acquire) {
+                continue;
+            }
+            let url = endpoint();
+            let target = url.clone();
+            let generation = TORRSERVER_GENERATION.load(Ordering::Acquire);
+            let result = tokio::task::spawn_blocking(move || {
+                pirate_cinema_core::torrserver_process::health_version(&target)
+            })
+            .await;
+            // Discard a health result that raced with a restart or endpoint change.
+            if endpoint() == url && !busy() && !TORRSERVER_STARTING.load(Ordering::Acquire) {
+                server.write().apply_health(
+                    result.unwrap_or_else(|error| Err(error.to_string())),
+                    generation,
+                    TORRSERVER_GENERATION.load(Ordering::Acquire),
+                );
+            }
+        }
+    });
+
+    use_future(move || async move {
         for _ in 0..20 {
             let missing = missing_metadata_torrents(&cards());
             if !missing.is_empty() {
@@ -1581,9 +1649,29 @@ fn App() -> Element {
                         }
                         button { r#type: "submit", disabled: busy(), if busy() { "…" } else { {language().pick("Найти", "Find")} } }
                     }
-                    div { class: if server.read().version.is_empty() { "status offline" } else { "status" },
+                    div { class: "server-control",
+                      div { class: if server.read().version.is_empty() { "status offline" } else { "status" },
                         img { src: "{online_icon}", alt: "" }
                         if server.read().version.is_empty() { {language().pick("TorrServer офлайн", "TorrServer offline")} } else { "TorrServer · {server.read().version}" }
+                      }
+                      button { class: "server-restart", disabled: busy(),
+                        title: language().pick("Перезапустить только сервер приложения; воспроизведение прервётся", "Restart only the application's server; playback will be interrupted"),
+                        onclick: move |_| {
+                            busy.set(true);
+                            server.write().version.clear();
+                            let url = endpoint();
+                            spawn(async move {
+                                let target = url.clone();
+                                let result = tokio::task::spawn_blocking(move || restart_torrserver(&target)).await;
+                                match result {
+                                    Ok(Ok(())) => refresh_server(url, busy, server, cards, recent),
+                                    Ok(Err(error)) => { server.write().restart_failed(error); busy.set(false); }
+                                    Err(error) => { server.write().restart_failed(error.to_string()); busy.set(false); }
+                                }
+                            });
+                        },
+                        {language().pick("Перезапустить", "Restart")}
+                      }
                     }
                 }
                 if !server.read().error.is_empty() { div { class: "notice", "{server.read().error}" } }
@@ -2198,8 +2286,8 @@ fn Detail(
 fn Settings(
     mut language: Signal<Language>,
     mut endpoint: Signal<String>,
-    busy: Signal<bool>,
-    server: Signal<ServerState>,
+    mut busy: Signal<bool>,
+    mut server: Signal<ServerState>,
     mut cards: Signal<Vec<LibraryCard>>,
     mut recent: Signal<Vec<ContinueItem>>,
     metadata_status: Signal<String>,
@@ -2221,6 +2309,8 @@ fn Settings(
     let mut status = use_signal(String::new);
     let mut maintenance_busy = use_signal(|| false);
     let mut diagnostics = use_signal(Vec::<String>::new);
+    let mut diagnostic_report = use_signal(String::new);
+    let mut copy_status = use_signal(String::new);
     let mut backup_status = use_signal(String::new);
     let mut restore_source = use_signal(|| None::<PathBuf>);
     let mut update_status = use_signal(String::new);
@@ -2286,6 +2376,8 @@ fn Settings(
         }
         maintenance_busy.set(true);
         diagnostics.set(vec!["Выполняем проверки…".into()]);
+        diagnostic_report.set(String::new());
+        copy_status.set(String::new());
         let endpoint_value = endpoint_edit();
         let selected_player = if external_player() {
             PlayerType::External
@@ -2298,10 +2390,13 @@ fn Settings(
                 system_diagnostics(&endpoint_value, selected_player, &selected_path)
             })
             .await;
-            diagnostics.set(match result {
-                Ok(items) => items,
-                Err(error) => vec![format!("✕ Диагностика: {error}")],
-            });
+            match result {
+                Ok((items, report)) => {
+                    diagnostics.set(items);
+                    diagnostic_report.set(report);
+                }
+                Err(error) => diagnostics.set(vec![format!("✕ Диагностика: {error}")]),
+            }
             maintenance_busy.set(false);
         });
     };
@@ -2537,12 +2632,37 @@ fn Settings(
                 if !metadata_status().is_empty() { div { class: "notice", "{metadata_status}" } }
                 div { class: "settings-actions",
                     button { class: "secondary", disabled: maintenance_busy(), onclick: run_diagnostics, {language().pick("Запустить диагностику", "Run diagnostics")} }
+                    button { class: "secondary", disabled: maintenance_busy() || busy(), onclick: move |_| {
+                        busy.set(true);
+                        server.write().version.clear();
+                        let url = endpoint();
+                        spawn(async move {
+                            let target = url.clone();
+                            let result = tokio::task::spawn_blocking(move || restart_torrserver(&target)).await;
+                            match result {
+                                Ok(Ok(())) => refresh_server(url, busy, server, cards, recent),
+                                Ok(Err(error)) => { server.write().restart_failed(error); busy.set(false); }
+                                Err(error) => { server.write().restart_failed(error.to_string()); busy.set(false); }
+                            }
+                        });
+                    }, {language().pick("Перезапустить TorrServer", "Restart TorrServer")} }
                     button { class: "secondary", disabled: maintenance_busy(), onclick: create_backup, {language().pick("Создать резервную копию", "Create backup")} }
                     button { class: "secondary", disabled: maintenance_busy(), onclick: choose_restore, {language().pick("Восстановить копию", "Restore backup")} }
                     button { class: "secondary", disabled: maintenance_busy(), onclick: check_update, {language().pick("Проверить обновления", "Check for updates")} }
                 }
                 div { class: "settings-output",
-                    if !diagnostics().is_empty() { div { class: "panel", for item in diagnostics() { div { "{item}" } } } }
+                    if !diagnostics().is_empty() { div { class: "panel", for item in diagnostics() { div { style: "white-space:pre-wrap;overflow-wrap:anywhere", "{item}" } } } }
+                    if !diagnostic_report().is_empty() {
+                        button { class: "secondary", onclick: move |_| {
+                            let text = serde_json::to_string(&diagnostic_report()).unwrap_or_default();
+                            spawn(async move {
+                                let mut eval = document::eval(&format!(r#"(async()=>{{const text={text}+'\nWebView UA: '+navigator.userAgent;let ok=false;try{{await navigator.clipboard.writeText(text);ok=true;}}catch(_){{const input=document.createElement('textarea');input.value=text;input.style.position='fixed';input.style.opacity='0';document.body.append(input);input.select();ok=document.execCommand('copy');input.remove();}}dioxus.send(ok);}})();"#));
+                                copy_status.set(if eval.recv::<bool>().await.unwrap_or(false) { "Отчёт скопирован".into() } else { "Не удалось скопировать отчёт".into() });
+                            });
+                        }, {language().pick("Скопировать диагностику", "Copy diagnostics")} }
+                        small { {language().pick("Без сырых логов, путей профиля, ключей и данных раздач", "No raw logs, profile paths, keys or torrent data")} }
+                    }
+                    if !copy_status().is_empty() { div { "{copy_status}" } }
                     if !backup_status().is_empty() { div { class: "notice", "{backup_status}" } }
                     if !update_status().is_empty() {
                         div { class: "notice", "{update_status}"
@@ -2639,7 +2759,11 @@ fn refresh_server(
             Ok(Err(error)) => ServerState {
                 version: String::new(),
                 torrents: Vec::new(),
-                error: STARTUP_TORRSERVER_ERROR.get().cloned().unwrap_or(error),
+                error: STARTUP_TORRSERVER_ERROR
+                    .lock()
+                    .ok()
+                    .and_then(|state| state.clone())
+                    .unwrap_or(error),
             },
             Err(error) => ServerState {
                 version: String::new(),
@@ -2836,10 +2960,62 @@ fn settings_path() -> Result<PathBuf, String> {
     Ok(root.join("settings.json"))
 }
 
+struct TorrServerOperation;
+
+impl TorrServerOperation {
+    fn begin() -> Result<Self, String> {
+        if TORRSERVER_STARTING.swap(true, Ordering::AcqRel) {
+            return Err("TorrServer занят запуском или обслуживанием; дождитесь окончания".into());
+        }
+        TORRSERVER_GENERATION.fetch_add(1, Ordering::AcqRel);
+        Ok(Self)
+    }
+}
+
+impl Drop for TorrServerOperation {
+    fn drop(&mut self) {
+        TORRSERVER_STARTING.store(false, Ordering::Release);
+    }
+}
+
+fn restart_torrserver(endpoint: &str) -> Result<(), String> {
+    let _operation = TorrServerOperation::begin()?;
+    let result = (|| {
+        let state = TORRSERVER_PROCESS
+            .get()
+            .ok_or("TorrServer ещё не инициализирован")?;
+        let executable = bundled_torrserver()?;
+        let data = default_data_dir()?;
+        // Keep only our child handle; never search for or kill unrelated processes.
+        let mut process = state
+            .lock()
+            .map_err(|_| "Состояние TorrServer повреждено")?
+            .take();
+        let result =
+            TorrServerProcess::restart_or_start(&mut process, endpoint, &executable, &data);
+        {
+            let mut owned = state
+                .lock()
+                .map_err(|_| "Состояние TorrServer повреждено")?;
+            if !SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                *owned = process;
+            }
+        }
+        if result.is_ok() {
+            if let Ok(mut error) = STARTUP_TORRSERVER_ERROR.lock() {
+                *error = None;
+            }
+        }
+        result
+    })();
+    result
+}
+
 fn while_owned_torrserver_stopped<T>(
     endpoint: &str,
     operation: impl FnOnce(Option<&std::path::Path>) -> Result<T, String>,
 ) -> Result<T, String> {
+    let _operation = TorrServerOperation::begin()?;
     let process_lock = TORRSERVER_PROCESS
         .get()
         .ok_or("Состояние TorrServer ещё не инициализировано")?;
@@ -2864,9 +3040,12 @@ fn while_owned_torrserver_stopped<T>(
     });
     match restart {
         Ok(process) => {
-            *process_lock
+            let mut owned = process_lock
                 .lock()
-                .map_err(|_| "Состояние TorrServer повреждено")? = Some(process);
+                .map_err(|_| "Состояние TorrServer повреждено")?;
+            if !SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                *owned = Some(process);
+            }
             result
         }
         Err(error) => Err(match result {
@@ -2903,14 +3082,64 @@ fn shutdown_owned_processes() {
     }
 }
 
-fn system_diagnostics(endpoint: &str, player_type: PlayerType, player_path: &str) -> Vec<String> {
+fn system_diagnostics(
+    endpoint: &str,
+    player_type: PlayerType,
+    player_path: &str,
+) -> (Vec<String>, String) {
     let mut checks = Vec::new();
+    let mut report = vec![format!(
+        "Pirate Cinema {VERSION}\nOS: {}\nArchitecture: {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )];
+    let owned_pid = TORRSERVER_PROCESS.get().and_then(|state| {
+        state
+            .lock()
+            .ok()
+            .and_then(|mut state| state.as_mut().and_then(TorrServerProcess::diagnostic_pid))
+    });
+    let port = port_diagnostics(owned_pid);
+    checks.push(port.clone());
+    report.push(port);
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(4)))
+        .build()
+        .into();
+    for route in ["/echo", "/gst/echo"] {
+        let result = agent
+            .get(format!("{}{route}", endpoint.trim_end_matches('/')))
+            .call();
+        let status = match result {
+            Ok(mut response) if route == "/gst/echo" => {
+                match response.body_mut().read_json::<serde_json::Value>() {
+                    Ok(value) => gst_diagnostic_status(&value),
+                    Err(_) => "✕ /gst/echo: отвечает, но ответ некорректен".into(),
+                }
+            }
+            Ok(_) => format!("✓ {route}: отвечает"),
+            Err(_) => format!("✕ {route}: не отвечает"),
+        };
+        checks.push(status.clone());
+        report.push(status);
+    }
+    let (local_launch, safe_launch) = pirate_cinema_core::torrserver_process::launch_diagnostics();
+    report.push(safe_launch);
     checks.push(match read_torrserver(endpoint) {
         Ok((version, torrents)) => {
+            report.push(format!(
+                "TorrServer version: {}",
+                version
+                    .chars()
+                    .filter(|character| character.is_ascii_digit() || *character == '.')
+                    .take(32)
+                    .collect::<String>()
+            ));
             format!("✓ TorrServer: {version} · раздач: {}", torrents.len())
         }
         Err(error) => format!("✕ TorrServer: {error}"),
     });
+    let technical_start = checks.len();
     checks.push(
         match history_path().and_then(|path| {
             HistoryStore::open(&path)
@@ -2944,7 +3173,77 @@ fn system_diagnostics(endpoint: &str, player_type: PlayerType, player_path: &str
             Err(error) => format!("✕ Cinemeta: {error}"),
         },
     );
-    checks
+    for (check, name) in
+        checks[technical_start..]
+            .iter()
+            .zip(["SQLite", "MPV", "Player configuration", "Cinemeta"])
+    {
+        report.push(format!(
+            "{name}: {}",
+            if check.starts_with('✓') {
+                "OK"
+            } else {
+                "failed"
+            }
+        ));
+    }
+    checks.extend(local_launch);
+    (checks, report.join("\n"))
+}
+
+fn gst_diagnostic_status(value: &serde_json::Value) -> String {
+    let gst = value["gstreamer"]["works"] == true;
+    let discoverer = value["gst_discoverer"]["works"] == true;
+    format!(
+        "{} /gst/echo: отвечает · GStreamer: {} · discoverer: {}",
+        if gst && discoverer { "✓" } else { "✕" },
+        if gst { "OK" } else { "не работает" },
+        if discoverer {
+            "OK"
+        } else {
+            "не работает"
+        }
+    )
+}
+
+fn port_diagnostics(owned_pid: Option<u32>) -> String {
+    #[cfg(windows)]
+    {
+        let mut command = std::process::Command::new("powershell.exe");
+        command.args(["-NoProfile", "-NonInteractive", "-Command", r#"$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.Encoding]::UTF8;try{$os=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion';Write-Output ('Windows build: '+$os.CurrentBuild+'.'+$os.UBR);$listeners=@(Get-NetTCPConnection -State Listen -LocalPort 8091 -ErrorAction SilentlyContinue);if(!$listeners){Write-Output 'Port 8091: no listener'}else{foreach($item in $listeners){$proc=Get-Process -Id $item.OwningProcess -ErrorAction SilentlyContinue;$name=if($proc.ProcessName -like 'TorrServer*'){'TorrServer'}else{'other'};$owner=if([string]$item.OwningProcess -eq $env:PC_OWNED_PID){'owned'}else{'external'};Write-Output ('Port 8091: PID '+$item.OwningProcess+' '+$name+' '+$owner)}}}catch{Write-Output 'Port/OS inspection failed'}"#])
+            .env("PC_OWNED_PID", owned_pid.map(|pid| pid.to_string()).unwrap_or_default())
+            .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+        if let Ok(mut child) = command.spawn() {
+            for _ in 0..80 {
+                if matches!(child.try_wait(), Ok(Some(_))) {
+                    return child
+                        .wait_with_output()
+                        .ok()
+                        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+                        .filter(|text| !text.is_empty())
+                        .unwrap_or_else(|| "Port inspection unavailable".into());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        "Port inspection timed out/unavailable".into()
+    }
+    #[cfg(not(windows))]
+    {
+        format!(
+            "Port 8091: {} · owned PID: {:?}",
+            if std::net::TcpListener::bind(("127.0.0.1", 8091)).is_ok() {
+                "free"
+            } else {
+                "busy (owner unavailable)"
+            },
+            owned_pid
+        )
+    }
 }
 
 #[cfg(windows)]
@@ -3573,6 +3872,54 @@ fn infer_series(title: &str, files: &[VideoFile]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn server_health_and_restart_failure_never_keep_stale_online_state() {
+        let mut state = super::ServerState {
+            version: "MatriX.144".into(),
+            torrents: vec![],
+            error: String::new(),
+        };
+        state.restart_failed("exit code: 1".into());
+        assert!(state.version.is_empty());
+        state.apply_health(Ok("stale MatriX.144".into()), 0, 1);
+        assert!(
+            state.version.is_empty(),
+            "discard a health reply from before restart"
+        );
+        state.apply_health(Err("connection refused".into()), 1, 1);
+        assert_eq!(state.error, "exit code: 1");
+        state.apply_health(Ok("MatriX.144".into()), 1, 1);
+        assert_eq!(state.version, "MatriX.144");
+        state.error.clear();
+        state.apply_health(Err("connection refused".into()), 1, 1);
+        assert!(state.version.is_empty());
+        assert!(state.error.starts_with("TorrServer офлайн: "));
+        state.apply_health(Ok("MatriX.144".into()), 1, 1);
+        assert!(state.error.is_empty());
+    }
+    #[test]
+    fn gst_diagnostics_rejects_responding_but_broken_runtime() {
+        assert!(super::gst_diagnostic_status(
+            &serde_json::json!({"gstreamer":{"works":true},"gst_discoverer":{"works":true}})
+        )
+        .starts_with('✓'));
+        for value in [
+            serde_json::json!({"gstreamer":{"works":false},"gst_discoverer":{"works":true}}),
+            serde_json::json!({}),
+        ] {
+            assert!(super::gst_diagnostic_status(&value).starts_with('✕'));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "runs a read-only Windows port/OS inspection"]
+    fn windows_port_diagnostics_is_available() {
+        let report = super::port_diagnostics(None);
+        assert!(report.contains("Windows build:"), "{report}");
+        assert!(report.contains("Port 8091:"), "{report}");
+        assert!(!report.contains("Users\\"));
+    }
     use super::{
         file_episode, file_season, gstreamer_hls_url, history_path, infer_series, metadata_queries,
         missing_metadata_torrents, next_episode, release_quality, short_hash,

@@ -22,6 +22,6 @@ The production Windows profile is `%LOCALAPPDATA%\Pirate Cinema`. On first launc
 
 The migration imports per-file history and metadata, preferences, cached posters, and the local TorrServer allowlist. Source files are never modified. A marker makes the import idempotent. `PIRATE_CINEMA_DATA_DIR`, `PIRATE_CINEMA_ELECTRON_PROFILE`, and `PIRATE_CINEMA_PROTOTYPE_PROFILE` are test-only path overrides used by isolated installation checks.
 
-TorrServer defaults to `http://127.0.0.1:8090`. A responding external server is reused; only a process started and owned by Pirate Cinema is stopped.
+TorrServer defaults to `http://127.0.0.1:8091`. A responding external server is reused; only a process started and owned by Pirate Cinema is stopped. Both restart buttons use the same endpoint. Windows packages include only the GST-enabled server.
 
 See [PARITY.md](PARITY.md) for the Electron 0.5.8 replacement audit.

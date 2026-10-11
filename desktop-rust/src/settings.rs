@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn accepts_only_base_http_endpoint() {
         assert_eq!(
-            validate_endpoint(" http://127.0.0.1:8090/ ").unwrap(),
+            validate_endpoint(" http://127.0.0.1:8091/ ").unwrap(),
             DEFAULT_TORRSERVER_URL
         );
         assert!(validate_endpoint("file:///tmp").is_err());
@@ -289,7 +289,7 @@ mod tests {
         remove_retired_provider_settings(&path).unwrap();
         let value: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(value["torrserver_url"], DEFAULT_TORRSERVER_URL);
+        assert_eq!(value["torrserver_url"], "http://127.0.0.1:8090");
         assert!(value.get("kinopoisk_api_key").is_none());
         std::fs::remove_file(path).unwrap();
     }

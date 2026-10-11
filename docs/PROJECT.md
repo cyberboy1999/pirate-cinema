@@ -1,5 +1,15 @@
 # Pirate Cinema — project context
 
+Windows packaging rule: include only `TorrServer-gst-windows-amd64.exe`; never include the regular/non-GST TorrServer, including as a fallback. Applies to future Windows release builds, not Linux packages.
+
+The Rust bundled server now uses loopback port 8091. Startup migrates the former exact default URL 127.0.0.1:8090 to 8091; custom endpoints and TORRSERVER_URL overrides remain unchanged. A compact Restart action below the status indicator retries startup or restarts only our owned child, refuses external servers, and serializes against initial startup. Windows executable resolution and release staging are GST-only. Restart interrupts active streams but preserves the profile/database.
+
+Local prototype diagnostics capture bounded stdout/stderr (32 chunks of 2 KiB each per stream combined) in memory for the last owned launch, with EXE, working directory, fixed arguments, UTC start timestamp, PID and exit status. Settings probes /echo and /gst/echo independently without configuring GST. Windows port 8091 inspection reports listener PID and owned/external classification using a bounded, hidden read-only PowerShell query. Copy Diagnostics exports a separate allowlisted report with app/OS/server/WebView user-agent versions and technical statuses; it excludes raw logs, profile paths, custom endpoint hostnames, keys and library/history data. No report is sent automatically.
+
+GST diagnostics also validate gstreamer.works and gst_discoverer.works, so HTTP 200 alone is not success. `node desktop-rust/tests/diagnostics-copy.cjs` exercises the actual embedded clipboard handler's native, fallback and permission-denied paths. Rust tests cover the bounded log/private-export boundary and broken GST replies; the ignored Windows port inspection and real bundled GST start/restart checks passed locally.
+
+Windows GST startup retries only the specific random peer-port bind denial caused by Windows excluded UDP ranges. The retry selects a UDP/TCP-bindable port through the OS and supplies `--torrentaddr` without changing saved TorrServer settings or explicit fixed peer ports; three attempts share the existing 60-second deadline. The ignored `recovers_from_windows_excluded_peer_port` test accepts a reserved port through `PIRATE_TEST_BLOCKED_PEER_PORT` and exercises the real GST binary. Both restart buttons immediately invalidate the old online indicator. A bounded `/echo` health check runs every five seconds while idle, preserves library data and unrelated errors, and rejects replies from before a restart using an operation generation.
+
 ## Development discipline
 
 Codex task lifecycle is: understand the request and project rules; recall
@@ -9,11 +19,11 @@ complexity; then record only durable, confirmed new knowledge. Current source
 and project rules override memory. The repository keeps shared project memory;
 Codex session context remains local and is not committed.
 
-Latest published release: 0.7.3; 0.7.4 is being prepared. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
+Latest published release: 0.7.4; 0.7.5 is being prepared. Releases contain one Windows NSIS installer and one Linux x86_64 AppImage. Fresh installs package no TorrServer `config.db` or `viewed.json`; SQLite and TorrServer user state are created empty on first launch.
 
 Release notes for 0.7.2 are kept in `docs/RELEASE_0.7.2.md`; the tag workflow requires that file when publishing the GitHub release.
 
-The Windows release workflow now verifies and stages both the ordinary and GST MatriX.144 binaries; NSIS installs both and the application prefers GST. The first successful library refresh configures HLS transcoding and checks GST `/gst/echo` even when a pre-existing TorrServer is reused, but only when current saved settings select the embedded bundled player. A GST failure appears as a player warning without incorrectly marking the server offline. Playback checks GST again before opening the embedded player. The official Windows GST binary contains its runtime; no separate system GStreamer installer is required. The release workflow runs on manual dispatch or a version tag, not on every branch push.
+The Windows release workflow verifies and stages only the GST MatriX.144 binary; NSIS installs it without a regular-server fallback. The first successful library refresh configures HLS transcoding and checks GST `/gst/echo` even when a pre-existing TorrServer is reused, but only when current saved settings select the embedded bundled player. A GST failure appears as a player warning without incorrectly marking the server offline. Playback checks GST again before opening the embedded player. The official Windows GST binary contains its runtime; no separate system GStreamer installer is required. The release workflow runs on manual dispatch or a version tag, not on every branch push.
 
 The `v0.5.2` and `v0.5.3` tags are intentionally published as GitHub pre-releases. Change the release workflow back to a stable/latest release before the next production tag.
 
@@ -85,9 +95,9 @@ Linux CI creates one x86_64 AppImage with Pirate Cinema, TorrServer and the requ
 
 AppImage runtime dependencies are documented on the repository landing page with copyable commands for Debian/Ubuntu, Fedora/RHEL and Arch/CachyOS. Failure to initialize the optional Linux tray must not panic the Dioxus tree; the window remains usable and closes normally when no tray provider is available.
 
-The bundled TorrServer starts with explicit loopback IP, port 8090 and profile path arguments, so its database location no longer depends on inherited process state. Startup failures retain their concrete error in the UI, and the offline status uses a red indicator.
+The bundled TorrServer starts with explicit loopback IP, port 8091 and profile path arguments, so its database location no longer depends on inherited process state. Startup failures retain their concrete error in the UI, and the offline status uses a red indicator.
 
-Windows development builds prefer the local `TorrServer-gst-windows-amd64.exe` runtime when it is present beside the application (or in `desktop-rust/vendor/torrserver`), and fall back to the standard TorrServer binary when it is not. The settings page stores two mutually exclusive close actions: minimize to the tray or close fully. A full exit explicitly tears down the TorrServer child owned by Pirate Cinema; the tray action remains available when minimize-to-tray is selected.
+Windows development builds use only the local `TorrServer-gst-windows-amd64.exe` runtime beside the application or in `desktop-rust/vendor/torrserver`. The settings page stores two mutually exclusive close actions: minimize to the tray or close fully. A full exit explicitly tears down the TorrServer child owned by Pirate Cinema; the tray action remains available when minimize-to-tray is selected.
 
 The Windows installer carries Microsoft's official x64 Visual C++ Redistributable and runs it silently before the first launch, so clean Windows Sandbox installations do not fail with a missing `VCRUNTIME140_1.dll`.
 
