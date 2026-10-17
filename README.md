@@ -17,10 +17,14 @@ Windows-установщик включает GST-сборку TorrServer со �
 - MPV IPC: продолжение просмотра, перемотка, аудиодорожка и следующий эпизод;
 - отметка «Просмотрено» при первом запуске файла;
 - блок «Продолжить просмотр»;
+- онлайн-видео и плейлисты: сезоны, серии, качество, автопереход и локальная история;
+- сохранённые плейлисты и недавно просмотренные онлайн-видео на главной;
 - локальные резервные копии, диагностика, обновления и системный трей;
 - русский и английский интерфейс.
 
 Все пользовательские данные остаются на компьютере. Pirate Cinema обращается к Cinemeta, TVmaze и Wikidata только за общедоступными названиями, описаниями и изображениями; история просмотра им не передаётся.
+
+Онлайн-поиск отправляет источнику введённый запрос, а запуск — идентификатор выбранного видео или плейлиста. История остаётся локальной. Для просмотра нужен общедоступный поток; ограничения доступа не обходятся.
 
 ## Установка
 
@@ -90,10 +94,14 @@ Pirate Cinema is a local Rust desktop application for searching, adding, and str
 - movie, season, episode, and exact-file selection;
 - MPV IPC resume, seeking, audio-track memory, and next episode;
 - launch-based Viewed markers and Continue Watching;
+- online videos and playlists with episode selection, quality memory, auto-next, and local history;
+- saved playlists and recently watched online videos on Home;
 - local backup, diagnostics, updates, and system tray;
 - Russian and English interfaces.
 
 Playback history stays on the computer. Cinemeta, TVmaze, and Wikidata receive only public metadata queries, never the local history database.
+
+Online sources receive explicit search queries and selected video/playlist identifiers, not the history database. Playback requires an accessible public stream; access restrictions are not bypassed.
 
 ### Installation
 

@@ -1,5 +1,9 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+#[cfg(feature = "rutube-prototype")]
+#[path = "../rutube_prototype.rs"]
+mod rutube_prototype;
+
 use base64::Engine;
 use dioxus::prelude::*;
 use pirate_cinema_core::history::{
@@ -151,6 +155,7 @@ enum Page {
     Detail,
     Player,
     Settings,
+    Rutube,
 }
 
 #[derive(Clone, PartialEq)]
@@ -409,6 +414,10 @@ fn App() -> Element {
         }
     });
     let mut page = use_signal(|| Page::Home);
+    use_effect(move || {
+        let active = page() == Page::Rutube;
+        document::eval(&format!("window.__pirateCinemaRutubeActive={active}; if ({active}) window.__pirateCinemaArt?.pause(); window.dispatchEvent(new Event('pc-visibility'));"));
+    });
     let mut language = use_signal(|| {
         INITIAL_PREFERENCES
             .get()
@@ -579,7 +588,7 @@ fn App() -> Element {
             let preparedFile = null;
             let pendingEnd = false;
             let retryPosition = 0;
-            const canStart = () => window.PiratePlayerState.canStart(window.__pirateCinemaVisible, document.hidden);
+            const canStart = () => !window.__pirateCinemaRutubeActive && window.PiratePlayerState.canStart(window.__pirateCinemaVisible, document.hidden);
             let hls = null;
             let video = null;
             let recoveryAttempts = 0;
@@ -1631,6 +1640,12 @@ fn App() -> Element {
                 nav { class: "nav",
                     NavButton { label: language().pick("Главная", "Home"), icon: home_icon.clone(), active: page() == Page::Home, onclick: move |_| page.set(Page::Home) }
                     NavButton { label: language().pick("Поиск", "Search"), icon: String::new(), active: page() == Page::Search, onclick: move |_| page.set(Page::Search) }
+                    if cfg!(feature = "rutube-prototype") {
+                        NavButton { label: "Rutube", icon: library_icon.clone(), active: page() == Page::Rutube, onclick: move |_| {
+                            document::eval("window.__pirateCinemaRutubeActive=true; window.__pirateCinemaArt?.pause();");
+                            page.set(Page::Rutube);
+                        } }
+                    }
                     NavButton { label: language().pick("Медиатека", "Library"), icon: library_icon.clone(), active: page() == Page::Library, onclick: move |_| page.set(Page::Library) }
                 }
                 div { class: "rail-bottom",
@@ -1707,7 +1722,7 @@ fn App() -> Element {
                     }
                 }
                 if let Some(playback) = web_player() {
-                    div { class: if page() == Page::Player { "web-player" } else { "web-player mini" },
+                    div { style: if page() == Page::Rutube { "display:none" } else { "display:block" }, class: if page() == Page::Player { "web-player" } else { "web-player mini" },
                         header {
                             strong { title: "{playback.file.name}", "{playback.file.name}" }
                             if page() != Page::Player {
@@ -1728,12 +1743,14 @@ fn App() -> Element {
                         }
                     }
                 }
+                RutubePrototype { active: page() == Page::Rutube, home: page() == Page::Home, on_open: move |_| page.set(Page::Rutube) }
                 match page() {
                     Page::Home => rsx! { Home { language: language(), recent: recent(), cards: cards(), on_open: open_saved } },
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
                     Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
                     Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
                     Page::Player => rsx! { h1 { {language().pick("Просмотр", "Now playing")} } },
+                    Page::Rutube => rsx! {},
                     Page::Settings => rsx! { Settings { language, endpoint, busy, server, cards, recent, metadata_status, online_icon: online_icon.clone(), on_sync: sync_metadata } },
                 }
             }
@@ -1742,6 +1759,18 @@ fn App() -> Element {
 }
 
 struct ShutdownGuard;
+
+#[component]
+fn RutubePrototype(active: bool, home: bool, on_open: EventHandler<()>) -> Element {
+    #[cfg(feature = "rutube-prototype")]
+    let content = rsx! { div { style: if active || home { "display:block" } else { "display:none" }, rutube_prototype::RutubePage { active, home, on_open } } };
+    #[cfg(not(feature = "rutube-prototype"))]
+    let content = {
+        let _ = (active, home, on_open);
+        rsx! {}
+    };
+    content
+}
 
 struct MetadataSyncGuard;
 

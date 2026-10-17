@@ -23,6 +23,7 @@ jobs:
           node desktop-rust/tests/player-switch.cjs
           node desktop-rust/tests/player-controller.cjs
           node desktop-rust/tests/diagnostics-copy.cjs
+          node desktop-rust/tests/rutube-player.cjs
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -77,6 +78,7 @@ jobs:
           node desktop-rust/tests/player-switch.cjs
           node desktop-rust/tests/player-controller.cjs
           node desktop-rust/tests/diagnostics-copy.cjs
+          node desktop-rust/tests/rutube-player.cjs
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)" = "$GITHUB_REF_NAME"

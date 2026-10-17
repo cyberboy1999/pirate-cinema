@@ -1,8 +1,12 @@
 [package]
 name = "pirate-cinema-core"
-version = "0.7.5"
+version = "0.7.6"
 edition = "2021"
 publish = false
+
+[features]
+default = ["rutube-prototype"]
+rutube-prototype = []
 
 [dependencies]
 base64 = "0.23"
