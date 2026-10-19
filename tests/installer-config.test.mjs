@@ -19,6 +19,10 @@ test("release workflow verifies runtimes and publishes only the supported artifa
   assert.match(workflow, /FFmpeg hash mismatch/);
   assert.match(workflow, /CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/);
   assert.match(workflow, /VC\+\+ Redistributable hash mismatch/);
+  assert.match(workflow, /BA63DFFC4410EE89193E1CB5A41989991BD77C61068DA17E3156D136B7B0B3D8/);
+  assert.match(workflow, /NSIS hash mismatch/);
+  assert.match(workflow, /nsis-3\.13\.zip\?download=/);
+  assert.doesNotMatch(workflow, /choco install nsis/);
   assert.match(workflow, /pnpm install --frozen-lockfile/);
   assert.match(workflow, /pnpm test/);
   assert.match(workflow, /pnpm run lint/);

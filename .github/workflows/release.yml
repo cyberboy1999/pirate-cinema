@@ -56,6 +56,10 @@ jobs:
           if ((Get-FileHash stage/ffmpeg/ffmpeg.exe -Algorithm SHA256).Hash -ne 'E9FD5E711DEBAB9D680955FC1E38A2C1160FD280B144476CC3F62BC43EF49DB1') { throw 'FFmpeg hash mismatch' }
           Invoke-WebRequest 'https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe' -OutFile vc_redist.x64.exe
           if ((Get-FileHash vc_redist.x64.exe -Algorithm SHA256).Hash -ne 'CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B') { throw 'VC++ Redistributable hash mismatch' }
+          curl.exe -fL --retry 3 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip?download=' -o nsis-3.13.zip
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS download failed' }
+          if ((Get-FileHash nsis-3.13.zip -Algorithm SHA256).Hash -ne 'BA63DFFC4410EE89193E1CB5A41989991BD77C61068DA17E3156D136B7B0B3D8') { throw 'NSIS hash mismatch' }
+          Expand-Archive nsis-3.13.zip -DestinationPath .
       - run: cargo fmt --manifest-path desktop-rust/Cargo.toml -- --check
       - run: cargo check --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
       - run: cargo test --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
@@ -64,12 +68,11 @@ jobs:
       - name: Build production NSIS installer
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
           $version=(Select-String desktop-rust/Cargo.toml -Pattern '^version = "(.+)"$').Matches.Groups[1].Value
           Copy-Item desktop-rust/target/release/pirate-cinema.exe stage/
           Copy-Item vc_redist.x64.exe stage/
           Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md stage/
-          $makensis="${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          $makensis="$pwd\nsis-3.13\makensis.exe"
           & $makensis "/DAPP_SOURCE=$pwd\stage" "/DAPP_OUTPUT=$pwd\Pirate-Cinema-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" "/DAPP_VERSION=$version" desktop-rust/installer.nsi
       - uses: actions/upload-artifact@v4
         with:
