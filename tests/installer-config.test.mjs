@@ -43,6 +43,7 @@ test("release inputs never include a user database or TorrServer state", () => {
 
 test("AppImage build keeps the required runtime layout and launcher", () => {
   const script = read("desktop-rust/packaging/build-appimage.sh");
+  assert.match(script, /mkdir -p "\$appdir\/usr\/bin"/);
   assert.match(script, /install -m755 "\$binary" "\$appdir\/usr\/bin\/pirate-cinema"/);
   assert.doesNotMatch(script, /TorrServer|mpv/i);
   assert.match(script, /libxdo\.so\.3/);

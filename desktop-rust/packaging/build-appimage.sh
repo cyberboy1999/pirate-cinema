@@ -11,7 +11,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 appdir="$(mktemp -d)"
 trap 'rm -rf "$appdir"' EXIT
 
-mkdir -p "$appdir/usr/share/applications" "$appdir/usr/share/icons/hicolor/256x256/apps" "$output"
+mkdir -p "$appdir/usr/bin" "$appdir/usr/share/applications" "$appdir/usr/share/icons/hicolor/256x256/apps" "$output"
 install -m755 "$binary" "$appdir/usr/bin/pirate-cinema"
 sed 's|Exec=/opt/pirate-cinema/pirate-cinema %U|Exec=pirate-cinema %U|' "$root/packaging/pirate-cinema.desktop" > "$appdir/usr/share/applications/pirate-cinema.desktop"
 install -m644 "$root/../public/favicon.png" "$appdir/usr/share/icons/hicolor/256x256/apps/pirate-cinema.png"
