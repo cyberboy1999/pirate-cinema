@@ -15,10 +15,10 @@ use pirate_cinema_core::history::{
 };
 use pirate_cinema_core::metadata::{self, Movie};
 use pirate_cinema_core::migration::{legacy_profile_paths, migrate_legacy_profiles};
-use pirate_cinema_core::settings::{self, Language, PlayerType, Preferences};
+use pirate_cinema_core::settings::{self, Language, Preferences};
 use pirate_cinema_core::{
     check_rust_update, download_rust_update, magnet_info_hash, magnet_title, ReleaseUpdate,
-    SearchResult, Torrent, VideoFile, DEFAULT_TORRSERVER_URL,
+    SearchResult, Torrent, VideoFile,
 };
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -256,14 +256,10 @@ fn main() {
             }
         }
     }
-    let mut preferences = settings_path()
+    let preferences = settings_path()
         .ok()
         .and_then(|path| settings::load_preferences(&path).ok())
         .unwrap_or_else(default_preferences);
-    // Legacy endpoint settings are retained on disk, but never used by this prototype.
-    preferences.torrserver_url = DEFAULT_TORRSERVER_URL.into();
-    preferences.embedded_player = true;
-    preferences.player_type = PlayerType::BundledMpv;
     let close_to_tray = preferences.close_to_tray;
     let _ = INITIAL_PREFERENCES.set(preferences);
     let window_icon =
@@ -367,12 +363,9 @@ fn App() -> Element {
             .map_or(Language::Russian, |preferences| preferences.language)
     });
     let mut query = use_signal(String::new);
-    let mut endpoint = use_signal(|| {
-        INITIAL_PREFERENCES
-            .get()
-            .map(|item| item.torrserver_url.clone())
-            .unwrap_or_else(|| DEFAULT_TORRSERVER_URL.to_owned())
-    });
+    // Temporary opaque context for shared function signatures. The embedded
+    // engine owns its loopback endpoint and ignores this value.
+    let endpoint = use_signal(String::new);
     let mut server = use_signal(|| ServerState {
         version: String::new(),
         torrents: Vec::new(),
@@ -1469,7 +1462,6 @@ fn App() -> Element {
         if !onboarding() {
             Welcome { on_complete: move |preferences: Preferences| {
                 language.set(preferences.language);
-                endpoint.set(preferences.torrserver_url.clone());
                 let result = settings_path().and_then(|path| settings::save_preferences(&path, &preferences));
                 match result {
                     Ok(()) => { onboarding.set(true); refresh_server(endpoint(), busy, server, cards, recent); }
@@ -1565,7 +1557,7 @@ fn App() -> Element {
                     Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
                     Page::Player => rsx! { h1 { {language().pick("Просмотр", "Now playing")} } },
                     Page::Rutube => rsx! {},
-                    Page::Settings => rsx! { Settings { language, endpoint, busy, server, cards, recent, metadata_status, online_icon: online_icon.clone(), on_sync: sync_metadata } },
+                    Page::Settings => rsx! { Settings { language, busy, server, cards, recent, metadata_status, online_icon: online_icon.clone(), on_sync: sync_metadata } },
                 }
             }
         } }
@@ -1615,10 +1607,6 @@ fn Welcome(on_complete: EventHandler<Preferences>) -> Element {
                 Language::Russian
             },
             onboarding_complete: true,
-            torrserver_url: initial.torrserver_url.clone(),
-            player_type: PlayerType::BundledMpv,
-            player_path: String::new(),
-            embedded_player: true,
             torznab_url: initial.torznab_url.clone(),
             torznab_api_key: initial.torznab_api_key.clone(),
             close_to_tray: initial.close_to_tray,
@@ -2107,7 +2095,6 @@ fn Detail(
 #[component]
 fn Settings(
     mut language: Signal<Language>,
-    endpoint: Signal<String>,
     busy: Signal<bool>,
     server: Signal<ServerState>,
     cards: Signal<Vec<LibraryCard>>,
@@ -2134,10 +2121,6 @@ fn Settings(
         let next = Preferences {
             language: language(),
             onboarding_complete: true,
-            torrserver_url: initial.torrserver_url.clone(),
-            player_type: PlayerType::BundledMpv,
-            player_path: String::new(),
-            embedded_player: true,
             torznab_url: torznab_url(),
             torznab_api_key: torznab_api_key(),
             close_to_tray: close_to_tray(),
@@ -2266,7 +2249,7 @@ fn Settings(
                     }
                 }
                 p { "ArtPlayer · локальный HLS · librqbit" }
-                p { class: "hint", {language().pick("Внешний плеер и TorrServer не используются.", "No external player or TorrServer is used.")} }
+                p { class: "hint", {language().pick("Воспроизведение работает через встроенный движок.", "Playback uses the embedded engine.")} }
                 button { class: "secondary", onclick: exit_fullscreen, {language().pick("Выйти из полноэкранного режима", "Exit fullscreen")} }
                 div { class: "setting-row",
                     span { {language().pick("При закрытии", "When closing")} }
@@ -2304,7 +2287,7 @@ fn Settings(
 
             section { class: "settings-card server-summary",
                 img { src: "{online_icon}", alt: "" }
-                div { h2 { "librqbit" } strong { "{server().version}" } small { "{endpoint()}" } }
+                div { h2 { "librqbit" } strong { "{server().version}" } small { "Локальный встроенный движок" } }
             }
         }
     }
@@ -2463,7 +2446,7 @@ fn add_search_result(
                 if open {
                     open_torrent(torrent, endpoint, page, busy, selected, files, server);
                 } else {
-                    server.write().error = "Раздача добавлена в TorrServer".into();
+                    server.write().error = "Раздача добавлена во встроенный движок".into();
                     refresh_server(endpoint, busy, server, cards, recent);
                 }
             }
@@ -2551,10 +2534,6 @@ fn default_preferences() -> Preferences {
     Preferences {
         language: Language::Russian,
         onboarding_complete: false,
-        torrserver_url: DEFAULT_TORRSERVER_URL.to_owned(),
-        player_type: PlayerType::BundledMpv,
-        player_path: String::new(),
-        embedded_player: cfg!(windows),
         torznab_url: String::new(),
         torznab_api_key: String::new(),
         close_to_tray: true,

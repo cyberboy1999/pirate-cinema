@@ -1,6 +1,6 @@
 //! Android's external-player boundary. This module never owns TorrServe or MPV processes.
 #[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
-use crate::{settings::validate_endpoint, stream_url, VideoFile};
+use crate::{settings::validate_media_endpoint, stream_url, VideoFile};
 use serde::{Deserialize, Serialize};
 
 #[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
@@ -11,7 +11,7 @@ pub const MPV_PACKAGE: &str = "is.xyz.mpv";
 /// its local search index by default; preserve every unrelated server setting.
 #[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn prepare_search(endpoint: &str) -> Result<bool, String> {
-    let endpoint = format!("{}/settings", validate_endpoint(endpoint)?);
+    let endpoint = format!("{}/settings", validate_media_endpoint(endpoint)?);
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(10)))
         .build()
@@ -66,7 +66,7 @@ pub fn playback_request(
     title: &str,
     position_ms: i64,
 ) -> Result<PlaybackRequest, String> {
-    let endpoint = validate_endpoint(endpoint)?;
+    let endpoint = validate_media_endpoint(endpoint)?;
     if title.trim().is_empty() || title.contains('\0') {
         return Err("Укажите название видео".into());
     }
@@ -110,7 +110,7 @@ impl PlaybackResult {
 /// Probe both known local ports while keeping a configured custom endpoint first.
 #[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn local_server_candidates(current: &str) -> Result<Vec<String>, String> {
-    let mut candidates = vec![validate_endpoint(current)?];
+    let mut candidates = vec![validate_media_endpoint(current)?];
     for endpoint in ["http://127.0.0.1:8091", "http://127.0.0.1:8090"] {
         if !candidates.iter().any(|value| value == endpoint) {
             candidates.push(endpoint.to_owned());

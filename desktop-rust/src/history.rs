@@ -112,7 +112,7 @@ pub fn create_local_backup(
             std::fs::write(
                 &settings_target,
                 serde_json::json!({
-                    "torrserver_url": crate::DEFAULT_TORRSERVER_URL,
+                    "torrserver_url": crate::LEGACY_TORRSERVER_URL,
                     "player_type": "mpv",
                     "player_path": ""
                 })

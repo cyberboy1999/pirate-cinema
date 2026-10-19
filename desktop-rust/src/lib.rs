@@ -1,5 +1,6 @@
 #[cfg(not(target_os = "android"))]
-pub const DEFAULT_TORRSERVER_URL: &str = "http://127.0.0.1:8091";
+/// Retained only for importing pre-librqbit profiles and the legacy mobile API.
+pub const LEGACY_TORRSERVER_URL: &str = "http://127.0.0.1:8091";
 #[cfg(all(feature = "torrent-engine", not(target_os = "android")))]
 pub mod desktop_engine;
 #[cfg(feature = "torrent-engine")]
@@ -14,12 +15,8 @@ pub mod metadata;
 #[cfg(not(target_os = "android"))]
 pub mod migration;
 pub mod mobile;
-#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
-pub mod mpv;
 #[cfg(not(target_os = "android"))]
 pub mod settings;
-#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
-pub mod torrserver_process;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Torrent {

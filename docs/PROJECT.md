@@ -1,5 +1,20 @@
 # Pirate Cinema — project context
 
+2026-10-20 desktop online-page redesign: the optional online page now follows the
+local media-library hierarchy with one compact search header, a horizontal local
+Continue Watching rail, poster-shaped saved playlists and a clean result grid.
+Playlist removal and history maintenance remain available without occupying the
+primary browsing surface. Search, playlist loading, SQLite history, ArtPlayer,
+quality selection, auto-next and fullscreen behavior are unchanged.
+
+2026-10-20 desktop legacy cleanup: the production desktop settings model no longer
+contains a TorrServer endpoint, MPV selection or an embedded-player compatibility
+flag. Saving settings removes those retired JSON keys while preserving language,
+close behavior and direct Jackett/Torznab credentials. The unused TorrServer process
+manager and MPV IPC modules were deleted; the active desktop path is the embedded
+librqbit engine, local index/direct Torznab search and ArtPlayer HLS playback. Legacy
+profile migration still recognizes old data names so upgrades remain non-destructive.
+
 2026-10-18 desktop ArtPlayer/librqbit local prototype: the desktop prototype no
 longer invokes MPV or TorrServer. The shared in-process librqbit engine exposes the
 selected file on an ephemeral read-only loopback endpoint; bundled FFmpeg produces
@@ -91,7 +106,7 @@ complexity; then record only durable, confirmed new knowledge. Current source
 and project rules override memory. The repository keeps shared project memory;
 Codex session context remains local and is not committed.
 
-Latest published release before this work: 0.7.6. Release 0.7.7 contains one Windows NSIS installer and one Linux x86_64 AppImage. It replaces the packaged TorrServer/MPV runtimes with linked librqbit and ArtPlayer/FFmpeg HLS. Windows bundles the checksum-verified FFmpeg executable; Linux uses system FFmpeg. Fresh installs package no runtime database, cache or user history.
+Latest published release before this work: 0.7.7. Version 0.7.8 keeps the single Windows NSIS installer and Linux x86_64 AppImage model. It refreshes the online-viewing screen and removes the retired TorrServer/MPV desktop modules and settings. Windows bundles the checksum-verified FFmpeg executable; Linux uses system FFmpeg. Fresh installs package no runtime database, cache or user history.
 
 Release 0.7.6 preparation enables the online module by default (the existing feature name is retained for compatibility), adds its JS regressions to both CI platforms, and bumps Cargo/lock/NSIS versions consistently. Public release notes/README describe online playback without source-specific branding. Live Windows checks confirmed saved playlists, compact episode selection, a manual next-episode click, resolution retained at 360p on the new episode, disabled auto-next stopping at the end, Viewed and From Start actions, and successful opening from Home after restarting the process. A disappearance observed during earlier user-input interference could not be reproduced; the repeat launch captured no stderr error. Deliberate OS/network settings changes were not used to induce an outage; real-network outage recovery remains covered by automated fault tests rather than a live disconnection claim.
 

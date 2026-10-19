@@ -145,7 +145,7 @@ fn migrate_settings(source: &Path, destination: &Path) -> Result<(), String> {
     let settings = serde_json::json!({
         "language": legacy.get("language").and_then(|value| value.as_str()).unwrap_or("ru"),
         "onboarding_complete": legacy.get("onboardingComplete").and_then(|value| value.as_bool()).unwrap_or(true),
-        "torrserver_url": legacy.get("torrServerUrl").and_then(|value| value.as_str()).unwrap_or(crate::DEFAULT_TORRSERVER_URL),
+        "torrserver_url": legacy.get("torrServerUrl").and_then(|value| value.as_str()).unwrap_or(crate::LEGACY_TORRSERVER_URL),
         "player_type": legacy.get("playerType").and_then(|value| value.as_str()).unwrap_or("mpv"),
         "player_path": legacy.get("playerPath").and_then(|value| value.as_str()).unwrap_or(""),
         "torznab_url": legacy.get("torznabUrl").and_then(|value| value.as_str()).unwrap_or(""),

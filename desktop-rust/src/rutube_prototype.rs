@@ -10,10 +10,11 @@ const ONLINE_SUBTITLE: &str = "Прямое воспроизведение";
 #[cfg(not(target_os = "android"))]
 const ONLINE_SUBTITLE: &str = "Прямое воспроизведение";
 const CSS: &str = r#"
-.rutube-section{color:#eee;padding:20px 0}.rutube-section header{display:flex;align-items:center;justify-content:space-between}.rutube-section h1{font-size:27px}.rutube-section small{color:#aaa}.rutube-section form{display:flex;gap:12px;margin:24px 0}.rutube-section input{flex:1;min-width:0;background:#141414;color:white;border:1px solid #333;padding:14px;border-radius:10px;font:inherit}.rutube-section button{font:inherit;cursor:pointer;border:1px solid #333;border-radius:9px;padding:10px 18px;background:#eee;color:#111}.rutube-section button:disabled{opacity:.5;cursor:wait}.rutube-section button:focus-visible,.rutube-section a:focus-visible{outline:2px solid #398bff}.rutube-section a{color:#8abaff}.rutube-section .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px}.rutube-section .card{text-align:left;background:#141414;color:#eee;padding:0;overflow:hidden}.rutube-section .card img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}.rutube-section .card strong,.rutube-section .card small{display:block;margin:12px;overflow-wrap:anywhere;white-space:normal}.rutube-section .notice{padding:14px;border:1px solid #333;border-radius:10px;margin:15px 0}#rutube-player{width:100%;aspect-ratio:16/9;background:#111;border-radius:12px;overflow:hidden}.rutube-section .hidden{display:none}.rutube-section .secondary{background:#181818;color:#ddd}.rutube-section nav{display:flex;gap:12px;margin:20px 0}
+.rutube-section{color:#eee;padding:20px 0}.rutube-section header{display:flex;align-items:end;justify-content:space-between;gap:20px}.rutube-section h1{font-size:36px;margin:7px 0}.rutube-section h2{font-size:21px;margin:0}.rutube-section small{color:#aaa}.rutube-eyebrow{color:#747474;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}.rutube-subtitle{color:#999;margin:0}.rutube-section form{display:flex;gap:10px;margin:24px 0 10px;padding:8px;background:#111;border:1px solid #292929;border-radius:12px}.rutube-section input{flex:1;min-width:0;background:transparent;color:white;border:0;padding:10px;font:inherit}.rutube-section input:focus{outline:0}.rutube-section button{font:inherit;cursor:pointer;border:1px solid #333;border-radius:9px;padding:10px 18px;background:#eee;color:#111}.rutube-section button:disabled{opacity:.5;cursor:wait}.rutube-section button:focus-visible,.rutube-section a:focus-visible{outline:2px solid #398bff}.rutube-section a{color:#8abaff}.rutube-section .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:20px}.rutube-section .card{text-align:left;background:#141414;color:#eee;padding:0;overflow:hidden}.rutube-section .card img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}.rutube-section .card strong,.rutube-section .card small{display:block;margin:12px;overflow-wrap:anywhere;white-space:normal}.rutube-section .notice{padding:8px 2px;margin:8px 0 26px;color:#888;font-size:13px}.rutube-section .notice::before{content:'•';color:#58cf83;margin-right:8px}#rutube-player{width:100%;aspect-ratio:16/9;background:#111;border-radius:12px;overflow:hidden}.rutube-section .hidden{display:none}.rutube-section .secondary{background:#181818;color:#ddd}.rutube-section nav{display:flex;gap:12px;margin:20px 0}.rutube-section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:28px 0 14px}.rutube-section-head .secondary{padding:8px 12px}.rutube-continue{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(280px,1fr);gap:12px;overflow-x:auto;padding:2px 0 8px}.rutube-continue .continue-card{display:grid;grid-template-columns:104px minmax(0,1fr);min-height:116px;padding:0;text-align:left;background:#131313;color:#eee;overflow:hidden}.continue-card img{width:104px;height:100%;object-fit:cover}.continue-copy{padding:14px;min-width:0}.continue-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.continue-copy small{display:block;margin-top:7px}.continue-progress{height:4px;margin-top:20px;border-radius:4px;background:#333;overflow:hidden}.continue-progress span{display:block;height:100%;background:#287cff}.rutube-playlists{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:20px}.playlist-card{position:relative;min-width:0}.playlist-open{display:block;width:100%;padding:0;border:0!important;background:transparent!important;color:#eee!important;text-align:left}.playlist-poster{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:11px;background:#181818}.playlist-open strong{display:block;margin-top:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.playlist-open small{display:block;margin-top:5px}.playlist-remove{position:absolute;top:8px;right:8px;width:32px;height:32px;padding:0!important;border:1px solid #ffffff2b!important;border-radius:8px!important;background:#090909d9!important;color:#eee!important;opacity:0;transition:opacity .15s}.playlist-card:hover .playlist-remove,.playlist-remove:focus-visible{opacity:1}.rutube-empty{padding:20px;border:1px solid #292929;border-radius:12px;background:#101010;color:#888}.rutube-maintenance{margin-top:28px;color:#aaa}.rutube-maintenance summary{cursor:pointer}.rutube-history-row{padding:14px 0;border-bottom:1px solid #242424}.rutube-pagination{align-items:center;justify-content:center}.rutube-section .result-card{border:0;background:transparent}.rutube-section .result-card img{border-radius:10px}.rutube-section .result-card strong{margin:10px 0 0}.rutube-section .result-card small{margin:5px 0 0}
 .rutube-section.is-playing{padding-top:0}
-.rutube-section.is-playing > header,.rutube-section.is-playing > form,.rutube-section.is-playing > nav,.rutube-section.is-playing > .results{display:none}
+.rutube-section.is-playing > header,.rutube-section.is-playing > form,.rutube-section.is-playing > .notice,.rutube-section.is-playing > .online-library,.rutube-section.is-playing > .rutube-pagination,.rutube-section.is-playing > .results{display:none}
 .content:has(.rutube-section.is-playing) > .topbar,.content:has(.rutube-section.is-playing) > .notice{display:none}
+@media(max-width:760px){.rutube-section h1{font-size:30px}.rutube-section header{align-items:start;flex-direction:column}.rutube-continue{grid-auto-columns:86%}.rutube-playlists{grid-template-columns:repeat(2,minmax(0,1fr))}}
 "#;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -37,10 +38,7 @@ struct Watched {
 fn history_db() -> Result<rusqlite::Connection, String> {
     #[cfg(not(target_os = "android"))]
     let root = {
-        #[cfg(feature = "torrent-engine")]
         let data = pirate_cinema_core::desktop_engine::default_data_dir()?;
-        #[cfg(not(feature = "torrent-engine"))]
-        let data = pirate_cinema_core::torrserver_process::default_data_dir()?;
         data.parent()
             .ok_or("Не найдена папка профиля")?
             .to_path_buf()
@@ -338,6 +336,14 @@ fn resolve(id: &str) -> Result<String, String> {
     hls_from_options(&request(&format!("play/options/{id}/?format=json"), None)?)
 }
 
+fn progress_percent(position: f64, duration: f64) -> f64 {
+    if duration > 0.0 {
+        (position * 100.0 / duration).clamp(0.0, 100.0)
+    } else {
+        0.0
+    }
+}
+
 #[component]
 pub fn RutubePage(
     active: ReadSignal<bool>,
@@ -625,11 +631,11 @@ pub fn RutubePage(
         .collect::<Vec<_>>();
     rsx! {
         style { "{CSS}" }
-        if !recent.is_empty() && (home() || (active() && selected().is_none())) {
+        if !recent.is_empty() && home() {
             section { class: "rutube-section",
                 if !recent.is_empty() { h2 { "Недавно смотрели онлайн" } }
                 div { class: "results",
-                    for item in recent {
+                    for item in recent.clone() {
                         button { class: "card", key: "{item.video.id}", disabled: busy(), onclick: { let item = item.clone(); let resume = resume.clone(); move |_| resume(item.clone()) },
                             img { src: "{item.video.thumbnail_url}", alt: "", loading: "lazy", referrerpolicy: "no-referrer" }
                             strong { "{item.video.title}" }
@@ -641,36 +647,76 @@ pub fn RutubePage(
         }
         div { style: if home() { "display:none" } else { "display:block" },
         div { class: if selected().is_some() { "rutube-section is-playing" } else { "rutube-section" },
-            header { h1 { "Онлайн-видео" } small { "{ONLINE_SUBTITLE}" } }
+            header {
+                div {
+                    div { class: "rutube-eyebrow", "Онлайн-просмотр" }
+                    h1 { "Фильмы и сериалы" }
+                    p { class: "rutube-subtitle", "Найдите видео или откройте сохранённый плейлист." }
+                }
+                small { "{ONLINE_SUBTITLE}" }
+            }
             form { onsubmit: move |event| { event.prevent_default(); do_search(1, query()); },
                 input { aria_label: "Поиск видео или ссылка на плейлист Rutube", placeholder: "Поиск или https://rutube.ru/plst/…", maxlength: 200, value: "{query}", oninput: move |event| query.set(event.value()) }
                 button { r#type: "submit", disabled: busy(), "Найти" }
             }
             div { class: "notice", role: "status", "{message}" }
             if selected().is_none() {
-                nav {
-                    button { class:"secondary", disabled: busy() || playlist_id(&active_query()).is_none(), onclick: move |_| {
-                        let title=videos.peek().first().map(|v|v.title.clone()).unwrap_or_else(&*active_query);
-                        match bookmark(&active_query(),&title,false).and_then(|_|saved_playlists()) { Ok(items)=>bookmarks.set(items),Err(error)=>message.set(error) }
-                    }, "Сохранить плейлист" }
-                }
-                details { summary { "Сохранённые плейлисты ({bookmarks().len()})" }
-                    for (url,title) in bookmarks() {
-                        nav {
-                            button { class:"secondary", disabled:busy(), onclick:{ let url=url.clone(); move |_| {query.set(url.clone()); do_search(1,url.clone());} }, "{title}" }
-                            button { class:"secondary", disabled:busy(), onclick:move |_| { match bookmark(&url,"",true).and_then(|_|saved_playlists()) {Ok(items)=>bookmarks.set(items),Err(error)=>message.set(error)} }, "Убрать из сохранённых" }
+                div { class: "online-library",
+                    if !recent.is_empty() {
+                        div { class: "rutube-section-head",
+                            h2 { "Продолжить просмотр" }
+                            small { "История хранится локально" }
+                        }
+                        div { class: "rutube-continue",
+                            for item in recent.clone() {
+                                button { class: "continue-card", key: "recent-{item.video.id}", disabled: busy(), onclick: { let item = item.clone(); let resume = resume.clone(); move |_| resume(item.clone()) },
+                                    img { src: "{item.video.thumbnail_url}", alt: "", loading: "lazy", referrerpolicy: "no-referrer" }
+                                    div { class: "continue-copy",
+                                        strong { "{item.video.title}" }
+                                        small { if item.position + 5.0 >= item.duration { "Просмотрено" } else { "{item.position as u64 / 60} из {item.duration as u64 / 60} мин" } }
+                                        div { class: "continue-progress", span { style: "width:{progress_percent(item.position, item.duration)}%" } }
+                                    }
+                                }
+                            }
                         }
                     }
-                }
-                details { summary { "История просмотра ({watched().len()})" }
-                    for item in watched().into_iter().take(100) {
-                        div { class:"notice", strong { "{item.video.title}" }
-                            small { if item.position + 5.0 >= item.duration { " · Просмотрено" } else { " · {item.position as u64 / 60} / {item.duration as u64 / 60} мин" } }
-                            nav {
-                                button { class:"secondary",disabled:busy(),onclick:{let item=item.clone();let resume=resume.clone();move |_|resume(item.clone())},"Продолжить" }
-                                button { class:"secondary",disabled:busy(),onclick:{let item=item.clone();let mut action=history_action;let resume=resume.clone();move |_|{if action((item.clone(),"reset")){resume(item.clone());}}},"С начала" }
-                                button { class:"secondary",disabled:busy(),onclick:{let item=item.clone();let mut action=history_action;move |_|{action((item.clone(),"viewed"));}},"Просмотрено" }
-                                button { class:"secondary",disabled:busy(),onclick:{let item=item.clone();let mut action=history_action;move |_|{action((item.clone(),"remove"));}},"Удалить запись" }
+                    div { class: "rutube-section-head",
+                        h2 { "Сохранённые плейлисты" }
+                        button { class:"secondary", disabled: busy() || playlist_id(&active_query()).is_none(), onclick: move |_| {
+                            let title=videos.peek().first().map(|v|v.title.clone()).unwrap_or_else(&*active_query);
+                            match bookmark(&active_query(),&title,false).and_then(|_|saved_playlists()) { Ok(items)=>bookmarks.set(items),Err(error)=>message.set(error) }
+                        }, "Сохранить текущий" }
+                    }
+                    if bookmarks().is_empty() {
+                        div { class: "rutube-empty", "Здесь появятся сохранённые плейлисты." }
+                    } else {
+                        div { class: "rutube-playlists",
+                            for (url,title) in bookmarks() {
+                                article { class: "playlist-card",
+                                    button { class:"playlist-open", disabled:busy(), onclick:{ let url=url.clone(); move |_| {query.set(url.clone()); do_search(1,url.clone());} },
+                                        if let Some(thumbnail) = watched().into_iter().find(|item| item.playlist == url).map(|item| item.video.thumbnail_url) {
+                                            img { class:"playlist-poster", src:"{thumbnail}", alt:"", loading:"lazy", referrerpolicy:"no-referrer" }
+                                        } else {
+                                            div { class:"playlist-poster" }
+                                        }
+                                        strong { "{title}" }
+                                        small { "Открыть плейлист" }
+                                    }
+                                    button { class:"playlist-remove", aria_label:"Убрать плейлист {title}", disabled:busy(), onclick:move |_| { match bookmark(&url,"",true).and_then(|_|saved_playlists()) {Ok(items)=>bookmarks.set(items),Err(error)=>message.set(error)} }, "×" }
+                                }
+                            }
+                        }
+                    }
+                    details { class:"rutube-maintenance", summary { "Управление историей ({watched().len()})" }
+                        for item in watched().into_iter().take(100) {
+                            div { class:"rutube-history-row", strong { "{item.video.title}" }
+                                small { if item.position + 5.0 >= item.duration { " · Просмотрено" } else { " · {item.position as u64 / 60} / {item.duration as u64 / 60} мин" } }
+                                nav {
+                                    button { class:"secondary",disabled:busy(),onclick:{let item=item.clone();let resume=resume.clone();move |_|resume(item.clone())},"Продолжить" }
+                                    button { class:"secondary",disabled:busy(),onclick:{let item=item.clone();let mut action=history_action;let resume=resume.clone();move |_|{if action((item.clone(),"reset")){resume(item.clone());}}},"С начала" }
+                                    button { class:"secondary",disabled:busy(),onclick:{let item=item.clone();let mut action=history_action;move |_|{action((item.clone(),"viewed"));}},"Просмотрено" }
+                                    button { class:"secondary",disabled:busy(),onclick:{let item=item.clone();let mut action=history_action;move |_|{action((item.clone(),"remove"));}},"Удалить запись" }
+                                }
                             }
                         }
                     }
@@ -691,14 +737,14 @@ pub fn RutubePage(
                 }
                 div { id: "rutube-player" }
             }
-            nav {
+            nav { class: "rutube-pagination",
                 button { class: "secondary", disabled: busy() || page() <= 1, onclick: move |_| do_search(page() - 1, active_query()), "Назад" }
                 span { "Страница {page}" }
                 button { class: "secondary", disabled: busy() || !has_next(), onclick: move |_| do_search(page() + 1, active_query()), "Далее" }
             }
             div { class: "results",
                 for video in videos() {
-                    button { class: "card", key: "{video.id}", disabled: busy(), onclick: { let item = video.clone(); let mut start = play.clone(); move |_| start(item.clone()) },
+                    button { class: "card result-card", key: "{video.id}", disabled: busy(), onclick: { let item = video.clone(); let mut start = play.clone(); move |_| start(item.clone()) },
                         img { src: "{video.thumbnail_url}", alt: "", loading: "lazy", referrerpolicy: "no-referrer" }
                         strong { "{video.title}" }
                         small { "{video.duration / 60} мин · Rutube" }
@@ -713,6 +759,13 @@ pub fn RutubePage(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn progress_bar_is_bounded_and_handles_unknown_duration() {
+        assert_eq!(progress_percent(30.0, 120.0), 25.0);
+        assert_eq!(progress_percent(150.0, 120.0), 100.0);
+        assert_eq!(progress_percent(30.0, 0.0), 0.0);
+    }
+
     #[test]
     fn history_survives_reopen_and_keeps_each_episode() {
         let path = std::env::temp_dir().join(format!(
