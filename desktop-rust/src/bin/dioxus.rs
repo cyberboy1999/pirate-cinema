@@ -6,39 +6,37 @@ mod rutube_prototype;
 
 use base64::Engine;
 use dioxus::prelude::*;
+use pirate_cinema_core::desktop_engine::{
+    self, add_magnet, default_data_dir, read_library, remove_torrent, search_all_sources,
+    torrent_video_files,
+};
 use pirate_cinema_core::history::{
     create_local_backup, HistoryStore, MediaMetadata, PlaybackPreferences,
 };
 use pirate_cinema_core::metadata::{self, Movie};
 use pirate_cinema_core::migration::{legacy_profile_paths, migrate_legacy_profiles};
-use pirate_cinema_core::mpv::{self, MpvEvent, MpvSession};
 use pirate_cinema_core::settings::{self, Language, PlayerType, Preferences};
-use pirate_cinema_core::torrserver_process::{
-    bundled_executable as bundled_torrserver, default_data_dir, TorrServerProcess,
-};
 use pirate_cinema_core::{
-    add_magnet, check_rust_update, configure_torznab, download_rust_update, magnet_info_hash,
-    magnet_title, probe_stream, read_torrserver, remove_torrent, search_all_sources, stream_url,
-    torrent_video_files, ReleaseUpdate, SearchResult, Torrent, VideoFile, DEFAULT_TORRSERVER_URL,
+    check_rust_update, download_rust_update, magnet_info_hash, magnet_title, ReleaseUpdate,
+    SearchResult, Torrent, VideoFile, DEFAULT_TORRSERVER_URL,
 };
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, Mutex, OnceLock,
+    Arc, OnceLock,
 };
 use std::time::Duration;
 
 static STARTUP_MAGNET: OnceLock<String> = OnceLock::new();
 static INITIAL_PREFERENCES: OnceLock<Preferences> = OnceLock::new();
-static TORRSERVER_PROCESS: OnceLock<Mutex<Option<TorrServerProcess>>> = OnceLock::new();
-static TORRSERVER_STARTING: AtomicBool = AtomicBool::new(false);
-static TORRSERVER_GENERATION: AtomicUsize = AtomicUsize::new(0);
+static ENGINE_STARTING: AtomicBool = AtomicBool::new(false);
+static ENGINE_GENERATION: AtomicUsize = AtomicUsize::new(0);
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static METADATA_SYNC_ACTIVE: AtomicBool = AtomicBool::new(false);
 static PLAYBACK_VISIBLE: AtomicBool = AtomicBool::new(true);
+static PLAYBACK_GENERATION: AtomicUsize = AtomicUsize::new(0);
 static STARTUP_MIGRATION_ERROR: OnceLock<String> = OnceLock::new();
-static STARTUP_TORRSERVER_ERROR: Mutex<Option<String>> = Mutex::new(None);
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const APP_ICON: &[u8] = include_bytes!("../../../public/favicon.png");
 const HOME_ICON: &[u8] = include_bytes!(
@@ -166,11 +164,6 @@ struct ServerState {
 }
 
 impl ServerState {
-    fn restart_failed(&mut self, error: String) {
-        self.version.clear();
-        self.error = error;
-    }
-
     fn apply_health(&mut self, result: Result<String, String>, requested: usize, current: usize) {
         if requested != current {
             return;
@@ -178,14 +171,14 @@ impl ServerState {
         match result {
             Ok(version) => {
                 self.version = version;
-                if self.error.starts_with("TorrServer офлайн: ") {
+                if self.error.starts_with("librqbit недоступен: ") {
                     self.error.clear();
                 }
             }
             Err(error) => {
                 self.version.clear();
                 if self.error.is_empty() {
-                    self.error = format!("TorrServer офлайн: {error}");
+                    self.error = format!("librqbit недоступен: {error}");
                 }
             }
         }
@@ -225,7 +218,6 @@ struct PendingPlayback {
     resume: bool,
     queue: Vec<VideoFile>,
     auto_next: bool,
-    force_mpv: bool,
 }
 
 #[derive(Clone, PartialEq)]
@@ -238,20 +230,6 @@ struct WebPlayback {
     probe_url: String,
     heartbeat_url: String,
     position: i64,
-}
-
-enum PlaybackLaunch {
-    Mpv(MpvSession),
-    Web(WebPlayback),
-    External,
-}
-
-struct OwnedPlayer {
-    session: MpvSession,
-    torrent: Torrent,
-    file: VideoFile,
-    queue: Vec<VideoFile>,
-    auto_next: bool,
 }
 
 #[derive(Clone)]
@@ -282,49 +260,12 @@ fn main() {
         .ok()
         .and_then(|path| settings::load_preferences(&path).ok())
         .unwrap_or_else(default_preferences);
-    if preferences.torrserver_url.trim_end_matches('/') == "http://127.0.0.1:8090" {
-        preferences.torrserver_url = DEFAULT_TORRSERVER_URL.to_owned();
-        if let Ok(path) = settings_path() {
-            if let Err(error) = settings::save_preferences(&path, &preferences) {
-                eprintln!("Не удалось сохранить новый порт TorrServer: {error}");
-            }
-        }
-    }
-    let endpoint =
-        std::env::var("TORRSERVER_URL").unwrap_or_else(|_| preferences.torrserver_url.clone());
-    preferences.torrserver_url = endpoint.clone();
+    // Legacy endpoint settings are retained on disk, but never used by this prototype.
+    preferences.torrserver_url = DEFAULT_TORRSERVER_URL.into();
+    preferences.embedded_player = true;
+    preferences.player_type = PlayerType::BundledMpv;
     let close_to_tray = preferences.close_to_tray;
     let _ = INITIAL_PREFERENCES.set(preferences);
-    let _ = TORRSERVER_PROCESS.set(Mutex::new(None));
-    TORRSERVER_STARTING.store(true, Ordering::Release);
-    std::thread::spawn(move || {
-        let result = bundled_torrserver()
-            .and_then(|executable| default_data_dir().map(|data_dir| (executable, data_dir)))
-            .and_then(|(executable, data_dir)| {
-                TorrServerProcess::connect_or_start(&endpoint, &executable, &data_dir)
-            });
-        match result {
-            Ok(process) => {
-                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
-                    drop(process);
-                    return;
-                }
-                if let Some(state) = TORRSERVER_PROCESS.get() {
-                    if let Ok(mut owned) = state.lock() {
-                        if !SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
-                            *owned = Some(process);
-                        }
-                    }
-                }
-            }
-            Err(error) => {
-                if let Ok(mut state) = STARTUP_TORRSERVER_ERROR.lock() {
-                    *state = Some(error);
-                }
-            }
-        }
-        TORRSERVER_STARTING.store(false, Ordering::Release);
-    });
     let window_icon =
         dioxus::desktop::icon_from_memory::<dioxus::desktop::tao::window::Icon>(APP_ICON).ok();
     dioxus::LaunchBuilder::desktop()
@@ -333,7 +274,9 @@ fn main() {
                 .with_menu(None)
                 .with_window(
                     dioxus::desktop::WindowBuilder::new()
-                        .with_title(format!("Pirate Cinema {VERSION} — локальная медиатека"))
+                        .with_title(format!(
+                            "Pirate Cinema {VERSION} — librqbit локальный прототип"
+                        ))
                         .with_inner_size(dioxus::desktop::tao::dpi::LogicalSize::new(1440.0, 900.0))
                         .with_min_inner_size(dioxus::desktop::tao::dpi::LogicalSize::new(
                             1024.0, 700.0,
@@ -436,13 +379,12 @@ fn App() -> Element {
         error: String::new(),
     });
     let mut cards = use_signal(Vec::<LibraryCard>::new);
-    let mut recent = use_signal(Vec::<ContinueItem>::new);
+    let recent = use_signal(Vec::<ContinueItem>::new);
     let results = use_signal(Vec::<SearchResult>::new);
     let search_metadata = use_signal(|| None::<Movie>);
     let search_poster = use_signal(String::new);
     let mut selected = use_signal(|| None::<Torrent>);
     let mut files = use_signal(Vec::<PlayableFile>::new);
-    let mut players = use_signal(Vec::<OwnedPlayer>::new);
     let mut web_player = use_signal(|| None::<WebPlayback>);
     let mut closing = use_signal(|| false);
     let close_window = desktop.clone();
@@ -1118,11 +1060,9 @@ fn App() -> Element {
                                     .get("auto_next")
                                     .and_then(|item| item.as_bool())
                                     .unwrap_or(playback.auto_next),
-                                force_mpv: false,
                             },
                             endpoint(),
                             busy,
-                            players,
                             web_player,
                             server,
                         );
@@ -1149,11 +1089,9 @@ fn App() -> Element {
                                     resume: true,
                                     queue: playback.queue.clone(),
                                     auto_next: true,
-                                    force_mpv: false,
                                 },
                                 endpoint(),
                                 busy,
-                                players,
                                 web_player,
                                 server,
                             );
@@ -1206,22 +1144,20 @@ fn App() -> Element {
     use_future(move || async move {
         loop {
             tokio::time::sleep(Duration::from_secs(5)).await;
-            if busy() || TORRSERVER_STARTING.load(Ordering::Acquire) {
+            if busy() || ENGINE_STARTING.load(Ordering::Acquire) {
                 continue;
             }
             let url = endpoint();
             let target = url.clone();
-            let generation = TORRSERVER_GENERATION.load(Ordering::Acquire);
-            let result = tokio::task::spawn_blocking(move || {
-                pirate_cinema_core::torrserver_process::health_version(&target)
-            })
-            .await;
+            let generation = ENGINE_GENERATION.load(Ordering::Acquire);
+            let result =
+                tokio::task::spawn_blocking(move || desktop_engine::health_version(&target)).await;
             // Discard a health result that raced with a restart or endpoint change.
-            if endpoint() == url && !busy() && !TORRSERVER_STARTING.load(Ordering::Acquire) {
+            if endpoint() == url && !busy() && !ENGINE_STARTING.load(Ordering::Acquire) {
                 server.write().apply_health(
                     result.unwrap_or_else(|error| Err(error.to_string())),
                     generation,
-                    TORRSERVER_GENERATION.load(Ordering::Acquire),
+                    ENGINE_GENERATION.load(Ordering::Acquire),
                 );
             }
         }
@@ -1284,81 +1220,6 @@ fn App() -> Element {
         }
     });
 
-    use_future(move || async move {
-        loop {
-            tokio::time::sleep(Duration::from_millis(750)).await;
-            let mut remove = Vec::new();
-            let mut advance = Vec::new();
-            let mut refresh_history = false;
-            let mut playback_error = None;
-            {
-                let active = players.read();
-                for (index, player) in active.iter().enumerate() {
-                    loop {
-                        match player.session.try_recv() {
-                            Ok(MpvEvent::Loaded | MpvEvent::Progress { .. }) => {
-                                refresh_history = true
-                            }
-                            Ok(MpvEvent::Ended { eof }) => {
-                                refresh_history = true;
-                                if eof && player.auto_next {
-                                    if let Some(position) = player
-                                        .queue
-                                        .iter()
-                                        .position(|file| file.id == player.file.id)
-                                    {
-                                        if let Some(file) = player.queue.get(position + 1).cloned()
-                                        {
-                                            advance.push(PendingPlayback {
-                                                torrent: player.torrent.clone(),
-                                                file,
-                                                resume: true,
-                                                queue: player.queue.clone(),
-                                                auto_next: true,
-                                                force_mpv: false,
-                                            });
-                                        }
-                                    }
-                                }
-                                remove.push(index);
-                                break;
-                            }
-                            Ok(MpvEvent::StreamFailed(error) | MpvEvent::Error(error)) => {
-                                playback_error = Some(error)
-                            }
-                            Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                                remove.push(index);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            if !remove.is_empty() {
-                remove.sort_unstable();
-                remove.dedup();
-                let mut active = players.write();
-                for index in remove.into_iter().rev() {
-                    if index < active.len() {
-                        active.remove(index);
-                    }
-                }
-            }
-            if refresh_history {
-                let torrents = server.read().torrents.clone();
-                cards.set(load_library_cards(&torrents).unwrap_or_default());
-                recent.set(load_continue_items(&torrents).unwrap_or_default());
-            }
-            if let Some(error) = playback_error {
-                server.write().error = error;
-            }
-            for request in advance {
-                launch_playback(request, endpoint(), busy, players, web_player, server);
-            }
-        }
-    });
-
     let open_saved = move |torrent: Torrent| {
         open_torrent(torrent, endpoint(), page, busy, selected, files, server);
     };
@@ -1375,7 +1236,7 @@ fn App() -> Element {
             if open {
                 open_torrent(existing, endpoint(), page, busy, selected, files, server);
             } else {
-                server.write().error = "Эта раздача уже сохранена в TorrServer".into();
+                server.write().error = "Эта раздача уже сохранена в медиатеке".into();
             }
         } else if server.read().torrents.iter().any(|torrent| {
             !torrent.hash.eq_ignore_ascii_case(&item.hash)
@@ -1445,23 +1306,12 @@ fn App() -> Element {
             page.set(Page::Player);
             return;
         }
-        if let Some(session) = players
-            .write()
-            .iter_mut()
-            .find(|player| player.session.matches(&torrent.hash, file.id))
-        {
-            server.write().error = match session.session.focus() {
-                Ok(()) => "Окно MPV уже открыто".into(),
-                Err(error) => error,
-            };
-            return;
-        }
         let queue = files
             .read()
             .iter()
             .map(|item| item.file.clone())
             .collect::<Vec<_>>();
-        if players.read().is_empty() && web_player.read().is_none() {
+        if web_player.read().is_none() {
             launch_playback(
                 PendingPlayback {
                     torrent,
@@ -1469,11 +1319,9 @@ fn App() -> Element {
                     resume,
                     queue,
                     auto_next,
-                    force_mpv: false,
                 },
                 endpoint(),
                 busy,
-                players,
                 web_player,
                 server,
             );
@@ -1484,7 +1332,6 @@ fn App() -> Element {
                 resume,
                 queue,
                 auto_next,
-                force_mpv: false,
             }));
         }
     };
@@ -1616,14 +1463,9 @@ fn App() -> Element {
         });
     };
 
-    let player_labels = players
-        .read()
-        .iter()
-        .map(|player| player.session.label().to_owned())
-        .collect::<Vec<_>>();
     rsx! {
         style { {CSS} }
-        document::Title { "Pirate Cinema {VERSION} — локальная медиатека" }
+        document::Title { "Pirate Cinema {VERSION} — librqbit локальный прототип" }
         if !onboarding() {
             Welcome { on_complete: move |preferences: Preferences| {
                 language.set(preferences.language);
@@ -1667,26 +1509,9 @@ fn App() -> Element {
                     div { class: "server-control",
                       div { class: if server.read().version.is_empty() { "status offline" } else { "status" },
                         img { src: "{online_icon}", alt: "" }
-                        if server.read().version.is_empty() { {language().pick("TorrServer офлайн", "TorrServer offline")} } else { "TorrServer · {server.read().version}" }
+                        if server.read().version.is_empty() { {language().pick("librqbit недоступен", "librqbit unavailable")} } else { "librqbit · {server.read().version}" }
                       }
-                      button { class: "server-restart", disabled: busy(),
-                        title: language().pick("Перезапустить только сервер приложения; воспроизведение прервётся", "Restart only the application's server; playback will be interrupted"),
-                        onclick: move |_| {
-                            busy.set(true);
-                            server.write().version.clear();
-                            let url = endpoint();
-                            spawn(async move {
-                                let target = url.clone();
-                                let result = tokio::task::spawn_blocking(move || restart_torrserver(&target)).await;
-                                match result {
-                                    Ok(Ok(())) => refresh_server(url, busy, server, cards, recent),
-                                    Ok(Err(error)) => { server.write().restart_failed(error); busy.set(false); }
-                                    Err(error) => { server.write().restart_failed(error.to_string()); busy.set(false); }
-                                }
-                            });
-                        },
-                        {language().pick("Перезапустить", "Restart")}
-                      }
+
                     }
                 }
                 if !server.read().error.is_empty() { div { class: "notice", "{server.read().error}" } }
@@ -1705,20 +1530,9 @@ fn App() -> Element {
                 }
                 if let Some(request) = pending_playback() {
                     div { class: "notice",
-                        {language().pick("Плеер уже воспроизводит другой файл. Заменить его или открыть новое окно? ", "The player is already playing another file. Replace it or open a new window? ")}
-                        button { class: "secondary", onclick: { let request = request.clone(); move |_| { players.write().clear(); web_player.set(None); pending_playback.set(None); launch_playback(request.clone(), endpoint(), busy, players, web_player, server); } }, {language().pick("Заменить", "Replace")} }
-                        button { class: "secondary", onclick: { let request = request.clone(); move |_| { let mut request = request.clone(); request.force_mpv = true; pending_playback.set(None); launch_playback(request, endpoint(), busy, players, web_player, server); } }, {language().pick("Новое окно MPV", "New MPV window")} }
+                        {language().pick("Плеер уже воспроизводит другой файл. Заменить его? ", "The player is already playing another file. Replace it? ")}
+                        button { class: "secondary", onclick: { let request = request.clone(); move |_| { pending_playback.set(None); launch_playback(request.clone(), endpoint(), busy, web_player, server); } }, {language().pick("Заменить", "Replace")} }
                         button { class: "secondary", onclick: move |_| pending_playback.set(None), {language().pick("Отмена", "Cancel")} }
-                    }
-                }
-                if !player_labels.is_empty() {
-                    div { class: "player-strip",
-                        for (index, label) in player_labels.into_iter().enumerate() {
-                            span { title: "{label}", "MPV · {label}" }
-                            button { onclick: move |_| control_player(index, "focus", players, server), {language().pick("Показать", "Show")} }
-                            button { onclick: move |_| control_player(index, "pause", players, server), {language().pick("Пауза / продолжить", "Pause / resume")} }
-                            button { onclick: move |_| control_player(index, "stop", players, server), {language().pick("Закрыть", "Close")} }
-                        }
                     }
                 }
                 if let Some(playback) = web_player() {
@@ -1730,7 +1544,7 @@ fn App() -> Element {
                             } else {
                                 button { class: "secondary", onclick: move |_| page.set(return_page()), {language().pick("Свернуть", "Minimize")} }
                             }
-                            button { class: "secondary", onclick: move |_| { spawn(async move { flush_web_progress().await; web_player.set(None); if page() == Page::Player { page.set(return_page()); } }); }, {language().pick("Закрыть", "Close")} }
+                            button { class: "secondary", onclick: move |_| { PLAYBACK_GENERATION.fetch_add(1, Ordering::AcqRel); spawn(async move { flush_web_progress().await; web_player.set(None); let _=tokio::task::spawn_blocking(pirate_cinema_core::web_stream::close).await; if page() == Page::Player { page.set(return_page()); } }); }, {language().pick("Закрыть", "Close")} }
                         }
                         div {
                             class: "artplayer-host",
@@ -1793,11 +1607,6 @@ fn Welcome(on_complete: EventHandler<Preferences>) -> Element {
         .cloned()
         .unwrap_or_else(default_preferences);
     let mut english = use_signal(|| initial.language == Language::English);
-    let mut endpoint = use_signal(|| initial.torrserver_url);
-    let mut external = use_signal(|| initial.player_type == PlayerType::External);
-    let embedded_player = initial.embedded_player;
-    let mut player_path = use_signal(|| initial.player_path);
-    let mut error = use_signal(String::new);
     let submit = move |_| {
         let preferences = Preferences {
             language: if english() {
@@ -1806,43 +1615,27 @@ fn Welcome(on_complete: EventHandler<Preferences>) -> Element {
                 Language::Russian
             },
             onboarding_complete: true,
-            torrserver_url: endpoint(),
-            player_type: if external() {
-                PlayerType::External
-            } else {
-                PlayerType::BundledMpv
-            },
-            player_path: player_path(),
-            embedded_player,
+            torrserver_url: initial.torrserver_url.clone(),
+            player_type: PlayerType::BundledMpv,
+            player_path: String::new(),
+            embedded_player: true,
             torznab_url: initial.torznab_url.clone(),
             torznab_api_key: initial.torznab_api_key.clone(),
             close_to_tray: initial.close_to_tray,
         };
-        if let Err(message) =
-            settings::validate_endpoint(&preferences.torrserver_url).and_then(|_| {
-                settings::validate_player(preferences.player_type, &preferences.player_path)
-            })
-        {
-            error.set(message);
-        } else {
-            on_complete.call(preferences);
-        }
+        on_complete.call(preferences);
     };
     rsx! {
         main { class: "welcome-shell",
             section { class: "welcome-card",
                 span { class: "eyebrow", "Pirate Cinema · Rust" }
                 h1 { if english() { "Welcome" } else { "Добро пожаловать" } }
-                p { class: "lead", if english() { "Choose the local service and player. You can change them later." } else { "Выберите локальный сервис и плеер. Эти параметры можно изменить позже." } }
+                p { class: "lead", if english() { "Embedded librqbit and ArtPlayer are ready." } else { "Встроенные librqbit и ArtPlayer готовы." } }
                 div { class: "filters",
                     button { class: if !english() { "primary" } else { "secondary" }, onclick: move |_| english.set(false), "Русский" }
                     button { class: if english() { "primary" } else { "secondary" }, onclick: move |_| english.set(true), "English" }
                 }
-                label { "TorrServer", input { value: "{endpoint}", oninput: move |event| endpoint.set(event.value()) } }
-                label { input { r#type: "checkbox", checked: external(), onchange: move |event| external.set(event.checked()) } if english() { " Use an external player" } else { " Использовать внешний плеер" } }
-                if external() { label { if english() { "Player path" } else { "Путь к плееру" } input { value: "{player_path}", oninput: move |event| player_path.set(event.value()) } } }
-                if external() { button { class: "secondary", onclick: move |_| { if let Some(path) = rfd::FileDialog::new().add_filter("Executable", &["exe"]).pick_file() { player_path.set(path.display().to_string()); } }, if english() { "Choose player" } else { "Выбрать плеер" } } }
-                if !error().is_empty() { div { class: "notice", "{error}" } }
+                p { "Встроенный ArtPlayer · локальное воспроизведение" }
                 button { class: "primary welcome-action", onclick: submit, if english() { "Continue" } else { "Начать" } }
             }
         }
@@ -2063,7 +1856,7 @@ fn Library(
     }
     rsx! {
         section { class: "page",
-            span { class: "eyebrow", {language.pick("Сохранено в TorrServer", "Saved in TorrServer")} }
+            span { class: "eyebrow", {language.pick("Локальная медиатека", "Local library")} }
             div { class: "detail-head",
                 h1 { {language.pick("Медиатека", "Library")} }
                 button { class: "secondary", disabled: busy, onclick: move |event| on_sync.call(event), if busy { {language.pick("Обновляем…", "Updating…")} } else { {language.pick("Обновить описания и постеры", "Refresh descriptions and posters")} } }
@@ -2246,12 +2039,12 @@ fn Detail(
                     if !metadata_status.is_empty() { div { class: "notice", "{metadata_status}" } }
                     if confirm_remove() {
                         div { class: "notice",
-                            {language.pick("Удалить раздачу из TorrServer? История просмотра останется локально. ", "Remove this torrent from TorrServer? Playback history will remain local. ")}
+                            {language.pick("Убрать раздачу из медиатеки? История просмотра останется локально. ", "Remove this torrent from the library? Playback history will remain local. ")}
                             button { class: "secondary", onclick: move |event| on_remove.call(event), {language.pick("Удалить", "Remove")} }
                             button { class: "secondary", onclick: move |_| confirm_remove.set(false), {language.pick("Отмена", "Cancel")} }
                         }
                     } else {
-                        button { class: "secondary", onclick: move |_| confirm_remove.set(true), {language.pick("Удалить из TorrServer", "Remove from TorrServer")} }
+                        button { class: "secondary", onclick: move |_| confirm_remove.set(true), {language.pick("Убрать из медиатеки", "Remove from library")} }
                     }
                 }
             }
@@ -2314,11 +2107,11 @@ fn Detail(
 #[component]
 fn Settings(
     mut language: Signal<Language>,
-    mut endpoint: Signal<String>,
-    mut busy: Signal<bool>,
-    mut server: Signal<ServerState>,
-    mut cards: Signal<Vec<LibraryCard>>,
-    mut recent: Signal<Vec<ContinueItem>>,
+    endpoint: Signal<String>,
+    busy: Signal<bool>,
+    server: Signal<ServerState>,
+    cards: Signal<Vec<LibraryCard>>,
+    recent: Signal<Vec<ContinueItem>>,
     metadata_status: Signal<String>,
     online_icon: String,
     on_sync: EventHandler<MouseEvent>,
@@ -2327,76 +2120,36 @@ fn Settings(
         .get()
         .cloned()
         .unwrap_or_else(default_preferences);
-    let initial_endpoint = endpoint();
-    let mut endpoint_edit = use_signal(move || initial_endpoint);
     let mut torznab_url = use_signal(|| initial.torznab_url);
     let mut torznab_api_key = use_signal(|| initial.torznab_api_key);
-    let mut player_path = use_signal(|| initial.player_path);
-    let mut external_player = use_signal(|| initial.player_type == PlayerType::External);
-    let mut embedded_player = use_signal(|| initial.embedded_player);
     let mut close_to_tray = use_signal(|| initial.close_to_tray);
     let mut status = use_signal(String::new);
-    let mut maintenance_busy = use_signal(|| false);
     let mut diagnostics = use_signal(Vec::<String>::new);
-    let mut diagnostic_report = use_signal(String::new);
-    let mut copy_status = use_signal(String::new);
-    let mut backup_status = use_signal(String::new);
-    let mut restore_source = use_signal(|| None::<PathBuf>);
+    let mut maintenance_busy = use_signal(|| false);
     let mut update_status = use_signal(String::new);
-    let mut update_url = use_signal(String::new);
     let mut available_update = use_signal(|| None::<ReleaseUpdate>);
     let window = dioxus::desktop::use_window();
-    let exit_fullscreen = move |_| {
-        window.set_fullscreen(false);
-        spawn(async move {
-            let mut eval = document::eval(
-                r#"
-                const art = window.__pirateCinemaArt;
-                if (art) { art.fullscreen = false; art.fullscreenWeb = false; }
-                if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
-                dioxus.send(true);
-            "#,
-            );
-            let _ = eval.recv::<bool>().await;
-        });
-    };
 
     let save = move |_| {
         let next = Preferences {
             language: language(),
             onboarding_complete: true,
-            torrserver_url: endpoint_edit(),
-            player_type: if external_player() {
-                PlayerType::External
-            } else {
-                PlayerType::BundledMpv
-            },
-            player_path: player_path(),
-            embedded_player: embedded_player(),
+            torrserver_url: initial.torrserver_url.clone(),
+            player_type: PlayerType::BundledMpv,
+            player_path: String::new(),
+            embedded_player: true,
             torznab_url: torznab_url(),
             torznab_api_key: torznab_api_key(),
             close_to_tray: close_to_tray(),
         };
-        let result = settings_path().and_then(|path| settings::save_preferences(&path, &next));
-        if let Err(error) = result {
-            status.set(error);
-            return;
-        }
-        if let Err(error) = configure_torznab(
-            next.torrserver_url.as_str(),
-            next.torznab_url.as_str(),
-            next.torznab_api_key.as_str(),
-        ) {
-            status.set(error);
-            return;
-        }
-        endpoint.set(next.torrserver_url);
         status.set(
-            language()
-                .pick("Настройки сохранены", "Settings saved")
-                .into(),
+            match settings_path().and_then(|path| settings::save_preferences(&path, &next)) {
+                Ok(()) => language()
+                    .pick("Настройки сохранены", "Settings saved")
+                    .into(),
+                Err(error) => error,
+            },
         );
-        refresh_server(endpoint(), busy, server, cards, recent);
     };
 
     let run_diagnostics = move |_| {
@@ -2405,27 +2158,12 @@ fn Settings(
         }
         maintenance_busy.set(true);
         diagnostics.set(vec!["Выполняем проверки…".into()]);
-        diagnostic_report.set(String::new());
-        copy_status.set(String::new());
-        let endpoint_value = endpoint_edit();
-        let selected_player = if external_player() {
-            PlayerType::External
-        } else {
-            PlayerType::BundledMpv
-        };
-        let selected_path = player_path();
         spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                system_diagnostics(&endpoint_value, selected_player, &selected_path)
-            })
-            .await;
-            match result {
-                Ok((items, report)) => {
-                    diagnostics.set(items);
-                    diagnostic_report.set(report);
-                }
-                Err(error) => diagnostics.set(vec![format!("✕ Диагностика: {error}")]),
-            }
+            let result = tokio::task::spawn_blocking(system_diagnostics).await;
+            diagnostics.set(match result {
+                Ok(items) => items,
+                Err(error) => vec![format!("✕ Диагностика: {error}")],
+            });
             maintenance_busy.set(false);
         });
     };
@@ -2440,86 +2178,20 @@ fn Settings(
         else {
             return;
         };
-        let endpoint_value = endpoint();
         maintenance_busy.set(true);
-        backup_status.set("Создаём резервную копию…".into());
         spawn(async move {
             let result = tokio::task::spawn_blocking(move || {
-                while_owned_torrserver_stopped(&endpoint_value, |torrserver_dir| {
-                    create_local_backup(
-                        &history_path()?,
-                        settings_path().ok().as_deref(),
-                        torrserver_dir,
-                        &directory,
-                    )
-                })
+                create_local_backup(
+                    &history_path()?,
+                    settings_path().ok().as_deref(),
+                    None,
+                    &directory,
+                )
             })
             .await;
-            backup_status.set(match result {
+            status.set(match result {
                 Ok(Ok(path)) => format!("Копия создана: {}", path.display()),
                 Ok(Err(error)) => error,
-                Err(error) => error.to_string(),
-            });
-            maintenance_busy.set(false);
-        });
-    };
-
-    let choose_restore = move |_| {
-        if maintenance_busy() {
-            return;
-        }
-        restore_source.set(
-            rfd::FileDialog::new()
-                .set_title("Выберите папку backup-* для восстановления")
-                .pick_folder(),
-        );
-    };
-
-    let restore_backup = move |_| {
-        let Some(source) = restore_source() else {
-            return;
-        };
-        let endpoint_value = endpoint();
-        maintenance_busy.set(true);
-        backup_status.set("Проверяем копию и создаём страховочную…".into());
-        spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                while_owned_torrserver_stopped(&endpoint_value, |torrserver_dir| {
-                    let history_file = history_path()?;
-                    let profile = history_file
-                        .parent()
-                        .ok_or("Папка профиля Rust недоступна")?
-                        .to_path_buf();
-                    let preferences = settings_path().ok();
-                    let safety = create_local_backup(
-                        &history_file,
-                        preferences.as_deref(),
-                        torrserver_dir,
-                        &profile.join("pre-restore-backups"),
-                    )?;
-                    let mut history =
-                        HistoryStore::open(&history_file).map_err(|error| error.to_string())?;
-                    let posters = history.restore_local_backup(
-                        &source,
-                        preferences.as_deref(),
-                        &profile,
-                        torrserver_dir,
-                    )?;
-                    Ok::<_, String>((posters, safety))
-                })
-            })
-            .await;
-            backup_status.set(match result {
-                Ok(Ok((posters, safety))) => {
-                    cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
-                    recent.set(load_continue_items(&server.read().torrents).unwrap_or_default());
-                    restore_source.set(None);
-                    format!(
-                        "Копия восстановлена · постеров: {posters}. Страховочная копия: {}. Перезапустите приложение для применения настроек",
-                        safety.display()
-                    )
-                }
-                Ok(Err(error)) => format!("Восстановление отменено: {error}"),
                 Err(error) => error.to_string(),
             });
             maintenance_busy.set(false);
@@ -2532,13 +2204,10 @@ fn Settings(
         }
         maintenance_busy.set(true);
         update_status.set("Проверяем GitHub Releases…".into());
-        update_url.set(String::new());
-        available_update.set(None);
         spawn(async move {
             let result = tokio::task::spawn_blocking(|| check_rust_update(VERSION)).await;
             match result {
                 Ok(Ok(Some(update))) => {
-                    update_url.set(update.download_url.clone());
                     update_status.set(format!("Доступна версия {}", update.version));
                     available_update.set(Some(update));
                 }
@@ -2555,7 +2224,6 @@ fn Settings(
             return;
         };
         maintenance_busy.set(true);
-        update_status.set(format!("Скачиваем версию {}…", update.version));
         spawn(async move {
             let result = tokio::task::spawn_blocking(move || {
                 let installer = download_rust_update(&update)?;
@@ -2563,15 +2231,22 @@ fn Settings(
                 Ok::<_, String>(installer)
             })
             .await;
-            match result {
-                Ok(Ok(installer)) => update_status.set(format!(
-                    "Установщик запущен: {}. Закройте Pirate Cinema, если установщик попросит.",
-                    installer.display()
-                )),
-                Ok(Err(error)) => update_status.set(error),
-                Err(error) => update_status.set(error.to_string()),
-            }
+            update_status.set(match result {
+                Ok(Ok(path)) => format!("Установщик запущен: {}", path.display()),
+                Ok(Err(error)) => error,
+                Err(error) => error.to_string(),
+            });
             maintenance_busy.set(false);
+        });
+    };
+
+    let exit_fullscreen = move |_| {
+        window.set_fullscreen(false);
+        spawn(async move {
+            let mut eval = document::eval(
+                r#"const art=window.__pirateCinemaArt;if(art){art.fullscreen=false;art.fullscreenWeb=false;}if(document.fullscreenElement){await document.exitFullscreen().catch(()=>{});}dioxus.send(true);"#,
+            );
+            let _ = eval.recv::<bool>().await;
         });
     };
 
@@ -2579,7 +2254,7 @@ fn Settings(
         section { class: "page settings",
             span { class: "eyebrow", {language().pick("Локальная конфигурация", "Local configuration")} }
             h1 { {language().pick("Настройки", "Settings")} }
-            p { class: "lead", "Pirate Cinema · {VERSION}. " {language().pick("Настройки и данные хранятся только на этом компьютере.", "Preferences and data stay on this computer.")} }
+            p { class: "lead", "Pirate Cinema · {VERSION}. " {language().pick("Все данные хранятся на этом компьютере.", "All data stays on this computer.")} }
 
             section { class: "settings-card",
                 h2 { {language().pick("Интерфейс и плеер", "Interface and player")} }
@@ -2590,138 +2265,46 @@ fn Settings(
                         option { value: "en", "English" }
                     }
                 }
-                div { class: "choice-row",
-                    button { class: if !external_player() { "secondary selected" } else { "secondary" }, onclick: move |_| external_player.set(false), {language().pick("Плеер приложения", "Application player")} }
-                    button { class: if external_player() { "secondary selected" } else { "secondary" }, onclick: move |_| external_player.set(true), {language().pick("Локальный плеер", "Local player")} }
-                }
-                if !external_player() {
-                    label { class: "auto-next",
-                        input { r#type: "checkbox", checked: embedded_player(), onchange: move |event| embedded_player.set(event.checked()) }
-                        {language().pick(" Воспроизводить внутри приложения через HLS", " Play inside the application over HLS")}
-                    }
-                }
+                p { "ArtPlayer · локальный HLS · librqbit" }
+                p { class: "hint", {language().pick("Внешний плеер и TorrServer не используются.", "No external player or TorrServer is used.")} }
                 button { class: "secondary", onclick: exit_fullscreen, {language().pick("Выйти из полноэкранного режима", "Exit fullscreen")} }
                 div { class: "setting-row",
                     span { {language().pick("При закрытии", "When closing")} }
                     div { class: "stacked-options",
-                        label { class: "auto-next",
-                            input { r#type: "checkbox", checked: close_to_tray(), onchange: move |event| close_to_tray.set(event.checked()) }
-                            {language().pick(" Сворачивать в трей", " Minimize to tray")}
-                        }
-                        label { class: "auto-next",
-                            input { r#type: "checkbox", checked: !close_to_tray(), onchange: move |event| close_to_tray.set(!event.checked()) }
-                            {language().pick(" Закрывать приложение полностью", " Exit the application completely")}
-                        }
-                    }
-                }
-                p { class: "hint", {language().pick("Варианты взаимоисключающие; настройка применяется после перезапуска.", "These options are mutually exclusive; the setting applies after restart.")} }
-                p { class: "hint", {language().pick("Только встроенный MPV сохраняет точную позицию просмотра через IPC.", "Only bundled MPV saves exact playback position through IPC.")} }
-                if external_player() {
-                    div { class: "setting-row",
-                        span { {language().pick("Плеер", "Player")} }
-                        div { class: "choice-row",
-                            input { value: "{player_path}", placeholder: "C:\\Program Files\\mpv\\mpv.exe", oninput: move |event| player_path.set(event.value()) }
-                            button { class: "secondary", onclick: move |_| { if let Some(path) = rfd::FileDialog::new().add_filter("Executable", &["exe"]).pick_file() { player_path.set(path.display().to_string()); } }, {language().pick("Выбрать файл", "Choose file")} }
-                        }
+                        label { class: "auto-next", input { r#type: "checkbox", checked: close_to_tray(), onchange: move |event| close_to_tray.set(event.checked()) } {language().pick(" Сворачивать в трей", " Minimize to tray")} }
+                        label { class: "auto-next", input { r#type: "checkbox", checked: !close_to_tray(), onchange: move |event| close_to_tray.set(!event.checked()) } {language().pick(" Закрывать приложение", " Exit application")} }
                     }
                 }
             }
 
             section { class: "settings-card",
-                h2 { {language().pick("TorrServer и поиск", "TorrServer and search")} }
-                p { class: "hint", {language().pick("Локальный сервер и необязательный индексатор Jackett/Prowlarr.", "Local server and optional Jackett/Prowlarr indexer.")} }
-                label { {language().pick("Адрес TorrServer", "TorrServer address")} input { value: "{endpoint_edit}", oninput: move |event| endpoint_edit.set(event.value()) } }
-                label { {language().pick("Адрес Jackett/Torznab", "Jackett/Torznab address")} input { value: "{torznab_url}", placeholder: "http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/", oninput: move |event| torznab_url.set(event.value()) } }
-                label { {language().pick("API-ключ Jackett", "Jackett API key")} input { r#type: "password", value: "{torznab_api_key}", placeholder: language().pick("Оставьте пустым, чтобы отключить", "Leave empty to disable"), oninput: move |event| torznab_api_key.set(event.value()) } }
-                button { class: "primary", onclick: save, {language().pick("Сохранить и применить", "Save and apply")} }
+                h2 { {language().pick("Поиск", "Search")} }
+                label { {language().pick("Адрес Jackett/Torznab", "Jackett/Torznab URL")} input { value: "{torznab_url}", oninput: move |event| torznab_url.set(event.value()) } }
+                label { {language().pick("API-ключ", "API key")} input { r#type: "password", value: "{torznab_api_key}", oninput: move |event| torznab_api_key.set(event.value()) } }
+                button { class: "primary", onclick: save, {language().pick("Сохранить", "Save")} }
                 if !status().is_empty() { div { class: "notice", "{status}" } }
             }
 
             section { class: "settings-card",
                 h2 { {language().pick("Обслуживание", "Maintenance")} }
-                p { class: "hint", {language().pick("Резервная копия включает историю, настройки, постеры и данные встроенного TorrServer.", "Backup includes history, preferences, posters, and bundled TorrServer data.")} }
                 div { class: "settings-facts",
-                    article {
-                        span { {language().pick("Поиск раздач", "Torrent search")} }
-                        strong { if torznab_url().trim().is_empty() { "RuTor" } else { "RuTor · Torznab" } }
-                        small { {language().pick("Через локальный TorrServer", "Through local TorrServer")} }
-                    }
-                    article {
-                        span { {language().pick("Постеры и метаданные", "Posters and metadata")} }
-                        strong { "Cinemeta · TVmaze · Wikidata" }
-                        small { {language().pick("Локальный кэш и кадр MPV", "Local cache and MPV frame")} }
-                    }
-                    article {
-                        span { {language().pick("Локальная база", "Local database")} }
-                        strong { "SQLite · media.db" }
-                        small { if language() == Language::Russian { "Карточек: {cards().len()}" } else { "Items: {cards().len()}" } }
-                    }
+                    article { span { {language().pick("Торрент-движок", "Torrent engine")} } strong { "{server().version}" } small { if language() == Language::Russian { "Раздач: {server().torrents.len()}" } else { "Torrents: {server().torrents.len()}" } } }
+                    article { span { {language().pick("Локальная база", "Local database")} } strong { "SQLite" } small { if language() == Language::Russian { "Карточек: {cards().len()}, недавних: {recent().len()}" } else { "Items: {cards().len()}, recent: {recent().len()}" } } }
                 }
-                button { class: "primary", disabled: busy(), onclick: move |event| on_sync.call(event), if busy() { {language().pick("Синхронизируем…", "Synchronizing…")} } else { {language().pick("Синхронизировать всю медиатеку", "Synchronize entire library")} } }
+                button { class: "primary", disabled: busy(), onclick: move |event| on_sync.call(event), {language().pick("Обновить описания и постеры", "Refresh descriptions and posters")} }
                 if !metadata_status().is_empty() { div { class: "notice", "{metadata_status}" } }
                 div { class: "settings-actions",
-                    button { class: "secondary", disabled: maintenance_busy(), onclick: run_diagnostics, {language().pick("Запустить диагностику", "Run diagnostics")} }
-                    button { class: "secondary", disabled: maintenance_busy() || busy(), onclick: move |_| {
-                        busy.set(true);
-                        server.write().version.clear();
-                        let url = endpoint();
-                        spawn(async move {
-                            let target = url.clone();
-                            let result = tokio::task::spawn_blocking(move || restart_torrserver(&target)).await;
-                            match result {
-                                Ok(Ok(())) => refresh_server(url, busy, server, cards, recent),
-                                Ok(Err(error)) => { server.write().restart_failed(error); busy.set(false); }
-                                Err(error) => { server.write().restart_failed(error.to_string()); busy.set(false); }
-                            }
-                        });
-                    }, {language().pick("Перезапустить TorrServer", "Restart TorrServer")} }
+                    button { class: "secondary", disabled: maintenance_busy(), onclick: run_diagnostics, {language().pick("Диагностика", "Diagnostics")} }
                     button { class: "secondary", disabled: maintenance_busy(), onclick: create_backup, {language().pick("Создать резервную копию", "Create backup")} }
-                    button { class: "secondary", disabled: maintenance_busy(), onclick: choose_restore, {language().pick("Восстановить копию", "Restore backup")} }
-                    button { class: "secondary", disabled: maintenance_busy(), onclick: check_update, {language().pick("Проверить обновления", "Check for updates")} }
+                    button { class: "secondary", disabled: maintenance_busy(), onclick: check_update, {language().pick("Проверить обновления", "Check updates")} }
                 }
-                div { class: "settings-output",
-                    if !diagnostics().is_empty() { div { class: "panel", for item in diagnostics() { div { style: "white-space:pre-wrap;overflow-wrap:anywhere", "{item}" } } } }
-                    if !diagnostic_report().is_empty() {
-                        button { class: "secondary", onclick: move |_| {
-                            let text = serde_json::to_string(&diagnostic_report()).unwrap_or_default();
-                            spawn(async move {
-                                let mut eval = document::eval(&format!(r#"(async()=>{{const text={text}+'\nWebView UA: '+navigator.userAgent;let ok=false;try{{await navigator.clipboard.writeText(text);ok=true;}}catch(_){{const input=document.createElement('textarea');input.value=text;input.style.position='fixed';input.style.opacity='0';document.body.append(input);input.select();ok=document.execCommand('copy');input.remove();}}dioxus.send(ok);}})();"#));
-                                copy_status.set(if eval.recv::<bool>().await.unwrap_or(false) { "Отчёт скопирован".into() } else { "Не удалось скопировать отчёт".into() });
-                            });
-                        }, {language().pick("Скопировать диагностику", "Copy diagnostics")} }
-                        small { {language().pick("Без сырых логов, путей профиля, ключей и данных раздач", "No raw logs, profile paths, keys or torrent data")} }
-                    }
-                    if !copy_status().is_empty() { div { "{copy_status}" } }
-                    if !backup_status().is_empty() { div { class: "notice", "{backup_status}" } }
-                    if !update_status().is_empty() {
-                        div { class: "notice", "{update_status}"
-                            if available_update().is_some() { button { class: "primary", style: "min-height:38px;margin-left:10px", disabled: maintenance_busy(), onclick: install_update, {language().pick("Скачать и установить", "Download and install")} } }
-                            if !update_url().is_empty() { button { class: "secondary", style: "margin-left:8px", onclick: move |_| { if let Err(error) = open_external_url(&update_url()) { update_status.set(error); } }, {language().pick("Открыть страницу", "Open page")} } }
-                        }
-                    }
-                    if let Some(path) = restore_source() {
-                        div { class: "notice",
-                            if language() == Language::Russian { "Будут восстановлены локальные история, настройки, постеры и данные встроенного TorrServer из: {path.display()}. Перед изменением автоматически создаётся страховочная копия. " } else { "Local history, settings, posters, and bundled TorrServer data will be restored from: {path.display()}. A safety backup is created first. " }
-                            button { class: "secondary", disabled: maintenance_busy(), onclick: restore_backup, {language().pick("Подтвердить восстановление", "Confirm restore")} }
-                            button { class: "secondary", onclick: move |_| restore_source.set(None), {language().pick("Отмена", "Cancel")} }
-                        }
-                    }
-                }
+                if !diagnostics().is_empty() { div { class: "panel", for item in diagnostics() { div { style: "white-space:pre-wrap", "{item}" } } } }
+                if !update_status().is_empty() { div { class: "notice", "{update_status}" if available_update().is_some() { button { class: "primary", onclick: install_update, {language().pick("Установить", "Install")} } } } }
             }
 
             section { class: "settings-card server-summary",
                 img { src: "{online_icon}", alt: "" }
-                div {
-                    h2 { "TorrServer" }
-                    strong { "{endpoint_edit}" }
-                    if !server().version.is_empty() {
-                        small { if language() == Language::Russian { "Подключён · {server().version} · раздач: {server().torrents.len()}" } else { "Connected · {server().version} · torrents: {server().torrents.len()}" } }
-                    } else if server().error.is_empty() {
-                        small { {language().pick("Проверяем подключение…", "Checking connection…")} }
-                    } else {
-                        small { {language().pick("Нет подключения — запустите диагностику выше", "Not connected — run diagnostics above")} }
-                    }
-                }
+                div { h2 { "librqbit" } strong { "{server().version}" } small { "{endpoint()}" } }
             }
         }
     }
@@ -2753,46 +2336,21 @@ fn refresh_server(
 ) {
     busy.set(true);
     spawn(async move {
-        let request_endpoint = endpoint.clone();
-        let check_gst = cfg!(windows)
-            && settings_path()
-                .ok()
-                .and_then(|path| settings::load_preferences(&path).ok())
-                .or_else(|| INITIAL_PREFERENCES.get().cloned())
-                .is_some_and(|preferences| {
-                    preferences.embedded_player && preferences.player_type != PlayerType::External
-                });
-        let result = tokio::task::spawn_blocking(move || {
-            read_torrserver(&request_endpoint).map(|(version, torrents)| {
-                let gst_error = if check_gst {
-                    ensure_gstreamer(&request_endpoint).err()
-                } else {
-                    None
-                };
-                (version, torrents, gst_error)
-            })
-        })
-        .await;
+        let result = tokio::task::spawn_blocking(move || read_library(&endpoint)).await;
         server.set(match result {
-            Ok(Ok((version, torrents, gst_error))) => {
+            Ok(Ok((version, torrents))) => {
                 cards.set(load_library_cards(&torrents).unwrap_or_default());
                 recent.set(load_continue_items(&torrents).unwrap_or_default());
                 ServerState {
                     version,
                     torrents,
-                    error: gst_error
-                        .map(|error| format!("Встроенный HLS-плеер: {error}"))
-                        .unwrap_or_default(),
+                    error: String::new(),
                 }
             }
             Ok(Err(error)) => ServerState {
                 version: String::new(),
                 torrents: Vec::new(),
-                error: STARTUP_TORRSERVER_ERROR
-                    .lock()
-                    .ok()
-                    .and_then(|state| state.clone())
-                    .unwrap_or(error),
+                error,
             },
             Err(error) => ServerState {
                 version: String::new(),
@@ -2989,103 +2547,6 @@ fn settings_path() -> Result<PathBuf, String> {
     Ok(root.join("settings.json"))
 }
 
-struct TorrServerOperation;
-
-impl TorrServerOperation {
-    fn begin() -> Result<Self, String> {
-        if TORRSERVER_STARTING.swap(true, Ordering::AcqRel) {
-            return Err("TorrServer занят запуском или обслуживанием; дождитесь окончания".into());
-        }
-        TORRSERVER_GENERATION.fetch_add(1, Ordering::AcqRel);
-        Ok(Self)
-    }
-}
-
-impl Drop for TorrServerOperation {
-    fn drop(&mut self) {
-        TORRSERVER_STARTING.store(false, Ordering::Release);
-    }
-}
-
-fn restart_torrserver(endpoint: &str) -> Result<(), String> {
-    let _operation = TorrServerOperation::begin()?;
-    let result = (|| {
-        let state = TORRSERVER_PROCESS
-            .get()
-            .ok_or("TorrServer ещё не инициализирован")?;
-        let executable = bundled_torrserver()?;
-        let data = default_data_dir()?;
-        // Keep only our child handle; never search for or kill unrelated processes.
-        let mut process = state
-            .lock()
-            .map_err(|_| "Состояние TorrServer повреждено")?
-            .take();
-        let result =
-            TorrServerProcess::restart_or_start(&mut process, endpoint, &executable, &data);
-        {
-            let mut owned = state
-                .lock()
-                .map_err(|_| "Состояние TorrServer повреждено")?;
-            if !SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
-                *owned = process;
-            }
-        }
-        if result.is_ok() {
-            if let Ok(mut error) = STARTUP_TORRSERVER_ERROR.lock() {
-                *error = None;
-            }
-        }
-        result
-    })();
-    result
-}
-
-fn while_owned_torrserver_stopped<T>(
-    endpoint: &str,
-    operation: impl FnOnce(Option<&std::path::Path>) -> Result<T, String>,
-) -> Result<T, String> {
-    let _operation = TorrServerOperation::begin()?;
-    let process_lock = TORRSERVER_PROCESS
-        .get()
-        .ok_or("Состояние TorrServer ещё не инициализировано")?;
-    let owned = process_lock
-        .lock()
-        .map_err(|_| "Состояние TorrServer повреждено")?
-        .as_ref()
-        .is_some_and(TorrServerProcess::owns_process);
-    if !owned {
-        return operation(None);
-    }
-
-    let process = process_lock
-        .lock()
-        .map_err(|_| "Состояние TorrServer повреждено")?
-        .take();
-    drop(process);
-    let data_dir = default_data_dir()?;
-    let result = operation(Some(&data_dir));
-    let restart = bundled_torrserver().and_then(|executable| {
-        TorrServerProcess::connect_or_start(endpoint, &executable, &data_dir)
-    });
-    match restart {
-        Ok(process) => {
-            let mut owned = process_lock
-                .lock()
-                .map_err(|_| "Состояние TorrServer повреждено")?;
-            if !SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
-                *owned = Some(process);
-            }
-            result
-        }
-        Err(error) => Err(match result {
-            Ok(_) => format!("Копия создана, но TorrServer не перезапустился: {error}"),
-            Err(operation_error) => {
-                format!("{operation_error}; TorrServer не перезапустился: {error}")
-            }
-        }),
-    }
-}
-
 fn default_preferences() -> Preferences {
     Preferences {
         language: Language::Russian,
@@ -3101,74 +2562,23 @@ fn default_preferences() -> Preferences {
 }
 
 fn shutdown_owned_processes() {
+    PLAYBACK_GENERATION.fetch_add(1, Ordering::AcqRel);
     SHUTDOWN_REQUESTED.store(true, Ordering::Release);
-    if let Some(state) = TORRSERVER_PROCESS.get() {
-        if let Ok(mut owned) = state.lock() {
-            // Taking the value runs TorrServerProcess::drop, which kills and waits
-            // for the bundled child instead of leaving it behind after the UI exits.
-            owned.take();
-        }
-    }
+    pirate_cinema_core::web_stream::close();
+    desktop_engine::shutdown();
 }
 
-fn system_diagnostics(
-    endpoint: &str,
-    player_type: PlayerType,
-    player_path: &str,
-) -> (Vec<String>, String) {
+fn system_diagnostics() -> Vec<String> {
     let mut checks = Vec::new();
-    let mut report = vec![format!(
-        "Pirate Cinema {VERSION}\nOS: {}\nArchitecture: {}",
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    )];
-    let owned_pid = TORRSERVER_PROCESS.get().and_then(|state| {
-        state
-            .lock()
-            .ok()
-            .and_then(|mut state| state.as_mut().and_then(TorrServerProcess::diagnostic_pid))
+    checks.push(match desktop_engine::health_version("") {
+        Ok(version) => format!("✓ Торрент-движок: {version}"),
+        Err(error) => format!("✕ Торрент-движок: {error}"),
     });
-    let port = port_diagnostics(owned_pid);
-    checks.push(port.clone());
-    report.push(port);
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(4)))
-        .build()
-        .into();
-    for route in ["/echo", "/gst/echo"] {
-        let result = agent
-            .get(format!("{}{route}", endpoint.trim_end_matches('/')))
-            .call();
-        let status = match result {
-            Ok(mut response) if route == "/gst/echo" => {
-                match response.body_mut().read_json::<serde_json::Value>() {
-                    Ok(value) => gst_diagnostic_status(&value),
-                    Err(_) => "✕ /gst/echo: отвечает, но ответ некорректен".into(),
-                }
-            }
-            Ok(_) => format!("✓ {route}: отвечает"),
-            Err(_) => format!("✕ {route}: не отвечает"),
-        };
-        checks.push(status.clone());
-        report.push(status);
-    }
-    let (local_launch, safe_launch) = pirate_cinema_core::torrserver_process::launch_diagnostics();
-    report.push(safe_launch);
-    checks.push(match read_torrserver(endpoint) {
-        Ok((version, torrents)) => {
-            report.push(format!(
-                "TorrServer version: {}",
-                version
-                    .chars()
-                    .filter(|character| character.is_ascii_digit() || *character == '.')
-                    .take(32)
-                    .collect::<String>()
-            ));
-            format!("✓ TorrServer: {version} · раздач: {}", torrents.len())
-        }
-        Err(error) => format!("✕ TorrServer: {error}"),
+    checks.push(match pirate_cinema_core::web_stream::executable() {
+        Ok(path) if path.is_file() => format!("✓ FFmpeg для ArtPlayer: {}", path.display()),
+        Ok(path) => format!("✕ FFmpeg не найден: {}", path.display()),
+        Err(error) => format!("✕ FFmpeg: {error}"),
     });
-    let technical_start = checks.len();
     checks.push(
         match history_path().and_then(|path| {
             HistoryStore::open(&path)
@@ -3180,99 +2590,11 @@ fn system_diagnostics(
             Err(error) => format!("✕ SQLite: {error}"),
         },
     );
-    checks.push(match mpv::bundled_executable() {
-        Ok(path) if path.is_file() => format!("✓ Встроенный MPV: {}", path.display()),
-        Ok(path) => format!("✕ Встроенный MPV: файл не найден — {}", path.display()),
-        Err(error) => format!("✕ Встроенный MPV: {error}"),
+    checks.push(match read_library("") {
+        Ok((_, torrents)) => format!("✓ Локальный каталог: {} раздач", torrents.len()),
+        Err(error) => format!("✕ Локальный каталог: {error}"),
     });
-    checks.push(match settings::validate_player(player_type, player_path) {
-        Ok(()) => "✓ Выбранный плеер настроен".into(),
-        Err(error) => format!("✕ Выбранный плеер: {error}"),
-    });
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(6)))
-        .build()
-        .into();
-    checks.push(
-        match agent
-            .get("https://v3-cinemeta.strem.io/meta/movie/tt0111161.json")
-            .call()
-        {
-            Ok(_) => "✓ Cinemeta: сервис отвечает".into(),
-            Err(error) => format!("✕ Cinemeta: {error}"),
-        },
-    );
-    for (check, name) in
-        checks[technical_start..]
-            .iter()
-            .zip(["SQLite", "MPV", "Player configuration", "Cinemeta"])
-    {
-        report.push(format!(
-            "{name}: {}",
-            if check.starts_with('✓') {
-                "OK"
-            } else {
-                "failed"
-            }
-        ));
-    }
-    checks.extend(local_launch);
-    (checks, report.join("\n"))
-}
-
-fn gst_diagnostic_status(value: &serde_json::Value) -> String {
-    let gst = value["gstreamer"]["works"] == true;
-    let discoverer = value["gst_discoverer"]["works"] == true;
-    format!(
-        "{} /gst/echo: отвечает · GStreamer: {} · discoverer: {}",
-        if gst && discoverer { "✓" } else { "✕" },
-        if gst { "OK" } else { "не работает" },
-        if discoverer {
-            "OK"
-        } else {
-            "не работает"
-        }
-    )
-}
-
-fn port_diagnostics(owned_pid: Option<u32>) -> String {
-    #[cfg(windows)]
-    {
-        let mut command = std::process::Command::new("powershell.exe");
-        command.args(["-NoProfile", "-NonInteractive", "-Command", r#"$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.Encoding]::UTF8;try{$os=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion';Write-Output ('Windows build: '+$os.CurrentBuild+'.'+$os.UBR);$listeners=@(Get-NetTCPConnection -State Listen -LocalPort 8091 -ErrorAction SilentlyContinue);if(!$listeners){Write-Output 'Port 8091: no listener'}else{foreach($item in $listeners){$proc=Get-Process -Id $item.OwningProcess -ErrorAction SilentlyContinue;$name=if($proc.ProcessName -like 'TorrServer*'){'TorrServer'}else{'other'};$owner=if([string]$item.OwningProcess -eq $env:PC_OWNED_PID){'owned'}else{'external'};Write-Output ('Port 8091: PID '+$item.OwningProcess+' '+$name+' '+$owner)}}}catch{Write-Output 'Port/OS inspection failed'}"#])
-            .env("PC_OWNED_PID", owned_pid.map(|pid| pid.to_string()).unwrap_or_default())
-            .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
-        if let Ok(mut child) = command.spawn() {
-            for _ in 0..80 {
-                if matches!(child.try_wait(), Ok(Some(_))) {
-                    return child
-                        .wait_with_output()
-                        .ok()
-                        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-                        .filter(|text| !text.is_empty())
-                        .unwrap_or_else(|| "Port inspection unavailable".into());
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        "Port inspection timed out/unavailable".into()
-    }
-    #[cfg(not(windows))]
-    {
-        format!(
-            "Port 8091: {} · owned PID: {:?}",
-            if std::net::TcpListener::bind(("127.0.0.1", 8091)).is_ok() {
-                "free"
-            } else {
-                "busy (owner unavailable)"
-            },
-            owned_pid
-        )
-    }
+    checks
 }
 
 #[cfg(windows)]
@@ -3298,23 +2620,6 @@ fn launch_update_installer(installer: &PathBuf) -> Result<(), String> {
         .map_err(|error| format!("Не удалось запустить установщик: {error}"))
 }
 
-fn open_external_url(url: &str) -> Result<(), String> {
-    if !url.starts_with("https://github.com/cyberboy1999/pirate-cinema/releases/") {
-        return Err("Некорректная ссылка обновления".into());
-    }
-    #[cfg(target_os = "windows")]
-    let mut command = std::process::Command::new("explorer.exe");
-    #[cfg(target_os = "macos")]
-    let mut command = std::process::Command::new("open");
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let mut command = std::process::Command::new("xdg-open");
-    command
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("Не удалось открыть браузер: {error}"))
-}
-
 async fn flush_web_progress() {
     let mut eval = document::eval("dioxus.send(window.__pirateCinemaSnapshot?.() || null);");
     if let Ok(Ok(value)) =
@@ -3337,9 +2642,8 @@ async fn flush_web_progress() {
 
 fn launch_playback(
     request: PendingPlayback,
-    endpoint: String,
+    _endpoint: String,
     mut busy: Signal<bool>,
-    mut players: Signal<Vec<OwnedPlayer>>,
     mut web_player: Signal<Option<WebPlayback>>,
     mut server: Signal<ServerState>,
 ) {
@@ -3348,227 +2652,90 @@ fn launch_playback(
         server.write().error = "Восстановите окно приложения, чтобы начать воспроизведение".into();
         return;
     }
-    let PendingPlayback {
-        torrent,
-        file,
-        resume,
-        queue,
-        auto_next,
-        force_mpv,
-    } = request;
+    let generation = PLAYBACK_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
+    let stream_epoch = pirate_cinema_core::web_stream::epoch();
     busy.set(true);
     spawn(async move {
         flush_web_progress().await;
-        let player_torrent = torrent.clone();
-        let player_file = file.clone();
-        let web_queue = queue.clone();
+        let PendingPlayback {
+            torrent,
+            file,
+            resume,
+            queue,
+            auto_next,
+            ..
+        } = request;
         let result = tokio::task::spawn_blocking(move || {
-            let preferences = settings_path()
-                .ok()
-                .and_then(|path| settings::load_preferences(&path).ok())
-                .unwrap_or_else(default_preferences);
-            let web_playback = preferences.player_type != PlayerType::External
-                && use_web_player(preferences.embedded_player, force_mpv);
-            if uses_raw_stream_probe(preferences.player_type, web_playback) {
-                probe_stream(&endpoint, &torrent.hash, &file)
-                    .map_err(|error| format!("Поток пока недоступен: {error}"))?;
+            if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                return Err("Приложение завершает работу".into());
             }
-            if preferences.player_type == PlayerType::External {
-                if !PLAYBACK_VISIBLE.load(Ordering::Acquire) {
-                    return Err("Воспроизведение не запущено: окно свёрнуто".into());
-                }
-                settings::validate_player(preferences.player_type, &preferences.player_path)?;
-                let url = stream_url(&endpoint, &torrent.hash, &file)?;
-                std::process::Command::new(preferences.player_path.trim())
-                    .arg(url)
-                    .spawn()
-                    .map_err(|error| format!("Не удалось запустить внешний плеер: {error}"))?;
-                let history =
-                    HistoryStore::open(&history_path()?).map_err(|error| error.to_string())?;
-                history
-                    .mark_played(&torrent.hash, file.id, &file.name, Some(&file.path))
-                    .map_err(|error| error.to_string())?;
-                return Ok(PlaybackLaunch::External);
-            }
-            if web_playback {
-                ensure_gstreamer(&endpoint)?;
-                let history =
-                    HistoryStore::open(&history_path()?).map_err(|error| error.to_string())?;
-                let position = if resume {
-                    history
-                        .get(&torrent.hash, file.id)
-                        .map_err(|error| error.to_string())?
-                        .and_then(|record| record.playback_timecode)
-                        .unwrap_or(0)
-                        .max(0)
-                } else {
-                    0
-                };
-                history
-                    .mark_played(&torrent.hash, file.id, &file.name, Some(&file.path))
-                    .map_err(|error| error.to_string())?;
-                let url = gstreamer_hls_url(&endpoint, &torrent.hash, file.id, position);
-                let probe_url = format!(
-                    "{}/gst/{}/probe?index={}",
-                    endpoint.trim_end_matches('/'),
-                    torrent.hash,
-                    file.id
-                );
-                let heartbeat_url = format!(
-                    "{}/gst/{}/heartbeat",
-                    endpoint.trim_end_matches('/'),
-                    torrent.hash
-                );
-                return Ok(PlaybackLaunch::Web(WebPlayback {
-                    torrent,
-                    file,
-                    queue: web_queue,
-                    auto_next,
-                    url,
-                    probe_url,
-                    heartbeat_url,
-                    position,
-                }));
+            if PLAYBACK_GENERATION.load(Ordering::Acquire) != generation {
+                return Err("Воспроизведение отменено".into());
             }
             if !PLAYBACK_VISIBLE.load(Ordering::Acquire) {
                 return Err("Воспроизведение не запущено: окно свёрнуто".into());
             }
-            MpvSession::launch(
-                &mpv::bundled_executable()?,
-                &history_path()?,
-                &endpoint,
-                &torrent.hash,
-                &file,
-                resume,
-            )
-            .map(PlaybackLaunch::Mpv)
+            let history =
+                HistoryStore::open(&history_path()?).map_err(|error| error.to_string())?;
+            let position = if resume {
+                history
+                    .get(&torrent.hash, file.id)
+                    .map_err(|error| error.to_string())?
+                    .and_then(|record| record.playback_timecode)
+                    .unwrap_or(0)
+                    .max(0)
+            } else {
+                0
+            };
+            let (mut url, probe_url, heartbeat_url) =
+                pirate_cinema_core::web_stream::prepare_at(&torrent.hash, &file, stream_epoch)?;
+            if SHUTDOWN_REQUESTED.load(Ordering::Acquire)
+                || PLAYBACK_GENERATION.load(Ordering::Acquire) != generation
+                || !PLAYBACK_VISIBLE.load(Ordering::Acquire)
+            {
+                pirate_cinema_core::web_stream::release(&url);
+                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                    pirate_cinema_core::web_stream::close();
+                }
+                return Err("Воспроизведение отменено".into());
+            }
+            if position > 0 {
+                url.push_str(&format!("?seconds={position}"));
+            }
+            if let Err(error) =
+                history.mark_played(&torrent.hash, file.id, &file.name, Some(&file.path))
+            {
+                pirate_cinema_core::web_stream::release(&url);
+                return Err(error.to_string());
+            }
+            Ok::<_, String>(WebPlayback {
+                torrent,
+                file,
+                queue,
+                auto_next,
+                url,
+                probe_url,
+                heartbeat_url,
+                position,
+            })
         })
         .await;
+        if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+            pirate_cinema_core::web_stream::close();
+            desktop_engine::shutdown();
+            busy.set(false);
+            return;
+        }
         match result {
-            Ok(Ok(PlaybackLaunch::Mpv(session))) => {
-                players.write().push(OwnedPlayer {
-                    session,
-                    torrent: player_torrent,
-                    file: player_file,
-                    queue,
-                    auto_next,
-                });
-                server.write().error.clear();
-            }
-            Ok(Ok(PlaybackLaunch::Web(playback))) => {
+            Ok(Ok(playback)) => {
                 web_player.set(Some(playback));
                 server.write().error.clear();
-            }
-            Ok(Ok(PlaybackLaunch::External)) => {
-                server.write().error =
-                    "Файл открыт во внешнем плеере; позиция просмотра там не отслеживается".into()
             }
             Ok(Err(error)) => server.write().error = error,
             Err(error) => server.write().error = error.to_string(),
         }
         busy.set(false);
     });
-}
-
-fn use_web_player(embedded_player: bool, force_mpv: bool) -> bool {
-    embedded_player && !force_mpv
-}
-
-fn uses_raw_stream_probe(player_type: PlayerType, web_playback: bool) -> bool {
-    player_type == PlayerType::External || !web_playback
-}
-
-fn gstreamer_hls_url(endpoint: &str, hash: &str, file_id: i64, position: i64) -> String {
-    format!(
-        "{}/gst/{hash}/master.m3u8?index={}&seconds={}",
-        endpoint.trim_end_matches('/'),
-        file_id.max(1),
-        position.max(0)
-    )
-}
-
-fn ensure_gstreamer(endpoint: &str) -> Result<(), String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(5)))
-        .build()
-        .into();
-    let mut response = agent
-        .get(format!("{}/gst/settings", endpoint.trim_end_matches('/')))
-        .call()
-        .map_err(|error| format!("TorrServer GST не отвечает: {error}"))?;
-    let mut settings: serde_json::Value = response
-        .body_mut()
-        .read_json()
-        .map_err(|error| format!("Некорректный ответ TorrServer GST: {error}"))?;
-    if settings.get("built_in").and_then(|value| value.as_bool()) != Some(true) {
-        return Err("Запущена обычная сборка TorrServer без HLS. Закройте её и перезапустите локальный прототип".into());
-    }
-    let config = settings
-        .get_mut("config")
-        .and_then(|value| value.as_object_mut())
-        .ok_or("TorrServer GST не вернул конфигурацию")?;
-    let mut changed = false;
-    for name in [
-        "TranscodeH265",
-        "TranscodeAV1",
-        "TranscodeVP9",
-        "TranscodeVP8",
-        "TranscodeAVI",
-        "HDRToSDR",
-        "X264Ultrafast",
-        "Subtitles",
-    ] {
-        if config.get(name).and_then(|value| value.as_bool()) != Some(true) {
-            config.insert(name.into(), serde_json::Value::Bool(true));
-            changed = true;
-        }
-    }
-    if changed {
-        agent
-            .post(format!("{}/gst/settings", endpoint.trim_end_matches('/')))
-            .send_json(serde_json::json!({"action": "set", "config": config}))
-            .map_err(|error| format!("Не удалось настроить HLS-транскодирование: {error}"))?;
-    }
-    let mut status = agent
-        .get(format!("{}/gst/echo", endpoint.trim_end_matches('/')))
-        .call()
-        .map_err(|error| format!("Не удалось проверить встроенный GStreamer: {error}"))?;
-    let status: serde_json::Value = status
-        .body_mut()
-        .read_json()
-        .map_err(|error| format!("Некорректный ответ GStreamer: {error}"))?;
-    if status["gstreamer"]["works"] != true || status["gst_discoverer"]["works"] != true {
-        return Err(
-            "Встроенный GStreamer TorrServer не работает; проверьте установку приложения".into(),
-        );
-    }
-    Ok(())
-}
-
-fn control_player(
-    index: usize,
-    action: &str,
-    mut players: Signal<Vec<OwnedPlayer>>,
-    mut server: Signal<ServerState>,
-) {
-    if action == "stop" {
-        if index < players.read().len() {
-            players.write().remove(index);
-        }
-        return;
-    }
-    let result = players
-        .write()
-        .get_mut(index)
-        .ok_or("Окно MPV уже закрыто".to_owned())
-        .and_then(|player| match action {
-            "focus" => player.session.focus(),
-            "pause" => player.session.toggle_pause(),
-            _ => Ok(()),
-        });
-    if let Err(error) = result {
-        server.write().error = error;
-    }
 }
 
 fn load_library_cards(torrents: &[Torrent]) -> Result<Vec<LibraryCard>, String> {
@@ -3643,7 +2810,7 @@ fn load_continue_items(torrents: &[Torrent]) -> Result<Vec<ContinueItem>, String
 }
 
 fn sync_library_metadata(
-    endpoint: &str,
+    _endpoint: &str,
     torrents: &[Torrent],
     progress: Option<&AtomicUsize>,
 ) -> Result<(usize, usize, Vec<LibraryCard>), String> {
@@ -3676,76 +2843,57 @@ fn sync_library_metadata(
             current.as_ref().map(|item| item.title.as_str()),
             &torrent.title,
         );
-        let stored_type = history
+        let series = match history
             .media_type(&torrent.hash)
-            .map_err(|error| error.to_string())?;
-        let series = if let Some(kind) = stored_type.as_deref() {
-            kind == "series"
-        } else {
-            let files = torrent_video_files(endpoint, &torrent.hash).unwrap_or_default();
-            let detected = infer_series(&torrent.title, &files);
-            history
-                .set_media_type(&torrent.hash, if detected { "series" } else { "movie" })
-                .map_err(|error| error.to_string())?;
-            detected
+            .map_err(|error| error.to_string())?
+            .as_deref()
+        {
+            Some("series") => true,
+            Some("movie") => false,
+            _ => {
+                let detected = infer_series(&torrent.title, &[]);
+                history
+                    .set_media_type(&torrent.hash, if detected { "series" } else { "movie" })
+                    .map_err(|error| error.to_string())?;
+                detected
+            }
         };
         let movie = titles
             .iter()
             .find_map(|title| metadata::lookup(title, series).ok().flatten());
-        let poster_file = movie.as_ref().and_then(|item| {
-            let bytes = metadata::movie_poster_jpeg(item, series).ok()?;
-            let name = format!("{}.jpg", torrent.hash);
-            std::fs::write(poster_dir.join(&name), bytes).ok()?;
-            Some(name)
-        });
-        let poster_file = poster_file.or_else(|| {
-            let files = torrent_video_files(endpoint, &torrent.hash).ok()?;
-            let source = if series {
-                files.first()
-            } else {
-                files.iter().max_by_key(|file| file.length)
-            }?;
-            let executable = mpv::bundled_executable().ok()?;
-            let name = format!("{}.jpg", torrent.hash);
-            mpv::capture_poster(
-                &executable,
-                endpoint,
-                &torrent.hash,
-                source,
-                &poster_dir.join(&name),
-            )
-            .ok()?;
-            Some(name)
-        });
         let Some(movie) = movie else {
-            if let Some(poster_file) = poster_file {
-                let metadata = MediaMetadata {
-                    title: titles
-                        .first()
-                        .map(|title| title.split(" / ").next().unwrap_or(title).to_owned())
-                        .unwrap_or_else(|| torrent.title.clone()),
-                    overview: current.and_then(|item| item.overview),
-                    year: None,
-                    rating: None,
-                    poster_file: Some(poster_file),
-                    genres: Vec::new(),
-                };
-                history
-                    .merge_remote_metadata(&torrent.hash, &torrent.title, &metadata)
-                    .map_err(|error| error.to_string())?;
-                updated += 1;
-            } else {
-                failed += 1;
-            }
+            failed += 1;
             continue;
         };
+        let downloaded_poster =
+            metadata::movie_poster_jpeg(&movie, series)
+                .ok()
+                .and_then(|bytes| {
+                    let name = format!("{}.jpg", torrent.hash);
+                    std::fs::write(poster_dir.join(&name), bytes).ok()?;
+                    Some(name)
+                });
         let metadata = MediaMetadata {
             title: movie.title,
-            overview: movie.overview,
-            year: movie.year,
-            rating: movie.rating,
-            poster_file,
-            genres: movie.genres,
+            overview: movie
+                .overview
+                .or_else(|| current.as_ref().and_then(|item| item.overview.clone())),
+            year: movie
+                .year
+                .or_else(|| current.as_ref().and_then(|item| item.year)),
+            rating: movie
+                .rating
+                .or_else(|| current.as_ref().and_then(|item| item.rating)),
+            poster_file: downloaded_poster
+                .or_else(|| current.as_ref().and_then(|item| item.poster_file.clone())),
+            genres: if movie.genres.is_empty() {
+                current
+                    .as_ref()
+                    .map(|item| item.genres.clone())
+                    .unwrap_or_default()
+            } else {
+                movie.genres
+            },
         };
         history
             .merge_remote_metadata(&torrent.hash, &torrent.title, &metadata)
@@ -3901,60 +3049,12 @@ fn infer_series(title: &str, files: &[VideoFile]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn server_health_and_restart_failure_never_keep_stale_online_state() {
-        let mut state = super::ServerState {
-            version: "MatriX.144".into(),
-            torrents: vec![],
-            error: String::new(),
-        };
-        state.restart_failed("exit code: 1".into());
-        assert!(state.version.is_empty());
-        state.apply_health(Ok("stale MatriX.144".into()), 0, 1);
-        assert!(
-            state.version.is_empty(),
-            "discard a health reply from before restart"
-        );
-        state.apply_health(Err("connection refused".into()), 1, 1);
-        assert_eq!(state.error, "exit code: 1");
-        state.apply_health(Ok("MatriX.144".into()), 1, 1);
-        assert_eq!(state.version, "MatriX.144");
-        state.error.clear();
-        state.apply_health(Err("connection refused".into()), 1, 1);
-        assert!(state.version.is_empty());
-        assert!(state.error.starts_with("TorrServer офлайн: "));
-        state.apply_health(Ok("MatriX.144".into()), 1, 1);
-        assert!(state.error.is_empty());
-    }
-    #[test]
-    fn gst_diagnostics_rejects_responding_but_broken_runtime() {
-        assert!(super::gst_diagnostic_status(
-            &serde_json::json!({"gstreamer":{"works":true},"gst_discoverer":{"works":true}})
-        )
-        .starts_with('✓'));
-        for value in [
-            serde_json::json!({"gstreamer":{"works":false},"gst_discoverer":{"works":true}}),
-            serde_json::json!({}),
-        ] {
-            assert!(super::gst_diagnostic_status(&value).starts_with('✕'));
-        }
-    }
-
-    #[cfg(windows)]
-    #[test]
-    #[ignore = "runs a read-only Windows port/OS inspection"]
-    fn windows_port_diagnostics_is_available() {
-        let report = super::port_diagnostics(None);
-        assert!(report.contains("Windows build:"), "{report}");
-        assert!(report.contains("Port 8091:"), "{report}");
-        assert!(!report.contains("Users\\"));
-    }
     use super::{
-        file_episode, file_season, gstreamer_hls_url, history_path, infer_series, metadata_queries,
+        file_episode, file_season, history_path, infer_series, metadata_queries,
         missing_metadata_torrents, next_episode, release_quality, short_hash,
-        sync_library_metadata, use_web_player, uses_raw_stream_probe, LibraryCard,
+        sync_library_metadata, LibraryCard,
     };
-    use pirate_cinema_core::{history::HistoryStore, settings::PlayerType, Torrent, VideoFile};
+    use pirate_cinema_core::{history::HistoryStore, Torrent, VideoFile};
 
     #[test]
     fn short_hash_never_splits_utf8_or_overflows() {
@@ -4011,28 +3111,6 @@ mod tests {
         assert_eq!(next_episode(&files, 0).map(|file| file.id), Some(2));
         assert!(next_episode(&files, 1).is_none());
         assert!(next_episode(&files, 2).is_none());
-    }
-
-    #[test]
-    fn mpv_fallback_never_uses_the_web_player() {
-        assert!(use_web_player(true, false));
-        assert!(!use_web_player(true, true));
-        assert!(!use_web_player(false, false));
-    }
-
-    #[test]
-    fn hls_launch_skips_the_legacy_raw_stream_probe() {
-        assert!(!uses_raw_stream_probe(PlayerType::BundledMpv, true));
-        assert!(uses_raw_stream_probe(PlayerType::BundledMpv, false));
-        assert!(uses_raw_stream_probe(PlayerType::External, false));
-    }
-
-    #[test]
-    fn gstreamer_hls_url_keeps_file_and_resume_position() {
-        assert_eq!(
-            gstreamer_hls_url("http://127.0.0.1:8090/", "abc", 7, 42),
-            "http://127.0.0.1:8090/gst/abc/master.m3u8?index=7&seconds=42"
-        );
     }
 
     #[test]

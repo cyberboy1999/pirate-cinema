@@ -1,43 +1,16 @@
 # Third-party notices
 
-Pirate Cinema 0.3.2 through 0.6.1 includes and invokes third-party software. The notices
-below identify binaries distributed in the Windows and Linux installers; each
+Pirate Cinema includes and invokes third-party software. The notices below identify
+the principal code and binaries used by the current Windows and Linux packages; each
 component remains governed by its own license.
 
-## TorrServer
+## librqbit
 
-- Version: MatriX.144
-- License: GNU General Public License v3.0
-- Project and source: https://github.com/YouROK/TorrServer/tree/MatriX.144
-- License text: https://github.com/YouROK/TorrServer/blob/MatriX.144/LICENSE
-- Distributed file: `TorrServer-windows-amd64.exe`
-- SHA-256: `3b68ba9409c009628bbf747a14c13f2da4254389264a0b3903e581e897492569`
-
-- Distributed file: `TorrServer-gst-windows-amd64.exe` (includes the embedded GStreamer runtime)
-  - SHA-256: `ea092a6ca2d98188f6cc1fb2bc1f45a396fe91eff397a3ce82ede88e9c4304d5`
-
-The Linux packages contain the official `TorrServer-linux-amd64` binary from the
-same release under GPL-3.0.
-
-- Source: https://github.com/YouROK/TorrServer/tree/MatriX.144
-- SHA-256: `e93e3c3b85932eed4c98b61785fabe6379b1ee10d91998729cbdea3384af5f9d`
-
-## mpv
-
-- Version: v0.40.0-330-gbe98b35c8
-- Upstream license: GPL-2.0-or-later by default; LGPL-2.1-or-later applies only
-  to builds made without GPL-only files. Treat this bundled build as GPL.
-- Player source revision: https://github.com/mpv-player/mpv/commit/be98b35c8
-- License information: https://github.com/mpv-player/mpv/blob/master/Copyright
-- Windows build project: https://github.com/zhongfly/mpv-winbuild
-- Distributed file: `mpv.exe`
-- SHA-256: `5e3ad16b8195881b9d87efbb4103371b7fe89205789ce4235c8f51f67c419ac2`
-
-The mpv binary statically includes separately licensed multimedia libraries.
-The build project above documents those components and its reproducible build
-configuration.
-
-Linux packages depend on the distribution-provided MPV instead of redistributing it.
+- Version: 8.1.1, linked into the Rust application.
+- License: Apache-2.0.
+- Project/source: https://github.com/ikatson/rqbit
+- Cargo package: https://crates.io/crates/librqbit/8.1.1
+- The application does not distribute or start a separate torrent-server executable.
 
 ## FFmpeg
 
@@ -52,13 +25,20 @@ Linux packages depend on the distribution-provided MPV instead of redistributing
 Linux packages depend on the distribution-provided FFmpeg instead of
 redistributing it.
 
-## Electron and JavaScript packages
+## Microsoft Visual C++ Redistributable
 
-- Electron 43.4.0 is licensed under MIT and includes Chromium third-party
-  notices in `LICENSE.electron.txt` and `LICENSES.chromium.html` beside the
-  installed executable.
+- Version: 14.44.35211.0 (x64).
+- Official Microsoft payload: `VC_redist.x64.exe`.
+- License: Microsoft Software License Terms displayed and accepted by its installer.
+- SHA-256: `cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b`.
+
+## Development-only Electron and JavaScript packages
+
+- Electron 43.4.0 is retained for the retired desktop implementation and
+  development compatibility; it is not staged in the Rust release packages.
 - JavaScript package names, versions and resolved sources are recorded in
-  `package.json` and `pnpm-lock.yaml`. Their own license terms apply.
+  `package.json` and `pnpm-lock.yaml`. They are development/test dependencies
+  unless explicitly identified elsewhere in this notice.
 
 ## Rust desktop packages
 
@@ -69,8 +49,8 @@ distributed under their respective MIT, Apache-2.0 or SQLite public-domain
 terms; their upstream license metadata is retained in the Cargo registry and
 linked from `desktop-rust/Cargo.lock`.
 
-The local Windows player prototype also embeds ArtPlayer 5.4.0 (MIT) and
-hls.js for its WebView2 playback controls. ArtPlayer source and license:
+The application embeds ArtPlayer 5.4.0 (MIT) and hls.js for its WebView2
+playback controls. ArtPlayer source and license:
 https://github.com/zhw2590582/ArtPlayer/tree/v5.4.0. The vendored
 `desktop-rust/assets/artplayer.js` SHA-256 is
 `f1db1fa3406aa6d41baa7c554749429a8e79f99d56a794bde23345eb9c07573f`.

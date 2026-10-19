@@ -4,17 +4,17 @@
 
 ![Главный экран Pirate Cinema](docs/images/pirate-cinema-home.png)
 
-Pirate Cinema — локальное настольное приложение на Rust для поиска, добавления и просмотра раздач через TorrServer. На Windows видео открывается во встроенном плеере или MPV; история каждого файла хранится локально в SQLite.
+Pirate Cinema — локальное настольное приложение на Rust для поиска, добавления и просмотра раздач. Встроенный librqbit загружает выбранный файл, а ArtPlayer воспроизводит подготовленный FFmpeg HLS-поток внутри приложения. История каждого файла хранится локально в SQLite.
 
-Windows-установщик включает GST-сборку TorrServer со встроенным GStreamer и Visual C++ Runtime. Отдельно устанавливать GStreamer на Windows не нужно.
+Windows-установщик включает FFmpeg и Visual C++ Runtime. TorrServer, MPV и отдельный GStreamer больше не требуются.
 
 ## Возможности
 
-- поиск через RuTor в TorrServer и опциональный Jackett/Prowlarr Torznab;
+- локальный поиск по индексу RuTor и опциональный Jackett/Prowlarr Torznab;
 - добавление `magnet:`-ссылок из приложения и браузера;
 - медиатека с постерами, русскими описаниями, фильтрами и сортировкой;
 - выбор фильма, сезона, серии и конкретного видеофайла;
-- MPV IPC: продолжение просмотра, перемотка, аудиодорожка и следующий эпизод;
+- встроенный ArtPlayer: продолжение просмотра, перемотка, аудиодорожка, полноэкранный режим и следующий эпизод;
 - отметка «Просмотрено» при первом запуске файла;
 - блок «Продолжить просмотр»;
 - онлайн-видео и плейлисты: сезоны, серии, качество, автопереход и локальная история;
@@ -36,24 +36,24 @@ Windows-установщик включает GST-сборку TorrServer со �
 
 ### Linux AppImage
 
-AppImage содержит Pirate Cinema и TorrServer, но использует системные MPV, GTK и WebKitGTK. Перед первым запуском установите зависимости своей системы.
+AppImage содержит Pirate Cinema, а FFmpeg, GTK и WebKitGTK использует из системы. Перед первым запуском установите зависимости своей системы.
 
 Debian и Ubuntu:
 
 ```sh
-sudo apt install mpv libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool
+sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool
 ```
 
 Fedora, RHEL и совместимые системы:
 
 ```sh
-sudo dnf install mpv gtk3 webkit2gtk4.1 libayatana-appindicator xdotool
+sudo dnf install ffmpeg gtk3 webkit2gtk4.1 libayatana-appindicator xdotool
 ```
 
 Arch Linux и CachyOS:
 
 ```sh
-sudo pacman -S --needed mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
+sudo pacman -S --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
 ```
 
 После установки зависимостей разрешите запуск AppImage:
@@ -66,7 +66,7 @@ chmod +x Pirate-Cinema-*-x86_64.AppImage
 
 Основной профиль Rust хранится в `%LOCALAPPDATA%\Pirate Cinema` на Windows и в `$XDG_DATA_HOME/Pirate Cinema` на Linux. При первом запуске выполняется одноразовый импорт из прежней Electron-версии и предыдущего Rust-прототипа. Импорт добавляет только отсутствующие записи и не изменяет исходные базы.
 
-TorrServer по умолчанию доступен на `http://127.0.0.1:8091`. Приложение переиспользует уже работающий сервер либо запускает свой комплектный экземпляр и завершает только принадлежащий ему процесс. Под индикатором есть перезапуск собственного сервера; внешний сервер приложение не завершает.
+Торрент-движок librqbit работает внутри приложения и открывает только временный read-only HTTP-порт на `127.0.0.1`. При закрытии плеера принадлежащие приложению поток, FFmpeg и загрузка останавливаются.
 
 ## Сборка из исходного кода
 
@@ -84,15 +84,15 @@ cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinem
 
 ## English
 
-Pirate Cinema is a local Rust desktop application for searching, adding, and streaming torrents through TorrServer. MPV handles playback and per-file history is stored locally in SQLite.
+Pirate Cinema is a local Rust desktop application for searching, adding, and streaming torrents. Embedded librqbit downloads the selected file and ArtPlayer plays an FFmpeg-generated HLS stream inside the application. Per-file history is stored locally in SQLite.
 
 ### Features
 
-- RuTor search through TorrServer and optional Jackett/Prowlarr Torznab;
+- local RuTor index search and optional Jackett/Prowlarr Torznab;
 - `magnet:` links from the application or browser;
 - a poster library with descriptions, filters, and sorting;
 - movie, season, episode, and exact-file selection;
-- MPV IPC resume, seeking, audio-track memory, and next episode;
+- embedded ArtPlayer resume, seeking, audio-track memory, fullscreen, and next episode;
 - launch-based Viewed markers and Continue Watching;
 - online videos and playlists with episode selection, quality memory, auto-next, and local history;
 - saved playlists and recently watched online videos on Home;
@@ -113,24 +113,24 @@ Run `Pirate-Cinema-Setup-*-win-x64.exe`. It updates an existing installation or 
 
 #### Linux AppImage
 
-The AppImage contains Pirate Cinema and TorrServer but uses the system MPV, GTK, and WebKitGTK. Install the runtime for your distribution before first launch.
+The AppImage contains Pirate Cinema and uses the system FFmpeg, GTK, and WebKitGTK. Install the runtime for your distribution before first launch.
 
 Debian and Ubuntu:
 
 ```sh
-sudo apt install mpv libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool
+sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool
 ```
 
 Fedora, RHEL, and compatible distributions:
 
 ```sh
-sudo dnf install mpv gtk3 webkit2gtk4.1 libayatana-appindicator xdotool
+sudo dnf install ffmpeg gtk3 webkit2gtk4.1 libayatana-appindicator xdotool
 ```
 
 Arch Linux and CachyOS:
 
 ```sh
-sudo pacman -S --needed mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
+sudo pacman -S --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
 ```
 
 Then make the AppImage executable:
@@ -143,7 +143,7 @@ chmod +x Pirate-Cinema-*-x86_64.AppImage
 
 The Rust profile lives in `%LOCALAPPDATA%\Pirate Cinema` on Windows and `$XDG_DATA_HOME/Pirate Cinema` on Linux. On first launch it performs a one-time, non-destructive import from the former Electron edition and Rust prototype. Existing source databases are never modified.
 
-TorrServer defaults to `http://127.0.0.1:8090`. Pirate Cinema reuses an answering server or starts the bundled one and stops only the process it owns.
+The embedded librqbit engine exposes only an ephemeral read-only HTTP port on `127.0.0.1`. Closing playback stops the application-owned stream, FFmpeg process, and torrent activity.
 
 ### Development
 

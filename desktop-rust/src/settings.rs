@@ -50,7 +50,11 @@ pub fn load_preferences(path: &Path) -> Result<Preferences, String> {
             .get("onboarding_complete")
             .and_then(|value| value.as_bool())
             .unwrap_or(false),
-        torrserver_url: validate_endpoint(endpoint)?,
+        torrserver_url: if cfg!(feature = "torrent-engine") {
+            DEFAULT_TORRSERVER_URL.into()
+        } else {
+            validate_endpoint(endpoint)?
+        },
         player_type: match value.get("player_type").and_then(|value| value.as_str()) {
             Some("external") => PlayerType::External,
             _ => PlayerType::BundledMpv,
@@ -82,7 +86,11 @@ pub fn load_preferences(path: &Path) -> Result<Preferences, String> {
 }
 
 pub fn save_preferences(path: &Path, preferences: &Preferences) -> Result<(), String> {
-    let endpoint = validate_endpoint(&preferences.torrserver_url)?;
+    let endpoint = if cfg!(feature = "torrent-engine") {
+        DEFAULT_TORRSERVER_URL.to_owned()
+    } else {
+        validate_endpoint(&preferences.torrserver_url)?
+    };
     validate_player(preferences.player_type, &preferences.player_path)?;
     validate_torznab(&preferences.torznab_url, &preferences.torznab_api_key)?;
     let mut value = read_settings(path)?;
@@ -91,7 +99,9 @@ pub fn save_preferences(path: &Path, preferences: &Preferences) -> Result<(), St
         Language::English => "en",
     });
     value["onboarding_complete"] = serde_json::json!(preferences.onboarding_complete);
-    value["torrserver_url"] = serde_json::json!(endpoint);
+    if !cfg!(feature = "torrent-engine") || value.get("torrserver_url").is_none() {
+        value["torrserver_url"] = serde_json::json!(endpoint);
+    }
     value["player_type"] = serde_json::json!(if preferences.player_type == PlayerType::External {
         "external"
     } else {

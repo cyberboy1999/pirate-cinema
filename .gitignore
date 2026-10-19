@@ -48,6 +48,8 @@ yarn-error.log*
 /release-local/
 /release-fix/
 /desktop-rust/target/
+/mobile-rust/target/
+/mobile-rust/dist/
 /desktop-rust/vendor/torrserver/
 /local-builds/
 /artifacts/

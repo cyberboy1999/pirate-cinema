@@ -1,6 +1,9 @@
 use crate::normalize_info_hash;
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_os = "android"))]
+use std::path::PathBuf;
+#[cfg(not(target_os = "android"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -72,6 +75,7 @@ fn valid_poster_name(name: &str) -> bool {
     })
 }
 
+#[cfg(not(target_os = "android"))]
 pub fn create_local_backup(
     history_path: &Path,
     settings_path: Option<&Path>,
@@ -165,7 +169,7 @@ pub fn create_local_backup(
         serde_json::json!({
             "application": "Pirate Cinema Rust",
             "format": 1,
-        "scope": "history-settings-posters-and-torrserver"
+        "scope": if cfg!(feature = "torrent-engine") { "history-settings-posters" } else { "history-settings-posters-and-torrserver" }
         })
         .to_string(),
     )
@@ -186,6 +190,7 @@ impl HistoryStore {
         }
     }
 
+    #[cfg(not(target_os = "android"))]
     pub fn restore_local_backup(
         &mut self,
         source: &Path,
@@ -237,6 +242,15 @@ impl HistoryStore {
         serde_json::from_str::<serde_json::Value>(&settings)
             .map_err(|_| "Некорректный settings.json в резервной копии".to_owned())?;
 
+        #[cfg(feature = "torrent-engine")]
+        let preserve_engine_catalog = {
+            let exists: bool = self.db.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='engine_library')", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+            self.db.execute_batch("DROP TABLE IF EXISTS temp.pc_engine_catalog; CREATE TEMP TABLE pc_engine_catalog(hash TEXT PRIMARY KEY,title TEXT NOT NULL);").map_err(|e| e.to_string())?;
+            if exists {
+                self.db.execute_batch("INSERT INTO temp.pc_engine_catalog SELECT hash,title FROM main.engine_library;").map_err(|e| e.to_string())?;
+            }
+            true
+        };
         self.db
             .restore(
                 rusqlite::MAIN_DB,
@@ -244,6 +258,13 @@ impl HistoryStore {
                 None::<fn(rusqlite::backup::Progress)>,
             )
             .map_err(|error| format!("Не удалось восстановить SQLite: {error}"))?;
+        #[cfg(feature = "torrent-engine")]
+        if preserve_engine_catalog {
+            self.db.execute_batch("CREATE TABLE IF NOT EXISTS engine_library(hash TEXT PRIMARY KEY,title TEXT NOT NULL);
+                DELETE FROM engine_library; INSERT INTO engine_library SELECT hash,title FROM temp.pc_engine_catalog;
+                DROP TABLE temp.pc_engine_catalog;").map_err(|e| e.to_string())?;
+        }
+
         if let Some(path) = settings_path {
             let parent = path.parent().ok_or("Некорректный путь настроек")?;
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -1068,6 +1089,7 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
     }
 
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn local_backup_contains_history_settings_and_manifest() {
         let root = std::env::temp_dir().join(format!(
@@ -1144,6 +1166,7 @@ mod tests {
         std::fs::remove_dir(root).unwrap();
     }
 
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn restores_valid_rust_backup_over_current_state() {
         let root = std::env::temp_dir().join(format!(
@@ -1182,6 +1205,9 @@ mod tests {
         )
         .unwrap();
 
+        #[cfg(feature = "torrent-engine")]
+        history.db.execute_batch("CREATE TABLE engine_library(hash TEXT PRIMARY KEY,title TEXT NOT NULL); INSERT INTO engine_library VALUES('kept-current','Current session');").unwrap();
+
         history
             .mark_played(&later_hash, 2, "Later.mkv", None)
             .unwrap();
@@ -1201,6 +1227,18 @@ mod tests {
         );
         assert!(history.get(&original_hash, 1).unwrap().is_some());
         assert!(history.get(&later_hash, 2).unwrap().is_none());
+        #[cfg(feature = "torrent-engine")]
+        assert_eq!(
+            history
+                .db
+                .query_row(
+                    "SELECT title FROM engine_library WHERE hash='kept-current'",
+                    [],
+                    |r| r.get::<_, String>(0)
+                )
+                .unwrap(),
+            "Current session"
+        );
         assert!(std::fs::read_to_string(&settings_path)
             .unwrap()
             .contains("127.0.0.1:8090"));

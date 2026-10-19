@@ -23,6 +23,8 @@ pub enum MpvEvent {
 }
 
 pub struct MpvSession {
+    #[cfg(feature = "torrent-engine")]
+    _stream: crate::desktop_engine::StreamLease,
     child: Child,
     hash: String,
     file_id: i64,
@@ -66,6 +68,8 @@ impl MpvSession {
         let saved_subtitle_track = history
             .subtitle_track(hash)
             .map_err(|error| format!("Не удалось прочитать дорожку субтитров: {error}"))?;
+        #[cfg(feature = "torrent-engine")]
+        let stream = crate::desktop_engine::StreamLease::new(hash)?;
         let url = stream_url(endpoint, hash, file)?;
         #[cfg(windows)]
         let pipe_name = format!(
@@ -259,7 +263,7 @@ impl MpvSession {
                     Some("end-file") if receiving => {
                         if event.get("reason").and_then(Value::as_str) == Some("error") {
                             let _ = sender.send(MpvEvent::StreamFailed(
-                                "MPV не смог открыть поток TorrServer. Проверьте файл через «Диагностику»".into(),
+                                "MPV не смог открыть поток librqbit. Проверьте файл через «Диагностику»".into(),
                             ));
                         } else {
                             let eof = event.get("reason").and_then(Value::as_str) == Some("eof");
@@ -275,6 +279,8 @@ impl MpvSession {
             }
         });
         Ok(Self {
+            #[cfg(feature = "torrent-engine")]
+            _stream: stream,
             child,
             hash: session_hash,
             file_id: session_file_id,

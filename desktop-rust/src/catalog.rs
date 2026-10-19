@@ -691,7 +691,81 @@ pub fn lookup(title: &str, series: bool) -> Result<Option<Movie>, String> {
             apply_russian_metadata(&mut item, record, &agent);
         }
     }
+    if item.alternate_poster_url.is_none() {
+        if let Some(summary) = verified_wikipedia_summary(&agent, &item) {
+            if let Some(title) = summary.get("title").and_then(Value::as_str) {
+                item.title = title.to_owned();
+            }
+            if let Some(text) = summary
+                .get("extract")
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+            {
+                item.overview = Some(text.to_owned());
+            }
+            item.alternate_poster_url = wikipedia_image(&summary);
+        }
+    }
     Ok(Some(item))
+}
+
+fn wikipedia_image(summary: &Value) -> Option<String> {
+    summary
+        .pointer("/originalimage/source")
+        .or_else(|| summary.pointer("/thumbnail/source"))
+        .and_then(Value::as_str)
+        .filter(|url| url.starts_with("https://"))
+        .map(str::to_owned)
+}
+
+fn wikidata_has_imdb(entity: &Value, id: &str, imdb: &str) -> bool {
+    valid_imdb(imdb)
+        && entity
+            .pointer(&format!("/entities/{id}/claims/P345"))
+            .and_then(Value::as_array)
+            .is_some_and(|claims| {
+                claims.iter().any(|claim| {
+                    claim
+                        .pointer("/mainsnak/datavalue/value")
+                        .and_then(Value::as_str)
+                        == Some(imdb)
+                })
+            })
+}
+
+fn verified_wikipedia_summary(agent: &ureq::Agent, movie: &Movie) -> Option<Value> {
+    if !valid_imdb(&movie.id) {
+        return None;
+    }
+    let title = if movie.original_title.trim().is_empty() {
+        &movie.title
+    } else {
+        &movie.original_title
+    };
+    let summary = json(
+        agent,
+        &format!(
+            "https://ru.wikipedia.org/api/rest_v1/page/summary/{}",
+            encode(title)
+        ),
+    )
+    .ok()?;
+    if summary.get("type").and_then(Value::as_str) == Some("disambiguation") {
+        return None;
+    }
+    let id = summary.get("wikibase_item")?.as_str()?;
+    if !id
+        .strip_prefix('Q')
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return None;
+    }
+    let entity = json(
+        agent,
+        &format!("https://www.wikidata.org/wiki/Special:EntityData/{id}.json"),
+    )
+    .ok()?;
+    wikidata_has_imdb(&entity, id, &movie.id).then_some(summary)
 }
 
 pub fn title_candidates(title: &str) -> Vec<String> {
@@ -717,6 +791,16 @@ pub fn movie_poster_jpeg(movie: &Movie, _series: bool) -> Result<Vec<u8>, String
         }
     }
     for url in urls {
+        if let Ok(bytes) = poster_jpeg(&url) {
+            return Ok(bytes);
+        }
+    }
+    // A provider URL is not proof of a usable image. Verify Wikipedia's identity
+    // before using its artwork when both previously supplied URLs fail.
+    if let Some(url) = verified_wikipedia_summary(&agent(), movie)
+        .as_ref()
+        .and_then(wikipedia_image)
+    {
         if let Ok(bytes) = poster_jpeg(&url) {
             return Ok(bytes);
         }
@@ -959,4 +1043,16 @@ mod tests {
             .iter()
             .any(|item| item.title.chars().any(|ch| ('А'..='я').contains(&ch))));
     }
+}
+#[test]
+fn wikipedia_artwork_requires_the_same_imdb_identity() {
+    let entity = serde_json::json!({"entities":{"Q123":{"claims":{"P345":[{"mainsnak":{"datavalue":{"value":"tt1254207"}}}]}}}});
+    assert!(wikidata_has_imdb(&entity, "Q123", "tt1254207"));
+    assert!(!wikidata_has_imdb(&entity, "Q123", "tt1727587"));
+    assert!(!wikidata_has_imdb(&entity, "Q456", "tt1254207"));
+    assert_eq!(wikipedia_image(&serde_json::json!({"originalimage":{"source":"https://upload.wikimedia.org/poster.jpg"}})).as_deref(),Some("https://upload.wikimedia.org/poster.jpg"));
+    assert!(
+        wikipedia_image(&serde_json::json!({"originalimage":{"source":"file:///private"}}))
+            .is_none()
+    );
 }

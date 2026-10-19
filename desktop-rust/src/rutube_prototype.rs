@@ -5,6 +5,10 @@ use serde_json::Value;
 use std::time::Duration;
 
 const PLAYER: &str = include_str!("../assets/rutube-player.js");
+#[cfg(target_os = "android")]
+const ONLINE_SUBTITLE: &str = "Прямое воспроизведение";
+#[cfg(not(target_os = "android"))]
+const ONLINE_SUBTITLE: &str = "Прямое воспроизведение";
 const CSS: &str = r#"
 .rutube-section{color:#eee;padding:20px 0}.rutube-section header{display:flex;align-items:center;justify-content:space-between}.rutube-section h1{font-size:27px}.rutube-section small{color:#aaa}.rutube-section form{display:flex;gap:12px;margin:24px 0}.rutube-section input{flex:1;min-width:0;background:#141414;color:white;border:1px solid #333;padding:14px;border-radius:10px;font:inherit}.rutube-section button{font:inherit;cursor:pointer;border:1px solid #333;border-radius:9px;padding:10px 18px;background:#eee;color:#111}.rutube-section button:disabled{opacity:.5;cursor:wait}.rutube-section button:focus-visible,.rutube-section a:focus-visible{outline:2px solid #398bff}.rutube-section a{color:#8abaff}.rutube-section .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px}.rutube-section .card{text-align:left;background:#141414;color:#eee;padding:0;overflow:hidden}.rutube-section .card img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}.rutube-section .card strong,.rutube-section .card small{display:block;margin:12px;overflow-wrap:anywhere;white-space:normal}.rutube-section .notice{padding:14px;border:1px solid #333;border-radius:10px;margin:15px 0}#rutube-player{width:100%;aspect-ratio:16/9;background:#111;border-radius:12px;overflow:hidden}.rutube-section .hidden{display:none}.rutube-section .secondary{background:#181818;color:#ddd}.rutube-section nav{display:flex;gap:12px;margin:20px 0}
 .rutube-section.is-playing{padding-top:0}
@@ -31,9 +35,19 @@ struct Watched {
 }
 
 fn history_db() -> Result<rusqlite::Connection, String> {
-    let data = pirate_cinema_core::torrserver_process::default_data_dir()?;
-    let root = data.parent().ok_or("Не найдена папка профиля")?;
-    std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "android"))]
+    let root = {
+        #[cfg(feature = "torrent-engine")]
+        let data = pirate_cinema_core::desktop_engine::default_data_dir()?;
+        #[cfg(not(feature = "torrent-engine"))]
+        let data = pirate_cinema_core::torrserver_process::default_data_dir()?;
+        data.parent()
+            .ok_or("Не найдена папка профиля")?
+            .to_path_buf()
+    };
+    #[cfg(target_os = "android")]
+    let root = crate::platform::data_dir()?;
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let db = rusqlite::Connection::open(root.join("rutube-history.sqlite"))
         .map_err(|e| e.to_string())?;
     init_history(&db).map_err(|e| e.to_string())?;
@@ -330,7 +344,10 @@ pub fn RutubePage(
     #[props(default)] home: ReadSignal<bool>,
     #[props(default)] on_open: EventHandler<()>,
 ) -> Element {
+    #[cfg(not(target_os = "android"))]
     let desktop = dioxus::desktop::use_window();
+    #[cfg(target_os = "android")]
+    let desktop = dioxus::mobile::use_window();
     let mut query = use_signal(String::new);
     let mut active_query = use_signal(String::new);
     let mut page = use_signal(|| 1u32);
@@ -624,7 +641,7 @@ pub fn RutubePage(
         }
         div { style: if home() { "display:none" } else { "display:block" },
         div { class: if selected().is_some() { "rutube-section is-playing" } else { "rutube-section" },
-            header { h1 { "Онлайн-видео" } small { "Прямое воспроизведение · без TorrServer" } }
+            header { h1 { "Онлайн-видео" } small { "{ONLINE_SUBTITLE}" } }
             form { onsubmit: move |event| { event.prevent_default(); do_search(1, query()); },
                 input { aria_label: "Поиск видео или ссылка на плейлист Rutube", placeholder: "Поиск или https://rutube.ru/plst/…", maxlength: 200, value: "{query}", oninput: move |event| query.set(event.value()) }
                 button { r#type: "submit", disabled: busy(), "Найти" }
