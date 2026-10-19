@@ -1,5 +1,14 @@
 # Third-party notices
 
+## Android embedded media prototype (2026-10-18)
+
+- librqbit 9.0.1: Apache-2.0; source https://github.com/ikatson/rqbit (exact Rust dependency graph in android/rust/Cargo.lock).
+- Artplayer 5.4.0, HLS.js 1.7.3 and artplayer-plugin-hls-control 1.1.0: MIT; exact web dependencies in pnpm-lock.yaml.
+- FFmpegKit maintained min-gpl 8.1.7 (`dev.ffmpegkit-maintained:ffmpeg-kit-min-gpl`): GPL-3.0, including FFmpeg and x264; source/build scripts https://github.com/ffmpegkit-maintained/ffmpeg/tree/v8.1.7/android-8.1-lts and GPL text https://github.com/ffmpegkit-maintained/ffmpeg/blob/v8.1.7/android-8.1-lts/tools/license/LICENSE.GPLv3. Android arm64 native libraries are bundled by Gradle, not downloaded at playback time.
+- smart-exception-java/common 0.2.1: BSD-3-Clause; https://github.com/tanersener/smart-exception. Explicit runtime dependency because the 8.1.7 Maven POM omits it.
+
+Android source is distributed alongside the APK with the exact app revision, Cargo.lock, pnpm-lock.yaml, Gradle dependency coordinates and build instructions. The APK bundles this notice, the app GPL text and component license texts in assets/licenses. FFmpegKit source/build scripts are linked above; upstream FFmpeg is https://git.ffmpeg.org/ffmpeg.git and x264 is https://code.videolan.org/videolan/x264. Keep the exact native-build source offer and license notices when redistributing the APK.
+
 Pirate Cinema 0.3.2 through 0.5.6 includes and invokes third-party software. The notices
 below identify binaries distributed in the Windows and Linux installers; each
 component remains governed by its own license.

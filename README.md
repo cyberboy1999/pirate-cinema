@@ -2,6 +2,8 @@
 
 **Русский** · [English](#english)
 
+Android выпускается отдельно: [кандидат 0.6.0-rc.1](docs/RELEASE_ANDROID_0.6.0-rc.1.md) использует встроенный librqbit и Artplayer, поддерживает RuTube и не требует отдельного TorrServer. [Сборка, подпись и проверка Android](docs/ANDROID_RELEASE.md).
+
 ![Главный экран Pirate Cinema 0.6.0](docs/images/pirate-cinema-rust-home.png)
 
 Pirate Cinema — локальное настольное приложение на Rust для поиска, добавления и просмотра раздач через TorrServer. Видео открывается в MPV, а история каждого файла хранится локально в SQLite.

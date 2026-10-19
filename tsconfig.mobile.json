@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {"allowImportingTsExtensions": true, "types": ["vite/client"]},
+  "include": ["mobile/**/*.ts", "mobile/**/*.tsx", "app/mobile/**/*.ts", "app/mobile/**/*.tsx", "vite.mobile.config.ts", "capacitor.config.ts"],
+  "exclude": ["node_modules", "android", "local-builds", "dist-mobile", "desktop-rust"]
+}

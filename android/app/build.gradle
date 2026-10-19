@@ -1,14 +1,30 @@
 apply plugin: 'com.android.application'
 
+def rustOutput = file('src/main/jniLibs')
+def appVersion = new Properties()
+rootProject.file('version.properties').withInputStream { appVersion.load(it) }
+def signingVariables = ['PIRATE_ANDROID_KEYSTORE', 'PIRATE_ANDROID_STORE_PASSWORD', 'PIRATE_ANDROID_KEY_ALIAS', 'PIRATE_ANDROID_KEY_PASSWORD']
+def releaseSigningReady = signingVariables.every { System.getenv(it) }
+
+tasks.register('buildRust', Exec) {
+    workingDir '../rust'
+    def bundledNdk = rootProject.file('../local-builds/android-toolchain/ndk/android-ndk-r27c')
+    environment 'ANDROID_NDK_HOME', System.getenv('ANDROID_NDK_HOME') ?: bundledNdk.absolutePath
+    commandLine 'cargo', 'ndk', '-t', 'arm64-v8a', '-o', rustOutput.absolutePath, 'build', '--release', '--locked'
+}
+
 android {
     namespace = "com.piratecinema.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    // A separately installed, release-signed QA profile never replaces the user's debug data.
+    testBuildType project.hasProperty('pirateQa') ? 'release' : 'debug'
     defaultConfig {
         applicationId "com.piratecinema.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 60
-        versionName "0.5.8-android.3"
+        ndk { abiFilters 'arm64-v8a' }
+        versionCode appVersion.getProperty('versionCode').toInteger()
+        versionName appVersion.getProperty('versionName')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +32,20 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigningReady) {
+            release {
+                storeFile file(System.getenv('PIRATE_ANDROID_KEYSTORE'))
+                storePassword System.getenv('PIRATE_ANDROID_STORE_PASSWORD')
+                keyAlias System.getenv('PIRATE_ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('PIRATE_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (project.hasProperty('pirateQa')) applicationIdSuffix '.qa'
+            if (releaseSigningReady) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -31,6 +59,9 @@ repositories {
 }
 
 dependencies {
+    implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-min-gpl:8.1.7'
+    // 8.1.7's published POM omits this runtime dependency used by FFmpegKitConfig.
+    implementation 'com.arthenica:smart-exception-java:0.2.1'
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
@@ -43,6 +74,25 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+tasks.register('prepareRustLicenses', Exec) {
+    workingDir rootProject.file('..')
+    commandLine 'node', 'scripts/android-rust-licenses.mjs'
+}
+tasks.register('copyReleaseNotices', Copy) {
+    from(rootProject.file('../LICENSE'))
+    from(rootProject.file('../THIRD_PARTY_NOTICES.md'))
+    from(rootProject.file('licenses'))
+    into file('src/main/assets/licenses')
+}
+preBuild.dependsOn buildRust, prepareRustLicenses, copyReleaseNotices
+
+// Never accidentally distribute an unsigned release or sign it with the debug identity.
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.project == project && it.name in ['packageRelease', 'bundleRelease'] } && !releaseSigningReady) {
+        throw new GradleException('Release signing is required. Set PIRATE_ANDROID_KEYSTORE, PIRATE_ANDROID_STORE_PASSWORD, PIRATE_ANDROID_KEY_ALIAS and PIRATE_ANDROID_KEY_PASSWORD outside the repository.')
+    }
+}
 
 try {
     def servicesJSON = file('google-services.json')

@@ -5,6 +5,7 @@ const config:CapacitorConfig={
   appName:"Pirate Cinema",
   webDir:"dist-mobile",
   android:{allowMixedContent:true},
+  plugins:{CapacitorHttp:{enabled:true}},
 };
 
 export default config;
