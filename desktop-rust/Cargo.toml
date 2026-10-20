@@ -1,6 +1,6 @@
 [package]
 name = "pirate-cinema-core"
-version = "0.7.8"
+version = "0.7.9"
 edition = "2021"
 publish = false
 
@@ -25,6 +25,9 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt"] }
 tray-icon = { version = "0.25.1", optional = true }
 ureq = { version = "3.0.12", default-features = false, features = ["json", "rustls"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [lib]
 path = "src/lib.rs"

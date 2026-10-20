@@ -12,6 +12,43 @@ use std::{
     time::Duration,
 };
 
+#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let destination = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    // SAFETY: both buffers are NUL-terminated and live for the duration of the call.
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::fs::rename(source, destination)
+}
+
 fn reset_payload_cache(root: &Path) -> Result<std::path::PathBuf, String> {
     let downloads = root.join("downloads");
     if let Ok(metadata) = std::fs::symlink_metadata(&downloads) {
@@ -51,7 +88,7 @@ fn pause_saved_session(path: &Path) -> Result<(), String> {
         serde_json::to_vec(&value).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    std::fs::rename(temporary, path).map_err(|e| e.to_string())
+    replace_file(&temporary, path).map_err(|e| e.to_string())
 }
 
 pub struct Engine {
@@ -512,7 +549,14 @@ mod tests {
     }
     #[test]
     fn restoration_is_paused_without_erasing_saved_files() {
-        let root = std::env::temp_dir().join(format!("pc-rqbit-restore-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!(
+            "pc-rqbit-restore-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir(&root).unwrap();
         let path = root.join("session.json");
         let original = serde_json::json!({"torrents":{"7":{"is_paused":false,"only_files":[2],"info_hash":"test","output_folder":"private"}}});
@@ -534,7 +578,14 @@ mod tests {
     fn repeat_launch_preserves_real_file_id_and_serves_open_http_range() {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
-            let root = std::env::temp_dir().join(format!("pc-rqbit-stream-{}", std::process::id()));
+            let root = std::env::temp_dir().join(format!(
+                "pc-rqbit-stream-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
             std::fs::create_dir(&root).unwrap();
             let session = Session::new_with_opts(
                 root.clone(),

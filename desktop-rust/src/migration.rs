@@ -27,7 +27,8 @@ pub fn migrate_legacy_profiles(
     if marker.is_file() {
         return Ok(MigrationSummary::default());
     }
-    std::fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(destination)
+        .map_err(|error| format!("Не удалось создать папку профиля: {error}"))?;
     let mut summary = MigrationSummary::default();
     let history_path = destination.join("history.sqlite");
     if !history_path.exists() {
@@ -48,8 +49,13 @@ pub fn migrate_legacy_profiles(
         .map(|root| root.join("data").join("media.db"))
         .filter(|path| path.is_file())
     {
-        let mut history = HistoryStore::open(&history_path).map_err(|error| error.to_string())?;
-        summary.electron = Some(history.import_electron(&database, Some(&poster_dir))?);
+        let mut history = HistoryStore::open(&history_path)
+            .map_err(|error| format!("Не удалось открыть историю: {error}"))?;
+        summary.electron = Some(
+            history
+                .import_electron(&database, Some(&poster_dir))
+                .map_err(|error| format!("Не удалось импортировать Electron: {error}"))?,
+        );
     } else if !history_path.exists() {
         HistoryStore::open(&history_path).map_err(|error| error.to_string())?;
     }
@@ -65,7 +71,8 @@ pub fn migrate_legacy_profiles(
             .map(|root| root.join("data").join("config.json"))
             .filter(|path| path.is_file())
         {
-            migrate_settings(&source, &settings_path)?;
+            migrate_settings(&source, &settings_path)
+                .map_err(|error| format!("Не удалось перенести настройки: {error}"))?;
             summary.settings = true;
         }
     }
@@ -98,7 +105,8 @@ pub fn migrate_legacy_profiles(
         .map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())?;
-    std::fs::rename(temporary, marker).map_err(|error| error.to_string())?;
+    std::fs::rename(temporary, marker)
+        .map_err(|error| format!("Не удалось сохранить маркер миграции: {error}"))?;
     Ok(summary)
 }
 
@@ -185,9 +193,14 @@ mod tests {
 
     #[test]
     fn migrates_electron_once_without_changing_the_source() {
-        let root =
-            std::env::temp_dir().join(format!("pirate-cinema-migration-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = std::env::temp_dir().join(format!(
+            "pirate-cinema-migration-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let electron = root.join("electron");
         let destination = root.join("destination");
         std::fs::create_dir_all(electron.join("data/cache/posters")).unwrap();

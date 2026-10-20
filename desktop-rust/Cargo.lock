@@ -4268,7 +4268,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pirate-cinema-core"
-version = "0.7.8"
+version = "0.7.9"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4284,6 +4284,7 @@ dependencies = [
  "tokio",
  "tray-icon 0.25.1",
  "ureq",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
