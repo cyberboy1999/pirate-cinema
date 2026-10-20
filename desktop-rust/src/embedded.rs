@@ -346,7 +346,7 @@ pub fn search(profile: &Path, query: &str) -> Result<Vec<SearchResult>, String> 
     let path = root.join("rutor.ls");
     if !path.exists() {
         let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(90)))
+            .timeout_global(Some(Duration::from_secs(180)))
             .build()
             .into();
         let mut response = agent

@@ -1,5 +1,14 @@
 # Pirate Cinema — project context
 
+2026-10-20 live desktop smoke: production search returned 60 results for
+`Тачки` from the local public index. A cold 51 MB index download reached about
+33 MB before the former 90-second global timeout, so the bounded first-download
+timeout is now 180 seconds and the Android status text reflects the three-minute
+ceiling. The owned two-episode smoke now starts the engine before seeding its
+fixture (startup intentionally clears stale payload), then verifies the first
+HLS episode, a post-seek segment, seamless preparation and playback of episode
+two, SQLite progress, payload cleanup and loopback shutdown.
+
 2026-10-20 payload-cache lifecycle: librqbit still uses its stable filesystem
 storage so the OS can cache hot pieces in RAM, but downloaded video data is now
 treated as disposable playback buffer. The last stream lease pauses the torrent
