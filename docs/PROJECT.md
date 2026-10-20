@@ -1,5 +1,16 @@
 # Pirate Cinema — project context
 
+Release 0.7.9 packages the verified payload-cache lifecycle and first-search
+timeout fix. Its release gate includes the cold public-index search plus the
+owned two-episode librqbit/FFmpeg/HLS smoke with post-seek and episode-switch
+segments. Packaging remains one Windows NSIS installer and one Linux x86_64
+AppImage; no Android artifact is produced by this desktop workflow.
+Windows session restoration now replaces its staged JSON through the native
+atomic `MoveFileExW` path because Rust's `rename` cannot replace an existing
+file there. Migration keeps an atomic rename to its previously absent marker.
+Their tests use unique temporary profiles so repeated release runs cannot
+reuse stale data.
+
 2026-10-20 live desktop smoke: production search returned 60 results for
 `Тачки` from the local public index. A cold 51 MB index download reached about
 33 MB before the former 90-second global timeout, so the bounded first-download
