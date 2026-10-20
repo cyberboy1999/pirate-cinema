@@ -279,7 +279,7 @@ fn App() -> Element {
                         label{r#for:"query","Фильм или сериал"}
                         input{id:"query",value:"{query}",oninput:move|event|query.set(event.value())}
                         button{disabled:busy()||query().trim().len()<2,onclick:{let profile=profile.clone();move |_|{
-                            let text=query();let profile=profile.clone();busy.set(true);message.set("librqbit: запускаем движок и читаем поисковый индекс… Первый поиск может занять до 90 секунд.".into());
+                            let text=query();let profile=profile.clone();busy.set(true);message.set("librqbit: запускаем движок и читаем поисковый индекс… Первый поиск может занять до 3 минут.".into());
                             spawn(async move{
                                 let result=match embedded_engine(profile.clone(),engine).await {
                                     Ok(_)=>background(move||embedded::search(&profile?,&text)).await,
