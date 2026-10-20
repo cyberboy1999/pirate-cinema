@@ -14,6 +14,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "desktop-rust/assets/**",
+    "desktop-rust/tests/**",
     "next-env.d.ts",
   ]),
   eslint.configs.recommended,

@@ -2,8 +2,8 @@
 Type=Application
 Name=Pirate Cinema
 Name[ru]=Pirate Cinema
-Comment=Local TorrServer media library
-Comment[ru]=Локальная медиатека TorrServer
+Comment=Local torrent media library
+Comment[ru]=Локальная медиатека раздач
 Exec=/opt/pirate-cinema/pirate-cinema %U
 Icon=pirate-cinema
 Terminal=false

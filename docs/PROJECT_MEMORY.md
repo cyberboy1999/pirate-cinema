@@ -8,7 +8,7 @@ they conflict.
 
 - Production desktop application: `desktop-rust/`, written in Rust with Dioxus
   Desktop. Its local data includes SQLite history, settings and poster cache.
-- TorrServer is local and configurable, defaulting to `http://127.0.0.1:8090`.
+- TorrServer is local and configurable, defaulting to `http://127.0.0.1:8091` (the former exact 8090 default migrates at startup).
   Pirate Cinema stops only a TorrServer process that it started.
 - MPV IPC supplies progress tracking for external playback. The embedded player
   uses local ArtPlayer/hls.js assets and TorrServer GST HLS streams.
@@ -54,7 +54,7 @@ they conflict.
 ## Recurring pitfalls
 
 - Do not clear local library state after a malformed TorrServer list response.
-- Do not stop an external TorrServer that was merely discovered on port 8090.
+- Do not stop an external TorrServer that was merely discovered at the configured endpoint.
 - Avoid arbitrary metadata waits: public metadata and poster requests are
   bounded, while startup repair runs in the background.
 - Treat a runtime, installer or live-provider failure as a debugging task:

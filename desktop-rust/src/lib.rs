@@ -1,11 +1,22 @@
-pub const DEFAULT_TORRSERVER_URL: &str = "http://127.0.0.1:8090";
+#[cfg(not(target_os = "android"))]
+/// Retained only for importing pre-librqbit profiles and the legacy mobile API.
+pub const LEGACY_TORRSERVER_URL: &str = "http://127.0.0.1:8091";
+#[cfg(all(feature = "torrent-engine", not(target_os = "android")))]
+pub mod desktop_engine;
+#[cfg(feature = "torrent-engine")]
+pub mod embedded;
+#[cfg(feature = "desktop")]
+pub mod web_stream;
+#[cfg(all(feature = "torrent-engine", not(target_os = "android")))]
+pub use desktop_engine::stream_url;
 pub mod catalog;
 pub mod history;
 pub mod metadata;
+#[cfg(not(target_os = "android"))]
 pub mod migration;
-pub mod mpv;
+pub mod mobile;
+#[cfg(not(target_os = "android"))]
 pub mod settings;
-pub mod torrserver_process;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Torrent {
@@ -44,6 +55,7 @@ pub struct ReleaseUpdate {
     pub download_url: String,
 }
 
+#[cfg(not(target_os = "android"))]
 pub fn check_rust_update(current: &str) -> Result<Option<ReleaseUpdate>, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(10)))
@@ -93,6 +105,7 @@ pub fn check_rust_update(current: &str) -> Result<Option<ReleaseUpdate>, String>
     Ok(update)
 }
 
+#[cfg(not(target_os = "android"))]
 pub fn download_rust_update(update: &ReleaseUpdate) -> Result<std::path::PathBuf, String> {
     use std::io::Read as _;
     const MAX_INSTALLER_BYTES: u64 = 300 * 1024 * 1024;
@@ -151,6 +164,7 @@ pub fn download_rust_update(update: &ReleaseUpdate) -> Result<std::path::PathBuf
     Ok(destination)
 }
 
+#[cfg(not(target_os = "android"))]
 fn newer_version(candidate: &str, current: &str) -> bool {
     let numbers = |value: &str| {
         value
@@ -165,6 +179,7 @@ fn newer_version(candidate: &str, current: &str) -> bool {
     numbers(candidate) > numbers(current)
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn torrent_video_files(base_url: &str, hash: &str) -> Result<Vec<VideoFile>, String> {
     let hash = normalize_info_hash(hash).ok_or("Некорректный хеш раздачи")?;
     let base_url = base_url.trim_end_matches('/');
@@ -226,6 +241,7 @@ pub fn torrent_video_files(base_url: &str, hash: &str) -> Result<Vec<VideoFile>,
     Ok(videos)
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 fn parse_video_files(details: &serde_json::Value) -> Vec<VideoFile> {
     let saved_data = details.get("data").and_then(|data| {
         data.as_str()
@@ -288,7 +304,7 @@ fn parse_video_files(details: &serde_json::Value) -> Vec<VideoFile> {
     videos
 }
 
-fn natural_path_cmp(left: &str, right: &str) -> std::cmp::Ordering {
+pub(crate) fn natural_path_cmp(left: &str, right: &str) -> std::cmp::Ordering {
     let left = left.to_lowercase();
     let right = right.to_lowercase();
     let mut a = left.chars().peekable();
@@ -329,6 +345,7 @@ fn natural_path_cmp(left: &str, right: &str) -> std::cmp::Ordering {
     }
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 fn retryable_details_error(error: &ureq::Error) -> bool {
     matches!(
         error,
@@ -336,6 +353,7 @@ fn retryable_details_error(error: &ureq::Error) -> bool {
     )
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn stream_url(base_url: &str, hash: &str, file: &VideoFile) -> Result<String, String> {
     let hash = normalize_info_hash(hash).ok_or("Некорректный хеш раздачи")?;
     if file.id < 1 {
@@ -358,6 +376,7 @@ pub fn stream_url(base_url: &str, hash: &str, file: &VideoFile) -> Result<String
     ))
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn probe_stream(base_url: &str, hash: &str, file: &VideoFile) -> Result<(), String> {
     let url = stream_url(base_url, hash, file)?;
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -384,10 +403,12 @@ pub fn probe_stream(base_url: &str, hash: &str, file: &VideoFile) -> Result<(), 
     }
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn search_torrserver(base_url: &str, query: &str) -> Result<Vec<SearchResult>, String> {
     search_torrserver_path(base_url, query, "/search", "RuTor", None)
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn search_torznab(
     base_url: &str,
     torznab_url: &str,
@@ -410,6 +431,7 @@ pub fn search_torznab(
     )
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn read_torznab_config(base_url: &str) -> Result<Option<(String, String)>, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(10)))
@@ -442,6 +464,7 @@ pub fn read_torznab_config(base_url: &str) -> Result<Option<(String, String)>, S
         }))
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn configure_torznab(base_url: &str, host: &str, key: &str) -> Result<(), String> {
     crate::settings::validate_torznab(host, key)?;
     if !host.trim().is_empty() {
@@ -478,6 +501,7 @@ pub fn configure_torznab(base_url: &str, host: &str, key: &str) -> Result<(), St
     Ok(())
 }
 
+#[cfg(not(target_os = "android"))]
 pub fn test_torznab(host: &str, key: &str) -> Result<(), String> {
     crate::settings::validate_torznab(host, key)?;
     if host.trim().is_empty() {
@@ -517,6 +541,7 @@ pub fn test_torznab(host: &str, key: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn search_all_sources(
     base_url: &str,
     torznab_url: &str,
@@ -565,6 +590,7 @@ pub fn search_all_sources(
     Ok(results)
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 fn search_torrserver_path(
     base_url: &str,
     query: &str,
@@ -675,6 +701,7 @@ fn search_torrserver_path(
         .collect())
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 fn valid_torrent_download(link: &str, configured_url: &str) -> bool {
     let Ok(link_uri) = ureq::http::Uri::try_from(link) else {
         return false;
@@ -712,6 +739,7 @@ fn valid_torrent_download(link: &str, configured_url: &str) -> bool {
         && first[0] == b'd'
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn add_magnet(base_url: &str, magnet: &str, title: &str) -> Result<AddResult, String> {
     let link = magnet
         .trim()
@@ -766,6 +794,7 @@ pub fn add_magnet(base_url: &str, magnet: &str, title: &str) -> Result<AddResult
     })
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn remove_torrent(base_url: &str, hash: &str) -> Result<(), String> {
     let hash = normalize_info_hash(hash).ok_or("Некорректный хеш раздачи")?;
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -779,6 +808,7 @@ pub fn remove_torrent(base_url: &str, hash: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn read_torrserver(base_url: &str) -> Result<(String, Vec<Torrent>), String> {
     let base_url = base_url.trim().trim_end_matches('/');
     if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
@@ -914,6 +944,21 @@ fn percent_decode(value: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+mod identifier_tests {
+    use super::*;
+    #[test]
+    fn local_identifiers_remain_available() {
+        let hash = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(normalize_info_hash(hash).as_deref(), Some(hash));
+        assert_eq!(
+            magnet_info_hash(&format!("magnet:?xt=urn:btih:{hash}")).as_deref(),
+            Some(hash)
+        );
+        assert!(normalize_info_hash("invalid").is_none());
+    }
+}
+
+#[cfg(all(test, not(target_os = "android"), not(feature = "torrent-engine")))]
 mod tests {
     use super::*;
     use std::io::{Read, Write};

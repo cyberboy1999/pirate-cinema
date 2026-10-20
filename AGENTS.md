@@ -5,9 +5,10 @@ Pirate Cinema is a local-first desktop media library. The production application
 ## Rules
 - Keep the application local-first; do not add hosting or cloud persistence.
 - Do not transmit library data unless the user explicitly authorizes the provider.
-- Keep TorrServer on the configurable local endpoint (default `http://127.0.0.1:8090`).
+- Keep TorrServer on the configurable local endpoint (default `http://127.0.0.1:8091`).
 - Preserve MPV IPC progress tracking and per-file SQLite history.
 - Never commit secrets, API keys, runtime databases, caches, or generated installers.
+- Windows release packages must include only the GST-enabled TorrServer (`TorrServer-gst-windows-amd64.exe`). Never bundle the regular/non-GST TorrServer or use it as a packaged fallback on Windows. This rule does not change Linux packaging.
 
 ## Commands
 - Development: `pnpm run dev:local`

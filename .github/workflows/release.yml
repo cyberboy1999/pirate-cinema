@@ -9,30 +9,57 @@ permissions:
   contents: write
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm run lint
+
   windows:
+    needs: quality
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install native build tools
+        run: choco install nasm -y --no-progress
+      - name: Test player controller
+        run: |
+          node desktop-rust/tests/player-state.cjs
+          node desktop-rust/tests/player-switch.cjs
+          node desktop-rust/tests/player-controller.cjs
+          node desktop-rust/tests/diagnostics-copy.cjs
+          node desktop-rust/tests/rutube-player.cjs
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
           $version=(Select-String desktop-rust/Cargo.toml -Pattern '^version = "(.+)"$').Matches.Groups[1].Value
           if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag does not match Cargo version $version" }
-      - name: Restore verified runtimes
+      - name: Restore verified runtime
         shell: pwsh
         run: |
-          Invoke-WebRequest 'https://github.com/cyberboy1999/pirate-cinema/releases/download/v0.3.6/pirate-cinema-desktop-0.3.6-x64.nsis.7z' -OutFile runtime.7z
-          7z x runtime.7z -obootstrap -y
-          New-Item vendor/mpv,desktop-rust/vendor/torrserver -ItemType Directory -Force | Out-Null
-          Copy-Item bootstrap/resources/mpv/* vendor/mpv -Recurse -Force
-          Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile vc_redist.x64.exe
-          Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe
-          if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe -Algorithm SHA256).Hash -ne '3B68BA9409C009628BBF747A14C13F2DA4254389264A0B3903E581E897492569') { throw 'TorrServer hash mismatch' }
-          Invoke-WebRequest 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-gst-windows-amd64.exe' -OutFile desktop-rust/vendor/torrserver/TorrServer-gst-windows-amd64.exe
-          if ((Get-FileHash desktop-rust/vendor/torrserver/TorrServer-gst-windows-amd64.exe -Algorithm SHA256).Hash -ne 'EA092A6CA2D98188F6CC1FB2BC1F45A396FE91EFF397A3CE82EDE88E9C4304D5') { throw 'TorrServer GST hash mismatch' }
-          if ((Get-FileHash vendor/mpv/mpv.exe -Algorithm SHA256).Hash -ne '5E3AD16B8195881B9D87EFBB4103371B7FE89205789CE4235C8F51F67C419AC2') { throw 'MPV hash mismatch' }
+          npm install --no-save ffmpeg-static@5.2.0
+          New-Item stage/ffmpeg -ItemType Directory -Force | Out-Null
+          Copy-Item node_modules/ffmpeg-static/ffmpeg.exe stage/ffmpeg/ffmpeg.exe
+          if ((Get-FileHash stage/ffmpeg/ffmpeg.exe -Algorithm SHA256).Hash -ne 'E9FD5E711DEBAB9D680955FC1E38A2C1160FD280B144476CC3F62BC43EF49DB1') { throw 'FFmpeg hash mismatch' }
+          Invoke-WebRequest 'https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe' -OutFile vc_redist.x64.exe
+          if ((Get-FileHash vc_redist.x64.exe -Algorithm SHA256).Hash -ne 'CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B') { throw 'VC++ Redistributable hash mismatch' }
+          curl.exe -fL --retry 3 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip?download=' -o nsis-3.13.zip
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS download failed' }
+          if ((Get-FileHash nsis-3.13.zip -Algorithm SHA256).Hash -ne 'BA63DFFC4410EE89193E1CB5A41989991BD77C61068DA17E3156D136B7B0B3D8') { throw 'NSIS hash mismatch' }
+          Expand-Archive nsis-3.13.zip -DestinationPath .
       - run: cargo fmt --manifest-path desktop-rust/Cargo.toml -- --check
       - run: cargo check --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
       - run: cargo test --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
@@ -41,38 +68,38 @@ jobs:
       - name: Build production NSIS installer
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
           $version=(Select-String desktop-rust/Cargo.toml -Pattern '^version = "(.+)"$').Matches.Groups[1].Value
-          New-Item stage/mpv,stage/torrserver -ItemType Directory -Force | Out-Null
           Copy-Item desktop-rust/target/release/pirate-cinema.exe stage/
-          Copy-Item vendor/mpv/* stage/mpv -Recurse
-          Copy-Item desktop-rust/vendor/torrserver/TorrServer-windows-amd64.exe stage/torrserver/
-          Copy-Item desktop-rust/vendor/torrserver/TorrServer-gst-windows-amd64.exe stage/torrserver/
           Copy-Item vc_redist.x64.exe stage/
           Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md stage/
-          $makensis="${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-          & $makensis "/DAPP_SOURCE=$pwd\stage" "/DAPP_OUTPUT=$pwd\Pirate-Cinema-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" desktop-rust/installer.nsi
+          $makensis="$pwd\nsis-3.13\makensis.exe"
+          & $makensis "/DAPP_SOURCE=$pwd\stage" "/DAPP_OUTPUT=$pwd\Pirate-Cinema-Setup-$version-win-x64.exe" "/DAPP_ICON=$pwd\build\icon.ico" "/DAPP_VERSION=$version" desktop-rust/installer.nsi
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
           path: Pirate-Cinema-Setup-*-win-x64.exe
 
   linux:
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test player controller
+        run: |
+          node desktop-rust/tests/player-state.cjs
+          node desktop-rust/tests/player-switch.cjs
+          node desktop-rust/tests/player-controller.cjs
+          node desktop-rust/tests/diagnostics-copy.cjs
+          node desktop-rust/tests/rutube-player.cjs
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)" = "$GITHUB_REF_NAME"
       - name: Install build and package dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libfuse2 mpv
-      - name: Restore verified TorrServer
-        run: |
-          mkdir -p desktop-rust/vendor/torrserver
-          curl -fL 'https://github.com/YouROK/TorrServer/releases/download/MatriX.144/TorrServer-linux-amd64' -o desktop-rust/vendor/torrserver/TorrServer-linux-amd64
-          echo 'e93e3c3b85932eed4c98b61785fabe6379b1ee10d91998729cbdea3384af5f9d  desktop-rust/vendor/torrserver/TorrServer-linux-amd64' | sha256sum -c -
-          chmod 755 desktop-rust/vendor/torrserver/TorrServer-linux-amd64 desktop-rust/packaging/*.sh
+        run: sudo apt-get update && sudo apt-get install -y nasm libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libfuse2 ffmpeg
       - name: Restore pinned AppImage tools
         run: |
           curl -fL 'https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage' -o linuxdeploy-x86_64.AppImage
@@ -91,7 +118,8 @@ jobs:
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)
           mkdir -p release-linux
-          desktop-rust/packaging/build-appimage.sh "$version" desktop-rust/target/release/pirate-cinema desktop-rust/vendor/torrserver/TorrServer-linux-amd64 release-linux "$PWD/linuxdeploy-x86_64.AppImage" "$PWD/appimagetool-x86_64.AppImage"
+          chmod 755 desktop-rust/packaging/*.sh
+          desktop-rust/packaging/build-appimage.sh "$version" desktop-rust/target/release/pirate-cinema release-linux "$PWD/linuxdeploy-x86_64.AppImage" "$PWD/appimagetool-x86_64.AppImage"
           (cd release-linux && sha256sum *.AppImage > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
@@ -109,7 +137,7 @@ jobs:
           name: linux-release
           path: release-linux
       - name: Install Arch runtime dependencies
-        run: pacman -Syu --noconfirm base-devel rustup mpv gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool xorg-server-xvfb dbus
+        run: pacman -Syu --noconfirm base-devel rustup nasm ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool xorg-server-xvfb dbus
       - name: Smoke-test the packaged application
         shell: bash
         run: |

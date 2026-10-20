@@ -9,14 +9,23 @@ test("Windows installer is elevated and carries the complete Rust runtime", () =
   assert.match(installer, /RequestExecutionLevel admin/);
   assert.match(installer, /File "\$\{APP_SOURCE\}\\pirate-cinema\.exe"/);
   assert.match(installer, /File "\$\{APP_SOURCE\}\\vc_redist\.x64\.exe"/);
-  assert.match(installer, /File "\$\{APP_SOURCE\}\\torrserver\\TorrServer-windows-amd64\.exe"/);
+  assert.match(installer, /File "\$\{APP_SOURCE\}\\ffmpeg\\ffmpeg\.exe"/);
+  assert.doesNotMatch(installer, /File .*\\(?:torrserver|mpv)\\/i);
   assert.match(installer, /CreateShortcut "\$DESKTOP\\Pirate Cinema\.lnk"/);
 });
 
 test("release workflow verifies runtimes and publishes only the supported artifacts", () => {
   const workflow = read(".github/workflows/release.yml");
-  assert.match(workflow, /TorrServer hash mismatch/);
-  assert.match(workflow, /MPV hash mismatch/);
+  assert.match(workflow, /FFmpeg hash mismatch/);
+  assert.match(workflow, /CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/);
+  assert.match(workflow, /VC\+\+ Redistributable hash mismatch/);
+  assert.match(workflow, /BA63DFFC4410EE89193E1CB5A41989991BD77C61068DA17E3156D136B7B0B3D8/);
+  assert.match(workflow, /NSIS hash mismatch/);
+  assert.match(workflow, /nsis-3\.13\.zip\?download=/);
+  assert.doesNotMatch(workflow, /choco install nsis/);
+  assert.match(workflow, /pnpm install --frozen-lockfile/);
+  assert.match(workflow, /pnpm test/);
+  assert.match(workflow, /pnpm run lint/);
   assert.match(workflow, /appimagetool-x86_64\.AppImage/);
   assert.match(workflow, /sha256sum -c/);
   assert.match(workflow, /desktop-rust\/packaging\/build-appimage\.sh/);
@@ -33,12 +42,14 @@ test("release inputs never include a user database or TorrServer state", () => {
     assert.doesNotMatch(source, /viewed\.json/);
   }
   assert.doesNotMatch(workflow, /bootstrap\/resources\/torrserver/);
+  assert.doesNotMatch(workflow, /TorrServer-(?:gst-)?(?:windows|linux)/);
 });
 
 test("AppImage build keeps the required runtime layout and launcher", () => {
   const script = read("desktop-rust/packaging/build-appimage.sh");
+  assert.match(script, /mkdir -p "\$appdir\/usr\/bin"/);
   assert.match(script, /install -m755 "\$binary" "\$appdir\/usr\/bin\/pirate-cinema"/);
-  assert.match(script, /TorrServer-linux-amd64/);
+  assert.doesNotMatch(script, /TorrServer|mpv/i);
   assert.match(script, /libxdo\.so\.3/);
   assert.match(script, /LD_LIBRARY_PATH/);
   assert.match(script, /Pirate-Cinema-\$version-x86_64\.AppImage/);

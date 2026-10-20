@@ -1,6 +1,7 @@
 use crate::history::{HistoryStore, ImportSummary};
 use std::path::{Path, PathBuf};
 
+#[cfg(not(feature = "torrent-engine"))]
 const TORRSERVER_FILES: &[&str] = &[
     "config.db",
     "settings.json",
@@ -68,16 +69,19 @@ pub fn migrate_legacy_profiles(
             summary.settings = true;
         }
     }
-    let torrserver = destination.join("torrserver");
-    std::fs::create_dir_all(&torrserver).map_err(|error| error.to_string())?;
-    for root in [prototype, electron].into_iter().flatten() {
-        let source = root.join("torrserver");
-        for name in TORRSERVER_FILES {
-            let from = source.join(name);
-            let to = torrserver.join(name);
-            if !to.exists() && from.is_file() {
-                std::fs::copy(from, to).map_err(|error| error.to_string())?;
-                summary.torrserver_files += 1;
+    #[cfg(not(feature = "torrent-engine"))]
+    {
+        let torrserver = destination.join("torrserver");
+        std::fs::create_dir_all(&torrserver).map_err(|error| error.to_string())?;
+        for root in [prototype, electron].into_iter().flatten() {
+            let source = root.join("torrserver");
+            for name in TORRSERVER_FILES {
+                let from = source.join(name);
+                let to = torrserver.join(name);
+                if !to.exists() && from.is_file() {
+                    std::fs::copy(from, to).map_err(|error| error.to_string())?;
+                    summary.torrserver_files += 1;
+                }
             }
         }
     }
@@ -141,7 +145,7 @@ fn migrate_settings(source: &Path, destination: &Path) -> Result<(), String> {
     let settings = serde_json::json!({
         "language": legacy.get("language").and_then(|value| value.as_str()).unwrap_or("ru"),
         "onboarding_complete": legacy.get("onboardingComplete").and_then(|value| value.as_bool()).unwrap_or(true),
-        "torrserver_url": legacy.get("torrServerUrl").and_then(|value| value.as_str()).unwrap_or(crate::DEFAULT_TORRSERVER_URL),
+        "torrserver_url": legacy.get("torrServerUrl").and_then(|value| value.as_str()).unwrap_or(crate::LEGACY_TORRSERVER_URL),
         "player_type": legacy.get("playerType").and_then(|value| value.as_str()).unwrap_or("mpv"),
         "player_path": legacy.get("playerPath").and_then(|value| value.as_str()).unwrap_or(""),
         "torznab_url": legacy.get("torznabUrl").and_then(|value| value.as_str()).unwrap_or(""),
@@ -201,7 +205,10 @@ mod tests {
         let first = migrate_legacy_profiles(&destination, Some(&electron), None).unwrap();
         assert!(first.electron.is_some());
         assert!(first.settings);
-        assert_eq!(first.torrserver_files, 1);
+        assert_eq!(
+            first.torrserver_files,
+            usize::from(!cfg!(feature = "torrent-engine"))
+        );
         assert_eq!(
             std::fs::read(electron.join("torrserver/config.db")).unwrap(),
             b"database"

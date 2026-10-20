@@ -1,6 +1,9 @@
 use crate::normalize_info_hash;
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_os = "android"))]
+use std::path::PathBuf;
+#[cfg(not(target_os = "android"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -72,6 +75,7 @@ fn valid_poster_name(name: &str) -> bool {
     })
 }
 
+#[cfg(not(target_os = "android"))]
 pub fn create_local_backup(
     history_path: &Path,
     settings_path: Option<&Path>,
@@ -108,7 +112,7 @@ pub fn create_local_backup(
             std::fs::write(
                 &settings_target,
                 serde_json::json!({
-                    "torrserver_url": crate::DEFAULT_TORRSERVER_URL,
+                    "torrserver_url": crate::LEGACY_TORRSERVER_URL,
                     "player_type": "mpv",
                     "player_path": ""
                 })
@@ -165,7 +169,7 @@ pub fn create_local_backup(
         serde_json::json!({
             "application": "Pirate Cinema Rust",
             "format": 1,
-        "scope": "history-settings-posters-and-torrserver"
+        "scope": if cfg!(feature = "torrent-engine") { "history-settings-posters" } else { "history-settings-posters-and-torrserver" }
         })
         .to_string(),
     )
@@ -186,6 +190,7 @@ impl HistoryStore {
         }
     }
 
+    #[cfg(not(target_os = "android"))]
     pub fn restore_local_backup(
         &mut self,
         source: &Path,
@@ -237,6 +242,15 @@ impl HistoryStore {
         serde_json::from_str::<serde_json::Value>(&settings)
             .map_err(|_| "Некорректный settings.json в резервной копии".to_owned())?;
 
+        #[cfg(feature = "torrent-engine")]
+        let preserve_engine_catalog = {
+            let exists: bool = self.db.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='engine_library')", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+            self.db.execute_batch("DROP TABLE IF EXISTS temp.pc_engine_catalog; CREATE TEMP TABLE pc_engine_catalog(hash TEXT PRIMARY KEY,title TEXT NOT NULL);").map_err(|e| e.to_string())?;
+            if exists {
+                self.db.execute_batch("INSERT INTO temp.pc_engine_catalog SELECT hash,title FROM main.engine_library;").map_err(|e| e.to_string())?;
+            }
+            true
+        };
         self.db
             .restore(
                 rusqlite::MAIN_DB,
@@ -244,6 +258,13 @@ impl HistoryStore {
                 None::<fn(rusqlite::backup::Progress)>,
             )
             .map_err(|error| format!("Не удалось восстановить SQLite: {error}"))?;
+        #[cfg(feature = "torrent-engine")]
+        if preserve_engine_catalog {
+            self.db.execute_batch("CREATE TABLE IF NOT EXISTS engine_library(hash TEXT PRIMARY KEY,title TEXT NOT NULL);
+                DELETE FROM engine_library; INSERT INTO engine_library SELECT hash,title FROM temp.pc_engine_catalog;
+                DROP TABLE temp.pc_engine_catalog;").map_err(|e| e.to_string())?;
+        }
+
         if let Some(path) = settings_path {
             let parent = path.parent().ok_or("Некорректный путь настроек")?;
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -509,6 +530,11 @@ impl HistoryStore {
                 torrent_hash TEXT PRIMARY KEY,
                 track_id INTEGER NOT NULL CHECK(track_id > 0)
             );
+            CREATE TABLE IF NOT EXISTS media_web_audio_preferences (
+                torrent_hash TEXT PRIMARY KEY,
+                language TEXT NOT NULL,
+                title TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS media_playback_preferences (
                 torrent_hash TEXT PRIMARY KEY,
                 season INTEGER,
@@ -717,11 +743,22 @@ impl HistoryStore {
             .as_ref()
             .filter(|item| item.title != original_title)
             .map_or(remote.title.as_str(), |item| item.title.as_str());
-        let overview = remote
+        let previous_overview = current.as_ref().and_then(|item| item.overview.as_deref());
+        let new_overview = remote
             .overview
             .as_deref()
-            .filter(|text| !text.trim().is_empty())
-            .or_else(|| current.as_ref().and_then(|item| item.overview.as_deref()));
+            .filter(|text| !text.trim().is_empty());
+        let has_cyrillic = |text: &str| {
+            text.chars()
+                .any(|ch| ('А'..='я').contains(&ch) || ch == 'ё' || ch == 'Ё')
+        };
+        let overview = match (previous_overview, new_overview) {
+            (Some(previous), Some(new)) if has_cyrillic(previous) && !has_cyrillic(new) => {
+                Some(previous)
+            }
+            (_, Some(new)) => Some(new),
+            (previous, None) => previous,
+        };
         let year = remote
             .year
             .or_else(|| current.as_ref().and_then(|item| item.year));
@@ -784,6 +821,33 @@ impl HistoryStore {
                 |row| row.get(0),
             )
             .optional()
+    }
+
+    pub fn web_audio_preference(&self, hash: &str) -> rusqlite::Result<Option<(String, String)>> {
+        let hash = checked_key(hash, 0)?;
+        self.db
+            .query_row(
+                "SELECT language,title FROM media_web_audio_preferences WHERE torrent_hash=?1",
+                [hash],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+    }
+
+    pub fn save_web_audio_preference(
+        &self,
+        hash: &str,
+        language: &str,
+        title: &str,
+    ) -> rusqlite::Result<()> {
+        let hash = checked_key(hash, 0)?;
+        if language.len() > 128 || title.len() > 512 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "audio preference".into(),
+            ));
+        }
+        self.db.execute("INSERT INTO media_web_audio_preferences(torrent_hash,language,title) VALUES(?1,?2,?3) ON CONFLICT(torrent_hash) DO UPDATE SET language=excluded.language,title=excluded.title", params![hash,language,title])?;
+        Ok(())
     }
 
     pub fn save_audio_track(&self, hash: &str, track_id: i64) -> rusqlite::Result<()> {
@@ -873,6 +937,26 @@ fn checked_key(hash: &str, file_index: i64) -> rusqlite::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_audio_identity_is_separate_from_mpv_track_numbers() {
+        let db = HistoryStore::open_in_memory().unwrap();
+        let hash = "0123456789abcdef0123456789abcdef01234567";
+        db.save_audio_track(hash, 2).unwrap();
+        db.save_web_audio_preference(hash, "rus", "Studio A")
+            .unwrap();
+        assert_eq!(
+            db.web_audio_preference(hash).unwrap(),
+            Some(("rus".into(), "Studio A".into()))
+        );
+        assert_eq!(db.audio_track(hash).unwrap(), Some(2));
+        assert!(db
+            .save_web_audio_preference(hash, "rus", &"x".repeat(513))
+            .is_err());
+        assert!(db
+            .save_web_audio_preference("invalid", "rus", "Studio A")
+            .is_err());
+    }
 
     #[test]
     fn imports_electron_history_without_overwriting_rust_or_source() {
@@ -1005,6 +1089,7 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
     }
 
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn local_backup_contains_history_settings_and_manifest() {
         let root = std::env::temp_dir().join(format!(
@@ -1081,6 +1166,7 @@ mod tests {
         std::fs::remove_dir(root).unwrap();
     }
 
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn restores_valid_rust_backup_over_current_state() {
         let root = std::env::temp_dir().join(format!(
@@ -1119,6 +1205,9 @@ mod tests {
         )
         .unwrap();
 
+        #[cfg(feature = "torrent-engine")]
+        history.db.execute_batch("CREATE TABLE engine_library(hash TEXT PRIMARY KEY,title TEXT NOT NULL); INSERT INTO engine_library VALUES('kept-current','Current session');").unwrap();
+
         history
             .mark_played(&later_hash, 2, "Later.mkv", None)
             .unwrap();
@@ -1138,6 +1227,18 @@ mod tests {
         );
         assert!(history.get(&original_hash, 1).unwrap().is_some());
         assert!(history.get(&later_hash, 2).unwrap().is_none());
+        #[cfg(feature = "torrent-engine")]
+        assert_eq!(
+            history
+                .db
+                .query_row(
+                    "SELECT title FROM engine_library WHERE hash='kept-current'",
+                    [],
+                    |r| r.get::<_, String>(0)
+                )
+                .unwrap(),
+            "Current session"
+        );
         assert!(std::fs::read_to_string(&settings_path)
             .unwrap()
             .contains("127.0.0.1:8090"));
@@ -1227,6 +1328,22 @@ mod tests {
         assert_eq!(metadata.overview.as_deref(), Some("Описание на русском"));
         assert_eq!(metadata.poster_file.as_deref(), Some("poster.jpg"));
         assert_eq!(metadata.genres, vec!["Драма"]);
+        db.merge_remote_metadata(
+            &hash,
+            "Original.Release.2024",
+            &MediaMetadata {
+                title: "English title".into(),
+                overview: Some("English overview".into()),
+                year: None,
+                rating: None,
+                poster_file: None,
+                genres: Vec::new(),
+            },
+        )
+        .unwrap();
+        let metadata = db.metadata(&hash).unwrap().unwrap();
+        assert_eq!(metadata.overview.as_deref(), Some("Описание на русском"));
+        assert_eq!(metadata.poster_file.as_deref(), Some("poster.jpg"));
         db.set_media_type(&hash, "series").unwrap();
         assert_eq!(db.media_type(&hash).unwrap().as_deref(), Some("series"));
         assert!(db.set_media_type(&hash, "other").is_err());

@@ -1,0 +1,31 @@
+[package]
+name = "pirate-cinema-mobile"
+version = "0.7.7"
+edition = "2021"
+publish = false
+
+[profile.release]
+strip = "symbols"
+
+[features]
+default = ["mobile"]
+mobile = ["dioxus/mobile"]
+desktop = ["dioxus/desktop"]
+
+[dependencies]
+dioxus = { version = "0.7.10" }
+pirate-cinema-core = { path = "../desktop-rust", default-features = false, features = ["torrent-engine"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive", "rc"] }
+base64 = "0.23"
+rusqlite = { version = "0.40.2", features = ["backup", "bundled"] }
+ureq = { version = "3.0.12", default-features = false, features = ["json", "rustls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "net"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
+
+[[bin]]
+name = "pirate-cinema-mobile"
+path = "src/main.rs"

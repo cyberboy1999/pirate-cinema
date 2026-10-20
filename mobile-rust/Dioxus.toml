@@ -1,0 +1,20 @@
+[application]
+name = "Pirate Cinema Rust"
+default_platform = "android"
+android_main_activity = "android/MainActivity.kt"
+
+[bundle]
+identifier = "com.piratecinema.rust"
+publisher = "Pirate Cinema"
+icon = ["../public/favicon.png"]
+
+[android]
+min_sdk = 24
+target_sdk = 36
+compile_sdk = 36
+
+[android.application]
+uses_cleartext_traffic = true
+
+[android.raw]
+manifest = '<queries><package android:name="is.xyz.mpv"/></queries>'

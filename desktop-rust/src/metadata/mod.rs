@@ -38,13 +38,30 @@ pub fn title_candidates(title: &str) -> Vec<String> {
 pub struct MetadataManager;
 impl MetadataManager {
     pub fn lookup(&self, title: &str, media_type: MediaType) -> Result<Option<Movie>, String> {
-        if let Ok(Some(movie)) = catalog::lookup(title, matches!(media_type, MediaType::Series)) {
-            return Ok(Some(movie));
+        let primary = catalog::lookup(title, matches!(media_type, MediaType::Series));
+        if matches!(&primary, Ok(Some(_))) || !matches!(media_type, MediaType::Series) {
+            return primary;
         }
-        if let Ok(Some(record)) = TvMazeProvider.search(title, media_type) {
-            return Ok(Some(movie_from_record(record)));
-        }
-        Ok(None)
+        let query = catalog::title_candidates(title)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| title.to_owned());
+        finish_lookup(primary, TvMazeProvider.search(&query, media_type))
+    }
+}
+
+fn finish_lookup(
+    primary: Result<Option<Movie>, String>,
+    fallback: Result<Option<ProviderRecord>, String>,
+) -> Result<Option<Movie>, String> {
+    match fallback {
+        Ok(Some(record)) => Ok(Some(movie_from_record(record))),
+        Ok(None) => primary,
+        Err(error) => match primary {
+            Ok(Some(movie)) => Ok(Some(movie)),
+            Ok(None) => Err(format!("TVmaze: {error}")),
+            Err(first) => Err(format!("{first}; TVmaze: {error}")),
+        },
     }
 }
 
@@ -77,6 +94,23 @@ fn movie_from_record(record: ProviderRecord) -> Movie {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn provider_outage_is_not_reported_as_no_match() {
+        assert!(finish_lookup(Err("Cinemeta недоступна".into()), Err("offline".into())).is_err());
+        assert!(finish_lookup(Ok(None), Err("offline".into())).is_err());
+        assert!(finish_lookup(Err("offline".into()), Ok(None)).is_err());
+        let record = ProviderRecord {
+            title: Some("Fallback".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            finish_lookup(Err("offline".into()), Ok(Some(record)))
+                .unwrap()
+                .unwrap()
+                .title,
+            "Fallback"
+        );
+    }
     #[test]
     fn ranks_russian_and_larger_posters_first() {
         let image = best_image(

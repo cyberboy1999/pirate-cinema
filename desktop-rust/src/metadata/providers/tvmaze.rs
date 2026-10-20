@@ -52,7 +52,12 @@ impl MetadataProvider for TvMazeProvider {
             .read_to_string(&mut body)
             .map_err(|error| error.to_string())?;
         let value: Value = serde_json::from_str(&body).map_err(|error| error.to_string())?;
-        let Some(show) = value.pointer("/0/show") else {
+        let Some(show) = value.as_array().and_then(|rows| {
+            rows.iter().filter_map(|row| row.get("show")).find(|show| {
+                let name = show.get("name").and_then(Value::as_str).unwrap_or("");
+                crate::catalog::title_matches(query, name)
+            })
+        }) else {
             return Ok(None);
         };
         let image = show
