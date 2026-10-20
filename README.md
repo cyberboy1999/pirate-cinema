@@ -4,9 +4,22 @@
 
 ![Главный экран Pirate Cinema](docs/images/pirate-cinema-home.png)
 
-Pirate Cinema — локальное настольное приложение на Rust для поиска, добавления и просмотра раздач. Встроенный librqbit загружает выбранный файл, а ArtPlayer воспроизводит подготовленный FFmpeg HLS-поток внутри приложения. История каждого файла хранится локально в SQLite.
+Pirate Cinema — локальное медиаприложение на Rust и Dioxus. Настольная версия ищет раздачи через локальный индекс или Torznab, загружает выбранный файл встроенным librqbit и воспроизводит FFmpeg HLS-поток через ArtPlayer. Медиатека и история каждого файла хранятся локально в SQLite.
 
 Windows-установщик включает FFmpeg и Visual C++ Runtime. TorrServer, MPV и отдельный GStreamer больше не требуются.
+
+## Состав проекта
+
+| Компонент | Назначение |
+| --- | --- |
+| Rust + Dioxus Desktop | интерфейс и локальная логика приложения |
+| librqbit | встроенный BitTorrent-движок |
+| FFmpeg + HLS + ArtPlayer | подготовка и воспроизведение видео внутри приложения |
+| SQLite | медиатека, настройки сопоставления и история просмотра |
+| Cinemeta, TVmaze, Wikidata и Wikipedia | общедоступные метаданные и постеры; история им не передаётся |
+| Jackett/Prowlarr Torznab | необязательный дополнительный поиск раздач |
+
+В репозитории также находится экспериментальный Android-клиент на Dioxus Mobile. Он не входит в настольный релиз и пока использует отдельно установленный mpv-android.
 
 ## Возможности
 
@@ -22,7 +35,7 @@ Windows-установщик включает FFmpeg и Visual C++ Runtime. Torr
 - локальные резервные копии, диагностика, обновления и системный трей;
 - русский и английский интерфейс.
 
-Все пользовательские данные остаются на компьютере. Pirate Cinema обращается к Cinemeta, TVmaze и Wikidata только за общедоступными названиями, описаниями и изображениями; история просмотра им не передаётся.
+Все пользовательские данные остаются на компьютере. Pirate Cinema обращается к Cinemeta, TVmaze, Wikidata и русской Wikipedia только за общедоступными названиями, описаниями и изображениями; история просмотра им не передаётся.
 
 Онлайн-поиск отправляет источнику введённый запрос, а запуск — идентификатор выбранного видео или плейлиста. История остаётся локальной. Для просмотра нужен общедоступный поток; ограничения доступа не обходятся.
 
@@ -32,7 +45,7 @@ Windows-установщик включает FFmpeg и Visual C++ Runtime. Torr
 
 ### Windows 10/11
 
-Скачайте `Pirate-Cinema-Setup-*-win-x64.exe`. Установщик обновляет существующую установку или заменяет прежнюю Electron-версию, сохраняя пользовательские данные.
+Скачайте `Pirate-Cinema-Setup-*-win-x64.exe`. Нужен 64-битный Windows 10/11 и Microsoft Edge WebView2 Runtime. FFmpeg и Visual C++ Runtime уже входят в установщик. Он обновляет существующую установку или заменяет прежнюю Electron-версию, сохраняя пользовательские данные.
 
 ### Linux AppImage
 
@@ -41,19 +54,19 @@ AppImage содержит Pirate Cinema, а FFmpeg, GTK и WebKitGTK испол�
 Debian и Ubuntu:
 
 ```sh
-sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool
+sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool libfuse2
 ```
 
 Fedora, RHEL и совместимые системы:
 
 ```sh
-sudo dnf install ffmpeg gtk3 webkit2gtk4.1 libayatana-appindicator xdotool
+sudo dnf install ffmpeg gtk3 webkit2gtk4.1 libayatana-appindicator xdotool fuse-libs
 ```
 
 Arch Linux и CachyOS:
 
 ```sh
-sudo pacman -S --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
+sudo pacman -S --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool fuse2
 ```
 
 После установки зависимостей разрешите запуск AppImage:
@@ -66,7 +79,7 @@ chmod +x Pirate-Cinema-*-x86_64.AppImage
 
 Основной профиль Rust хранится в `%LOCALAPPDATA%\Pirate Cinema` на Windows и в `$XDG_DATA_HOME/Pirate Cinema` на Linux. При первом запуске выполняется одноразовый импорт из прежней Electron-версии и предыдущего Rust-прототипа. Импорт добавляет только отсутствующие записи и не изменяет исходные базы.
 
-Торрент-движок librqbit работает внутри приложения и открывает только временный read-only HTTP-порт на `127.0.0.1`. При закрытии плеера принадлежащие приложению поток, FFmpeg и загрузка останавливаются.
+Торрент-движок librqbit работает внутри приложения и открывает только временный read-only HTTP-порт на `127.0.0.1`. Загруженные части служат временным буфером: при закрытии плеера поток, FFmpeg и загрузка останавливаются, а дисковый буфер удаляется. Остатки после аварийного завершения очищаются при следующем запуске.
 
 ## Сборка из исходного кода
 
@@ -84,7 +97,20 @@ cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinem
 
 ## English
 
-Pirate Cinema is a local Rust desktop application for searching, adding, and streaming torrents. Embedded librqbit downloads the selected file and ArtPlayer plays an FFmpeg-generated HLS stream inside the application. Per-file history is stored locally in SQLite.
+Pirate Cinema is a local-first media application built with Rust and Dioxus. The desktop app searches a local index or Torznab, downloads the selected file through embedded librqbit, and plays an FFmpeg-generated HLS stream with ArtPlayer. The library and per-file history stay in local SQLite.
+
+### Project components
+
+| Component | Purpose |
+| --- | --- |
+| Rust + Dioxus Desktop | user interface and local application logic |
+| librqbit | embedded BitTorrent engine |
+| FFmpeg + HLS + ArtPlayer | in-app video preparation and playback |
+| SQLite | library, metadata mappings, and viewing history |
+| Cinemeta, TVmaze, Wikidata, and Wikipedia | public metadata and posters; viewing history is never sent |
+| Jackett/Prowlarr Torznab | optional additional torrent search |
+
+The repository also contains an experimental Dioxus Mobile Android client. It is not part of the desktop release and currently requires a separately installed mpv-android application.
 
 ### Features
 
@@ -99,7 +125,7 @@ Pirate Cinema is a local Rust desktop application for searching, adding, and str
 - local backup, diagnostics, updates, and system tray;
 - Russian and English interfaces.
 
-Playback history stays on the computer. Cinemeta, TVmaze, and Wikidata receive only public metadata queries, never the local history database.
+Playback history stays on the computer. Cinemeta, TVmaze, Wikidata, and Russian Wikipedia receive only public metadata queries, never the local history database.
 
 Online sources receive explicit search queries and selected video/playlist identifiers, not the history database. Playback requires an accessible public stream; access restrictions are not bypassed.
 
@@ -109,7 +135,7 @@ Download packages from the [latest release](https://github.com/cyberboy1999/pira
 
 #### Windows 10/11
 
-Run `Pirate-Cinema-Setup-*-win-x64.exe`. It updates an existing installation or replaces the former Electron edition while preserving user data.
+Run `Pirate-Cinema-Setup-*-win-x64.exe`. It requires 64-bit Windows 10/11 and Microsoft Edge WebView2 Runtime. FFmpeg and Visual C++ Runtime are bundled. The installer updates an existing installation or replaces the former Electron edition while preserving user data.
 
 #### Linux AppImage
 
@@ -118,19 +144,19 @@ The AppImage contains Pirate Cinema and uses the system FFmpeg, GTK, and WebKitG
 Debian and Ubuntu:
 
 ```sh
-sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool
+sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool libfuse2
 ```
 
 Fedora, RHEL, and compatible distributions:
 
 ```sh
-sudo dnf install ffmpeg gtk3 webkit2gtk4.1 libayatana-appindicator xdotool
+sudo dnf install ffmpeg gtk3 webkit2gtk4.1 libayatana-appindicator xdotool fuse-libs
 ```
 
 Arch Linux and CachyOS:
 
 ```sh
-sudo pacman -S --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool
+sudo pacman -S --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool fuse2
 ```
 
 Then make the AppImage executable:
@@ -143,7 +169,7 @@ chmod +x Pirate-Cinema-*-x86_64.AppImage
 
 The Rust profile lives in `%LOCALAPPDATA%\Pirate Cinema` on Windows and `$XDG_DATA_HOME/Pirate Cinema` on Linux. On first launch it performs a one-time, non-destructive import from the former Electron edition and Rust prototype. Existing source databases are never modified.
 
-The embedded librqbit engine exposes only an ephemeral read-only HTTP port on `127.0.0.1`. Closing playback stops the application-owned stream, FFmpeg process, and torrent activity.
+The embedded librqbit engine exposes only an ephemeral read-only HTTP port on `127.0.0.1`. Downloaded pieces are a temporary playback buffer: closing playback stops the stream, FFmpeg, and torrent activity, then removes the disk buffer. A later launch clears leftovers from an abnormal termination.
 
 ### Development
 

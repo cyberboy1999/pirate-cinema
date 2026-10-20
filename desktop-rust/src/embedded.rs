@@ -5,7 +5,24 @@ use librqbit::{
 };
 use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
-use std::{io::Read, path::Path, sync::Arc, time::Duration};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
+
+fn reset_payload_cache(root: &Path) -> Result<std::path::PathBuf, String> {
+    let downloads = root.join("downloads");
+    if let Ok(metadata) = std::fs::symlink_metadata(&downloads) {
+        if metadata.file_type().is_symlink() {
+            return Err("Папка буфера librqbit не должна быть ссылкой".into());
+        }
+        std::fs::remove_dir_all(&downloads).map_err(|e| e.to_string())?;
+    }
+    std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
+    Ok(downloads)
+}
 
 fn pause_saved_session(path: &Path) -> Result<(), String> {
     let input = match std::fs::File::open(path) {
@@ -40,6 +57,7 @@ fn pause_saved_session(path: &Path) -> Result<(), String> {
 pub struct Engine {
     api: Api,
     endpoint: String,
+    payload_root: PathBuf,
     http: tokio::task::JoinHandle<Result<(), String>>,
 }
 
@@ -55,8 +73,9 @@ impl Engine {
         let root = profile.join("rqbit");
         std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
         pause_saved_session(&root.join("session/session.json"))?;
+        let payload_root = reset_payload_cache(&root)?;
         let session = Session::new_with_opts(
-            root.join("downloads"),
+            payload_root.clone(),
             SessionOptions {
                 disable_dht_persistence: true,
                 persistence: Some(SessionPersistenceConfig::Json {
@@ -67,10 +86,10 @@ impl Engine {
         )
         .await
         .map_err(|e| format!("librqbit: {e:#}"))?;
-        Self::serve(session).await
+        Self::serve(session, payload_root).await
     }
 
-    async fn serve(session: Arc<Session>) -> Result<Arc<Self>, String> {
+    async fn serve(session: Arc<Session>, payload_root: PathBuf) -> Result<Arc<Self>, String> {
         let api = Api::new(session, None, None);
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -114,6 +133,7 @@ impl Engine {
         Ok(Arc::new(Self {
             api,
             endpoint,
+            payload_root,
             http,
         }))
     }
@@ -128,12 +148,27 @@ impl Engine {
     }
 
     pub async fn remove(&self, hash: &str) -> Result<(), String> {
-        // Forget the swarm, never delete downloaded files or SQLite history.
         self.api
             .session()
-            .delete(Self::id(hash)?, false)
+            .delete(Self::id(hash)?, true)
             .await
             .map_err(|e| e.to_string())
+    }
+
+    pub async fn clear_payload(&self, hash: &str) -> Result<(), String> {
+        let hash = normalize_info_hash(hash).ok_or("Некорректная раздача")?;
+        let session = self.api.session();
+        let handle = session.get(Self::id(&hash)?).ok_or("Раздача не найдена")?;
+        session.pause(&handle).await.map_err(|e| e.to_string())?;
+        let path = self.payload_root.join(&hash);
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                Err("Папка буфера раздачи не должна быть ссылкой".into())
+            }
+            Ok(_) => std::fs::remove_dir_all(path).map_err(|e| e.to_string()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
     }
 
     pub fn list(&self) -> Vec<Torrent> {
@@ -436,6 +471,22 @@ fn search_index(reader: impl Read, words: &[String]) -> Result<Vec<SearchResult>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_removes_stale_payload_cache() {
+        let root = std::env::temp_dir().join(format!(
+            "pc-rqbit-cache-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let stale = root.join("downloads/hash/video.mkv");
+        std::fs::create_dir_all(stale.parent().unwrap()).unwrap();
+        std::fs::write(&stale, b"watched content").unwrap();
+        let downloads = reset_payload_cache(&root).unwrap();
+        assert!(downloads.is_dir());
+        assert!(std::fs::read_dir(&downloads).unwrap().next().is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn natural_episode_order_keeps_original_file_ids() {
         let mut files = [
@@ -485,7 +536,6 @@ mod tests {
         runtime.block_on(async {
             let root = std::env::temp_dir().join(format!("pc-rqbit-stream-{}", std::process::id()));
             std::fs::create_dir(&root).unwrap();
-            std::fs::write(root.join("test.mp4"), b"test").unwrap();
             let session = Session::new_with_opts(
                 root.clone(),
                 SessionOptions {
@@ -503,12 +553,20 @@ mod tests {
                 0xe9, 0x87, 0x98, 0x2f, 0xbb, 0xd3,
             ]);
             torrent.extend(b"ee");
+            let hash = librqbit::torrent_from_bytes::<librqbit::ByteBufOwned>(&torrent)
+                .unwrap()
+                .info_hash
+                .as_string();
+            let payload = root.join(&hash);
+            std::fs::create_dir(&payload).unwrap();
+            std::fs::write(payload.join("test.mp4"), b"test").unwrap();
             let handle = session
                 .add_torrent(
                     AddTorrent::TorrentFileBytes(torrent.into()),
                     Some(AddTorrentOptions {
                         paused: true,
                         overwrite: true,
+                        sub_folder: Some(hash.clone()),
                         ..Default::default()
                     }),
                 )
@@ -520,8 +578,8 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
-            let hash = handle.info_hash().as_string();
-            let engine = Engine::serve(session.clone()).await.unwrap();
+            assert_eq!(handle.info_hash().as_string(), hash);
+            let engine = Engine::serve(session.clone(), root.clone()).await.unwrap();
             let files = engine.files(&hash).unwrap();
             assert_eq!(files.len(), 1);
             assert_eq!(files[0].id, 1);
@@ -547,11 +605,14 @@ mod tests {
             })
             .await
             .unwrap();
+            engine.clear_payload(&hash).await.unwrap();
+            assert!(!payload.exists());
+            assert_eq!(engine.files(&hash).unwrap(), files);
+            assert!(engine.play_url(&hash, &files[0]).await.is_ok());
             session.stop().await;
             drop(engine);
             drop(handle);
             drop(session);
-            std::fs::remove_file(root.join("test.mp4")).unwrap();
             std::fs::remove_dir(root).unwrap();
         });
     }

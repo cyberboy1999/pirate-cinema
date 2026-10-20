@@ -27,8 +27,9 @@ impl StreamLease {
 impl Drop for StreamLease {
     fn drop(&mut self) {
         let hash = self.0.clone();
+        let cleanup_hash = hash.clone();
         // Drop can run in the UI runtime. Complete pause on a dedicated OS thread.
-        let _ = std::thread::spawn(move || {
+        let thread = std::thread::spawn(move || {
             let Ok(mut streams) = STREAMS.lock() else {
                 return;
             };
@@ -40,13 +41,17 @@ impl Drop for StreamLease {
                 return;
             }
             streams.remove(&hash);
-            // Keep the lease lock until paused, so a new lease cannot race a late pause.
+            // Keep the lease lock until discarded, so a new lease cannot race late cleanup.
             let active = ENGINE.lock().ok().and_then(|engine| engine.clone());
             if let (Some(engine), Some(runtime)) = (active, RUNTIME.get()) {
-                let _ = runtime.block_on(engine.pause(&hash));
+                if let Err(error) = runtime.block_on(engine.clear_payload(&hash)) {
+                    eprintln!("Не удалось очистить буфер раздачи {hash}: {error}");
+                }
             }
-        })
-        .join();
+        });
+        if thread.join().is_err() {
+            eprintln!("Не удалось завершить очистку буфера раздачи {cleanup_hash}");
+        }
     }
 }
 

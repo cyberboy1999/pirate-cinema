@@ -1,5 +1,13 @@
 # Pirate Cinema — project context
 
+2026-10-20 payload-cache lifecycle: librqbit still uses its stable filesystem
+storage so the OS can cache hot pieces in RAM, but downloaded video data is now
+treated as disposable playback buffer. The last stream lease pauses the torrent
+and deletes only its `rqbit/downloads/<hash>` payload; persisted torrent metadata
+stays available for replay, including imported/private `.torrent` files. Startup
+also clears `rqbit/downloads`, covering crashes and forced termination without
+using librqbit's experimental unbounded in-memory example storage.
+
 2026-10-20 desktop online-page redesign: the optional online page now follows the
 local media-library hierarchy with one compact search header, a horizontal local
 Continue Watching rail, poster-shaped saved playlists and a clean result grid.
