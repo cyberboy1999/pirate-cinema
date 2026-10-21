@@ -25,6 +25,26 @@ use std::{
 
 const SEGMENT: f64 = 3.0;
 const WINDOW: usize = 20;
+const VIDEO_ENCODING_ARGS: &[&str] = &[
+    "-vf",
+    "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "ultrafast",
+    "-crf",
+    "18",
+    "-pix_fmt",
+    "yuv420p",
+    "-g",
+    "72",
+    "-keyint_min",
+    "72",
+    "-sc_threshold",
+    "0",
+    "-force_key_frames",
+    "expr:gte(t,n_forced*3)",
+];
 static SERVICE: Mutex<Option<Service>> = Mutex::new(None);
 static NEXT: AtomicUsize = AtomicUsize::new(1);
 static EPOCH: AtomicUsize = AtomicUsize::new(0);
@@ -327,43 +347,24 @@ impl Video {
         } else {
             cmd.arg("-an");
         }
-        cmd.args([
-            "-vf",
-            "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-            "-r",
-            "24",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-crf",
-            "23",
-            "-pix_fmt",
-            "yuv420p",
-            "-g",
-            "72",
-            "-keyint_min",
-            "72",
-            "-sc_threshold",
-            "0",
-            "-force_key_frames",
-            "expr:gte(t,n_forced*3)",
-            "-output_ts_offset",
-            &seconds.to_string(),
-            "-f",
-            "hls",
-            "-hls_time",
-            "3",
-            "-hls_playlist_type",
-            "vod",
-            "-hls_flags",
-            "temp_file+independent_segments",
-            "-start_number",
-            &start.to_string(),
-            "-hls_segment_filename",
-        ])
-        .arg(dir.join("segment-%06d.ts"))
-        .arg(dir.join("work.m3u8"));
+        cmd.args(VIDEO_ENCODING_ARGS)
+            .args([
+                "-output_ts_offset",
+                &seconds.to_string(),
+                "-f",
+                "hls",
+                "-hls_time",
+                "3",
+                "-hls_playlist_type",
+                "vod",
+                "-hls_flags",
+                "temp_file+independent_segments",
+                "-start_number",
+                &start.to_string(),
+                "-hls_segment_filename",
+            ])
+            .arg(dir.join("segment-%06d.ts"))
+            .arg(dir.join("work.m3u8"));
         let child = cmd
             .spawn()
             .map_err(|e| format!("Не удалось подготовить HLS: {e}"))?;
@@ -658,5 +659,17 @@ mod tests {
         assert!(text.contains("segment-000020.ts?audio=2"));
         assert!(text.ends_with("#EXT-X-ENDLIST\n"));
         assert!(parse_probe("Duration: N/A").is_err());
+    }
+
+    #[test]
+    fn hls_keeps_source_frame_rate_and_uses_transparent_quality() {
+        assert!(!VIDEO_ENCODING_ARGS.contains(&"-r"));
+        assert_eq!(
+            VIDEO_ENCODING_ARGS
+                .windows(2)
+                .find(|pair| pair[0] == "-crf")
+                .map(|pair| pair[1]),
+            Some("18")
+        );
     }
 }

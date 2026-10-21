@@ -1,5 +1,10 @@
 # Pirate Cinema — project context
 
+2026-10-21 local HLS quality: FFmpeg no longer forces every source to 24 fps,
+so native frame cadence is preserved. The required browser-compatible H.264
+transcode now uses CRF 18 instead of CRF 23; resolution remains unchanged
+apart from rounding odd dimensions to the nearest even pixel for libx264.
+
 Release 0.7.9 packages the verified payload-cache lifecycle and first-search
 timeout fix. Its release gate includes the cold public-index search plus the
 owned two-episode librqbit/FFmpeg/HLS smoke with post-seek and episode-switch
