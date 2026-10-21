@@ -1,6 +1,8 @@
 //! Embedded librqbit engine for the Android client.
 
 use std::{
+    fs::File,
+    io::{BufReader, Read},
     net::{Ipv4Addr, SocketAddr},
     panic::{AssertUnwindSafe, catch_unwind},
     path::PathBuf,
@@ -9,17 +11,202 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use flate2::read::DeflateDecoder;
 use jni::{
     JNIEnv,
     objects::{JClass, JString},
-    sys::{JNI_FALSE, JNI_TRUE, jboolean},
+    sys::{JNI_FALSE, JNI_TRUE, jboolean, jstring},
 };
 use librqbit::http_api::{HttpApi, HttpApiOptions};
 use librqbit::{Api, Session, SessionOptions, SessionPersistenceConfig};
 use librqbit_dualstack_sockets::{BindOpts, TcpListener};
+use serde::{
+    Deserialize, Serialize,
+    de::{Deserializer, Error, SeqAccess, Visitor},
+};
 use tokio::sync::oneshot;
 
 const HTTP_PORT: u16 = 3030;
+const MAX_SEARCH_INDEX_BYTES: u64 = 80 * 1024 * 1024;
+const MAX_SEARCH_JSON_BYTES: u64 = 320 * 1024 * 1024;
+const MAX_JSON_STRING_BYTES: usize = 16 * 1024;
+const MAX_NAMES: usize = 64;
+
+struct LimitedJsonRead<R> {
+    inner: R,
+    total: u64,
+    in_string: bool,
+    escaped: bool,
+    string_bytes: usize,
+}
+impl<R: Read> Read for LimitedJsonRead<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let count = self.inner.read(buffer)?;
+        self.total = self.total.saturating_add(count as u64);
+        if self.total > MAX_SEARCH_JSON_BYTES {
+            return Err(std::io::Error::other("search JSON is too large"));
+        }
+        for byte in &buffer[..count] {
+            if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if *byte == b'\\' {
+                    self.escaped = true;
+                } else if *byte == b'"' {
+                    self.in_string = false;
+                    self.string_bytes = 0;
+                    continue;
+                }
+                self.string_bytes += 1;
+                if self.string_bytes > MAX_JSON_STRING_BYTES {
+                    return Err(std::io::Error::other("search JSON string is too large"));
+                }
+            } else if *byte == b'"' {
+                self.in_string = true;
+                self.string_bytes = 0;
+            }
+        }
+        Ok(count)
+    }
+}
+
+#[derive(Default, Serialize)]
+struct BoundedNames(Vec<String>);
+impl<'de> Deserialize<'de> for BoundedNames {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct NamesVisitor;
+        impl<'de> Visitor<'de> for NamesVisitor {
+            type Value = BoundedNames;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("null or a bounded names array")
+            }
+            fn visit_none<E: Error>(self) -> Result<Self::Value, E> {
+                Ok(BoundedNames::default())
+            }
+            fn visit_unit<E: Error>(self) -> Result<Self::Value, E> {
+                Ok(BoundedNames::default())
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut names = Vec::new();
+                while let Some(name) = seq.next_element()? {
+                    if names.len() == MAX_NAMES {
+                        return Err(A::Error::custom("too many alternate names"));
+                    }
+                    names.push(name);
+                }
+                Ok(BoundedNames(names))
+            }
+        }
+        deserializer.deserialize_any(NamesVisitor)
+    }
+}
+
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "PascalCase")]
+struct SearchItem {
+    title: String,
+    name: String,
+    names: BoundedNames,
+    size: String,
+    create_date: String,
+    tracker: String,
+    magnet: String,
+    hash: String,
+    #[serde(rename = "IMDBID")]
+    imdbid: String,
+    year: i32,
+    peer: i32,
+    seed: i32,
+    video_quality: i32,
+    #[serde(skip)]
+    score: i32,
+}
+
+fn normalize(value: &str) -> String {
+    value
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|v| !v.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn search_index(path: &std::path::Path, query: &str) -> Result<String> {
+    struct Matches<'a> {
+        query: &'a str,
+        tokens: Vec<&'a str>,
+    }
+    impl<'de> Visitor<'de> for Matches<'_> {
+        type Value = Vec<SearchItem>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a RuTor array")
+        }
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut found = Vec::new();
+            while let Some(mut item) = seq.next_element::<SearchItem>()? {
+                let searchable = normalize(&format!(
+                    "{} {} {} {}",
+                    item.title,
+                    item.name,
+                    item.names.0.join(" "),
+                    item.year
+                ));
+                if self.tokens.iter().all(|token| searchable.contains(token))
+                    && item.hash.len() == 40
+                    && item.hash.chars().all(|c| c.is_ascii_hexdigit())
+                    && item.magnet.to_ascii_lowercase().starts_with("magnet:?")
+                {
+                    item.score = if searchable.contains(self.query) {
+                        10_000
+                    } else {
+                        0
+                    } + item.seed.saturating_mul(10).saturating_add(item.peer);
+                    found.push(item);
+                    if found.len() > 40 {
+                        rank_results(&mut found);
+                        found.truncate(40);
+                    }
+                }
+            }
+            Ok(found)
+        }
+    }
+    let normalized = normalize(query);
+    if normalized.chars().count() < 2 {
+        anyhow::bail!("search query must contain at least two letters or digits");
+    }
+    let file = File::open(path)?;
+    if file.metadata()?.len() > MAX_SEARCH_INDEX_BYTES {
+        anyhow::bail!("compressed search index is too large");
+    }
+    let reader = BufReader::with_capacity(
+        256 * 1024,
+        LimitedJsonRead {
+            inner: DeflateDecoder::new(file),
+            total: 0,
+            in_string: false,
+            escaped: false,
+            string_bytes: 0,
+        },
+    );
+    let mut deserializer = serde_json::Deserializer::from_reader(reader);
+    let mut matches = deserializer.deserialize_seq(Matches {
+        query: &normalized,
+        tokens: normalized.split_whitespace().collect(),
+    })?;
+    rank_results(&mut matches);
+    matches.truncate(40);
+    Ok(serde_json::to_string(&matches)?)
+}
+
+fn rank_results(items: &mut [SearchItem]) {
+    items.sort_unstable_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| b.seed.cmp(&a.seed))
+            .then_with(|| b.create_date.cmp(&a.create_date))
+    });
+}
 
 struct RunningEngine {
     shutdown: oneshot::Sender<()>,
@@ -194,6 +381,40 @@ pub extern "system" fn Java_com_piratecinema_app_LibrqbitPlugin_nativeStop(
     _class: JClass<'_>,
 ) -> jboolean {
     jni_guard(&mut env, stop_engine)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_piratecinema_app_TorrentSearchPlugin_nativeSearchIndex(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    path: JString<'_>,
+    query: JString<'_>,
+) -> jstring {
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<String> {
+        let path = PathBuf::from(env.get_string(&path)?.to_string_lossy().into_owned());
+        let query = env.get_string(&query)?.to_string_lossy().into_owned();
+        search_index(&path, &query)
+    }));
+    match result {
+        Ok(Ok(value)) => match env.new_string(value) {
+            Ok(value) => value.into_raw(),
+            Err(error) => {
+                let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+                std::ptr::null_mut()
+            }
+        },
+        Ok(Err(error)) => {
+            let _ = env.throw_new("java/lang/IllegalStateException", format!("{error:#}"));
+            std::ptr::null_mut()
+        }
+        Err(_) => {
+            let _ = env.throw_new(
+                "java/lang/IllegalStateException",
+                "panic in torrent search JNI boundary",
+            );
+            std::ptr::null_mut()
+        }
+    }
 }
 
 #[cfg(test)]

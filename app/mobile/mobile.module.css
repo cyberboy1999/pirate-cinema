@@ -19,3 +19,4 @@
 .page[aria-label="RuTube"]{overflow-y:auto;padding-bottom:16px}.page[aria-label="RuTube"] .list{max-height:none;overflow:visible}.page[aria-label="RuTube"] .list article{grid-template-columns:minmax(0,1fr) auto}.page[aria-label="RuTube"] label{display:grid;gap:6px;margin:10px 0;color:#aaa;font-size:12px}.page[aria-label="RuTube"] input{min-width:0;width:100%;box-sizing:border-box;padding:10px;border:1px solid #333;border-radius:10px;background:#111;color:#eee}.page[aria-label="RuTube"] button{min-height:40px}
 .phone{padding-bottom:92px}.nav{bottom:20px}.fab{bottom:92px}.keyboard{bottom:calc(78px + env(safe-area-inset-bottom))}.tvMode .nav{bottom:0}
 .sheet label.autoNext{display:flex;align-items:center;gap:9px;margin:13px 0;color:#ddd}.autoNext input{width:18px;height:18px;accent-color:#62dfa1}
+.resultActions{display:grid;gap:6px;flex:none}.results .resultActions button:last-child{background:#eee;color:#080808;border-color:#eee}

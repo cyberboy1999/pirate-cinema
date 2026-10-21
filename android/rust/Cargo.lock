@@ -1977,9 +1977,12 @@ name = "pirate-cinema-librqbit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "flate2",
  "jni 0.21.1",
  "librqbit",
  "librqbit-dualstack-sockets",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",

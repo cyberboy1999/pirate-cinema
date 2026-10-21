@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(TorrentMediaPlugin.class);
         registerPlugin(MobileStoragePlugin.class);
         registerPlugin(PlatformToolsPlugin.class);
+        registerPlugin(TorrentSearchPlugin.class);
         super.onCreate(savedInstanceState);
     }
 
