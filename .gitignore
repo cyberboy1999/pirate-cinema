@@ -33,6 +33,7 @@ yarn-error.log*
 .env*
 !.env.example
 /local-data/
+/Pirate Cinema/
 
 # vercel
 .vercel

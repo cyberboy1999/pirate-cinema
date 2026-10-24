@@ -39,6 +39,7 @@ jobs:
           node desktop-rust/tests/player-state.cjs
           node desktop-rust/tests/player-switch.cjs
           node desktop-rust/tests/player-controller.cjs
+          node desktop-rust/tests/remote-controller.cjs
           node desktop-rust/tests/diagnostics-copy.cjs
           node desktop-rust/tests/rutube-player.cjs
       - name: Validate release tag
@@ -93,6 +94,7 @@ jobs:
           node desktop-rust/tests/player-state.cjs
           node desktop-rust/tests/player-switch.cjs
           node desktop-rust/tests/player-controller.cjs
+          node desktop-rust/tests/remote-controller.cjs
           node desktop-rust/tests/diagnostics-copy.cjs
           node desktop-rust/tests/rutube-player.cjs
       - name: Validate release tag

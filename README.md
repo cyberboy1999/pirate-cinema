@@ -39,6 +39,17 @@ Windows-установщик включает FFmpeg и Visual C++ Runtime. Torr
 
 Онлайн-поиск отправляет источнику введённый запрос, а запуск — идентификатор выбранного видео или плейлиста. История остаётся локальной. Для просмотра нужен общедоступный поток; ограничения доступа не обходятся.
 
+## Веб-пульт
+
+Веб-пульт управляет только уже открытым ArtPlayer: воспроизведением, перемоткой, громкостью, следующей серией, полноэкранным режимом и озвучкой. Медиатека, поиск и magnet-ссылки с телефона недоступны.
+
+1. Подключите телефон и компьютер к одной Wi-Fi сети.
+2. Запустите видео и откройте в настройках ArtPlayer пункт **Веб-пульт → Показать QR-код**. Пульт также можно включить на странице **Настройки** приложения.
+3. Отсканируйте QR-код камерой телефона и откройте локальную страницу.
+4. При желании выберите в меню браузера **Добавить на главный экран**. Pirate Cinema должен оставаться запущенным.
+
+Пульт выключен по умолчанию, слушает только локальную сеть на порту `8787` и защищён случайным адресом-токеном. Если страница не открывается, разрешите Pirate Cinema доступ к частным сетям в брандмауэре Windows.
+
 ## Установка
 
 Готовые пакеты находятся в [последнем релизе](https://github.com/cyberboy1999/pirate-cinema/releases/latest). Все сборки предназначены для 64-битных систем.
@@ -128,6 +139,17 @@ The repository also contains an experimental Dioxus Mobile Android client. It is
 Playback history stays on the computer. Cinemeta, TVmaze, Wikidata, and Russian Wikipedia receive only public metadata queries, never the local history database.
 
 Online sources receive explicit search queries and selected video/playlist identifiers, not the history database. Playback requires an accessible public stream; access restrictions are not bypassed.
+
+### Web remote
+
+The Web remote controls only an already active ArtPlayer session: play/pause, seeking, volume, next episode, fullscreen, and audio track. It cannot browse the library, search, or submit magnet links.
+
+1. Connect the phone and computer to the same Wi-Fi network.
+2. Start a video, then open **Web remote → Show QR code** in ArtPlayer settings. You can also start it from the application **Settings** page.
+3. Scan the QR code with the phone camera and open the local page.
+4. Optionally use the browser menu to **Add to Home screen**. Pirate Cinema must remain running.
+
+The remote is disabled by default, listens only on the local network at port `8787`, and uses a random token in its URL. If the page does not open, allow Pirate Cinema on private networks in Windows Firewall.
 
 ### Installation
 

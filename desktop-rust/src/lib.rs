@@ -6,6 +6,8 @@ pub mod desktop_engine;
 #[cfg(feature = "torrent-engine")]
 pub mod embedded;
 #[cfg(feature = "desktop")]
+pub mod remote_control;
+#[cfg(feature = "desktop")]
 pub mod web_stream;
 #[cfg(all(feature = "torrent-engine", not(target_os = "android")))]
 pub use desktop_engine::stream_url;
