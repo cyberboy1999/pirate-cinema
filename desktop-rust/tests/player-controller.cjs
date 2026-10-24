@@ -4,7 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'src/bin/dioxus.rs'), 'utf8');
-let script = source.split('let script = format!(')[1].split('r#"')[1].split('"#,')[0];
+assert.match(source, /art\.fullscreen=false; art\.fullscreenWeb=fullscreenState/);
+assert.match(source, /document\.exitFullscreen\(\)/);
+assert.match(source, /remote_window\.set_fullscreen\(status\.fullscreen\)/);
+let script = source.split('let script = format!(')[2].split('r#"')[1].split('"#,')[0];
 for (const [key, value] of Object.entries({
   selector:'"torrent-1"', episodes:JSON.stringify([1,2,3].map(id => ({id,name:`S01E0${id}.mkv`}))),
   torrent_hash:'"torrent"',current_file_id:'1',next_episode_id:'2',audio_preference:'null',auto_next:'true',
@@ -40,7 +43,8 @@ class ArtPlayer {
     video.buffered={length:1,start:()=>0,end:()=>200};
     video.play=async()=>{this.playing=true;this.emit('video:play');};
     this.template={$video:video,$player:new Node(),$track:{track:{}}};
-    this.setting={add:setting=>{this.subtitleSetting=setting;},update:setting=>{this.subtitleSetting=setting;}};
+    this.settings=[];
+    this.setting={add:setting=>{this.settings.push(setting);},update:setting=>{this.subtitleSetting=setting;}};
     this.subtitle={show:false,switch:async()=>{}}; this.notice={};
     this.url=options.url;
   }
@@ -80,6 +84,9 @@ const metadata=art=>{art.duration=200;art.template.$video.duration=200;art.templ
   const controls=player.children.find(node=>node.className==='pc-player-topbar');
   assert.ok(controls.children.some(node=>node.className==='pc-episode'));
   assert.ok(controls.children.some(node=>node.className==='pc-audio'));
+  const remote=art.settings.find(setting=>setting.name==='pc-remote');
+  assert.ok(remote,'ArtPlayer settings must expose the web remote');
+  remote.onSelect(remote.selector[0]);assert.equal(messages.at(-1).kind,'remote');
   art.emit('fullscreen',true);assert.equal(messages.at(-1).kind,'fullscreen');
   assert.equal(messages.at(-1).active,true);
   assert.ok(fetches.some(url=>url.includes('probe?index=2')),'bounded next-file preparation');

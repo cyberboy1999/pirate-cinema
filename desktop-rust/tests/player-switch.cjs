@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../src/bin/dioxus.rs'), 'utf8');
-let script = source.split('let script = format!(')[1].split('r#"')[1].split('"#,')[0];
+let script = source.split('let script = format!(')[2].split('r#"')[1].split('"#,')[0];
 for (const [key, value] of Object.entries({
   selector: '"torrent-2"', episodes: '[]', torrent_hash: '"torrent"',
   current_file_id: '2', next_episode_id: '3', hls_js: '', artplayer_js: '',

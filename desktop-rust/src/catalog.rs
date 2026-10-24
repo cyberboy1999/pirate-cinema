@@ -5,6 +5,7 @@ use std::time::Duration;
 
 const CINEMETA: &str = "https://v3-cinemeta.strem.io";
 const WIKIDATA: &str = "https://query.wikidata.org/sparql";
+const IMDB_SUGGEST: &str = "https://sg.media-imdb.com/suggests";
 type WikidataRecord = (
     String,
     Option<String>,
@@ -795,6 +796,16 @@ pub fn movie_poster_jpeg(movie: &Movie, _series: bool) -> Result<Vec<u8>, String
             return Ok(bytes);
         }
     }
+    // Cinemeta poster hosts occasionally retire an otherwise valid image.
+    // The already matched IMDb id gives us an identity-safe CDN fallback
+    // without sending the user's library title or history to another service.
+    if let Some(url) = imdb_poster_url(&agent(), &movie.id) {
+        for candidate in imdb_poster_candidates(&url) {
+            if let Ok(bytes) = poster_jpeg(&candidate) {
+                return Ok(bytes);
+            }
+        }
+    }
     // A provider URL is not proof of a usable image. Verify Wikipedia's identity
     // before using its artwork when both previously supplied URLs fail.
     if let Some(url) = verified_wikipedia_summary(&agent(), movie)
@@ -805,14 +816,82 @@ pub fn movie_poster_jpeg(movie: &Movie, _series: bool) -> Result<Vec<u8>, String
             return Ok(bytes);
         }
     }
-    Err("Не удалось получить обложку из Cinemeta, TVmaze или Wikidata".into())
+    Err("Не удалось получить обложку из Cinemeta, IMDb, TVmaze или Wikidata".into())
+}
+
+fn imdb_poster_url(agent: &ureq::Agent, imdb_id: &str) -> Option<String> {
+    if !valid_imdb(imdb_id) {
+        return None;
+    }
+    let first = imdb_id.chars().next()?.to_ascii_lowercase();
+    let mut response = agent
+        .get(format!("{IMDB_SUGGEST}/{first}/{imdb_id}.json"))
+        .header("accept", "application/json,text/javascript,*/*;q=0.8")
+        .call()
+        .ok()?;
+    let mut bytes = Vec::new();
+    response
+        .body_mut()
+        .as_reader()
+        .take(512 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() > 512 * 1024 {
+        return None;
+    }
+    parse_imdb_suggest(&bytes, imdb_id)
+}
+
+fn parse_imdb_suggest(bytes: &[u8], imdb_id: &str) -> Option<String> {
+    let text = std::str::from_utf8(bytes).ok()?.trim();
+    let json = if text.starts_with('{') {
+        text
+    } else {
+        let start = text.find('(')? + 1;
+        let end = text.rfind(')')?;
+        text.get(start..end)?.trim()
+    };
+    serde_json::from_str::<Value>(json)
+        .ok()?
+        .get("d")?
+        .as_array()?
+        .iter()
+        .find(|item| item.get("id").and_then(Value::as_str) == Some(imdb_id))?
+        .pointer("/i/0")?
+        .as_str()
+        .filter(|url| url.starts_with("https://"))
+        .map(str::to_owned)
+}
+
+fn imdb_poster_candidates(url: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Some(marker) = url.find("._V1_") {
+        if let Some(extension) = url[marker..].rfind(".jpg") {
+            let end = marker + extension + 4;
+            candidates.push(format!("{}._V1_QL85_UX700_.jpg", &url[..marker]));
+            if end < url.len() {
+                candidates[0].push_str(&url[end..]);
+            }
+        }
+    }
+    if !candidates.iter().any(|candidate| candidate == url) {
+        candidates.push(url.to_owned());
+    }
+    candidates
 }
 
 pub fn poster_jpeg(url: &str) -> Result<Vec<u8>, String> {
     if !url.starts_with("https://") {
         return Err("Постер должен загружаться по HTTPS".into());
     }
-    let mut response = agent().get(url).call().map_err(|error| error.to_string())?;
+    let mut response = agent()
+        .get(url)
+        .header(
+            "accept",
+            "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        )
+        .call()
+        .map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     response
         .body_mut()
@@ -849,6 +928,32 @@ mod tests {
         assert_eq!(
             items[0].background_url.as_deref(),
             Some("https://example.com/background.jpg")
+        );
+    }
+
+    #[test]
+    fn imdb_suggest_requires_the_requested_identity() {
+        let jsonp = br#"imdb$tt123({"d":[{"id":"tt999","i":["https://cdn.test/wrong.jpg",1,1]},{"id":"tt123","i":["https://cdn.test/right._V1_.jpg",1,1]}]})"#;
+        assert_eq!(
+            parse_imdb_suggest(jsonp, "tt123").as_deref(),
+            Some("https://cdn.test/right._V1_.jpg")
+        );
+        assert!(parse_imdb_suggest(jsonp, "tt456").is_none());
+        assert!(parse_imdb_suggest(b"not json", "tt123").is_none());
+    }
+
+    #[test]
+    fn imdb_poster_prefers_a_bounded_display_size() {
+        assert_eq!(
+            imdb_poster_candidates("https://cdn.test/poster._V1_SX300.jpg"),
+            [
+                "https://cdn.test/poster._V1_QL85_UX700_.jpg",
+                "https://cdn.test/poster._V1_SX300.jpg"
+            ]
+        );
+        assert_eq!(
+            imdb_poster_candidates("https://cdn.test/poster.jpg"),
+            ["https://cdn.test/poster.jpg"]
         );
     }
 

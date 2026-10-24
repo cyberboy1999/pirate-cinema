@@ -394,3 +394,27 @@ Version 0.5.6 also accepts HTTP(S) torrent download links returned by Torznab pr
 For a continuing series, the home hero fetches the existing sorted file list and names the first unviewed episode; movies never trigger episode lookup. Adding a different info hash with the same normalized title and compatible year requires explicit confirmation, while re-adding the exact same hash reuses the saved TorrServer item without a duplicate prompt.
 
 The empty-library state must keep `nextResult` nullable. The home overview only reads its file after confirming that a result exists and belongs to the featured torrent; this prevents a clean installation from failing its initial render.
+
+## Rust desktop follow-up (2026-10-23)
+
+The current desktop prototype is a single Rust/Dioxus process using embedded
+librqbit, the loopback HLS bridge and ArtPlayer. It does not start TorrServer or
+MPV. A short startup preview uses the bundled Pirate Cinema icon.
+
+Poster recovery keeps the existing Cinemeta and verified Wikipedia/Wikidata
+paths, then tries IMDb Suggest only when an exact IMDb identifier is already
+known. The response must contain that same identifier; arbitrary title search
+results are never accepted. Downloaded images still pass the shared image type,
+size and decode checks before entering the local poster cache.
+
+Settings and ArtPlayer contain an opt-in Web Remote for the current player.
+Starting it binds LAN port 8787 and displays an in-app QR code for a stable,
+per-install random 128-bit URL token. The separate mobile page exposes only
+status and playback commands (pause, seek, volume, fullscreen, next episode
+and audio track); it cannot browse the library, search torrents or launch
+content. Stopping the remote closes the listener. The page and installable
+home-screen metadata use bundled assets and have no cloud dependency.
+
+The AppImage builder normalizes the desktop entry to Unix line endings before
+calling linuxdeploy. This keeps Windows checkouts from turning the icon name
+into an invalid value ending in a carriage return.

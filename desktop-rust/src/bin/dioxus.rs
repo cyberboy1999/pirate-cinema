@@ -15,6 +15,7 @@ use pirate_cinema_core::history::{
 };
 use pirate_cinema_core::metadata::{self, Movie};
 use pirate_cinema_core::migration::{legacy_profile_paths, migrate_legacy_profiles};
+use pirate_cinema_core::remote_control::{self, RemoteStatus};
 use pirate_cinema_core::settings::{self, Language, Preferences};
 use pirate_cinema_core::{
     check_rust_update, download_rust_update, magnet_info_hash, magnet_title, ReleaseUpdate,
@@ -64,6 +65,13 @@ button { color: inherit; cursor: pointer; }
 .welcome-card label { display: grid; gap: 8px; color: #aaa; }
 .welcome-card input { padding: 13px 14px; border: 1px solid #292929; border-radius: 10px; background: #080808; color: white; }
 .welcome-action { min-height: 46px; }
+.startup-preview { position:fixed; inset:0; z-index:10000; display:grid; place-items:center; background:radial-gradient(circle at 50% 45%,#242424 0,#0b0b0b 34%,#050505 68%); animation:startup-fade .22s ease-out; }
+.startup-preview-content { display:grid; justify-items:center; gap:18px; color:#f4f4f4; }
+.startup-preview img { width:132px; height:132px; padding:18px; border-radius:30px; background:#e8e8e8; object-fit:contain; box-shadow:0 24px 80px #000; }
+.startup-preview strong { font-size:29px; letter-spacing:-1px; }
+.startup-preview span { color:#858585; font-size:13px; letter-spacing:1.5px; text-transform:uppercase; }
+.remote-overlay{position:fixed;inset:0;z-index:11000;display:grid;place-items:center;padding:24px;background:#000c}.remote-card{width:min(430px,100%);display:grid;justify-items:center;gap:14px;padding:26px;border:1px solid #303030;border-radius:18px;background:#101010;box-shadow:0 24px 90px #000}.remote-card h2,.remote-card p{margin:0;text-align:center}.remote-card img,.remote-qr{width:220px;height:220px;padding:10px;border-radius:12px;background:#fff}.remote-card input{width:100%;padding:12px;border:1px solid #303030;border-radius:9px;background:#080808;color:#ddd;text-align:center}.remote-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@keyframes startup-fade { from { opacity:0 } to { opacity:1 } }
 .sidebar { position: sticky; top: 0; height: 100vh; padding: 28px 14px 22px; border-right: 1px solid #202020; display: flex; flex-direction: column; background: #080808; }
 .brand { margin: 0 4px 34px; display:flex; align-items:center; gap:10px; font-size: 20px; font-weight: 800; letter-spacing: -.7px; white-space:nowrap; }
 .brand img { width:30px; height:30px; padding:3px; border-radius:7px; background:#ddd; object-fit:contain; }
@@ -379,6 +387,7 @@ fn App() -> Element {
     let mut selected = use_signal(|| None::<Torrent>);
     let mut files = use_signal(Vec::<PlayableFile>::new);
     let mut web_player = use_signal(|| None::<WebPlayback>);
+    let mut remote_modal = use_signal(|| None::<remote_control::RemoteInfo>);
     let mut closing = use_signal(|| false);
     let close_window = desktop.clone();
     let _close_hook = dioxus::desktop::use_wry_event_handler(move |event, _| {
@@ -428,6 +437,59 @@ fn App() -> Element {
             }
         }
     });
+    let remote_window = desktop.clone();
+    use_future(move || {
+        let remote_window = remote_window.clone();
+        async move {
+            loop {
+                if remote_control::info().is_some() {
+                    let commands = remote_control::take_commands();
+                    let fullscreen_requested = commands
+                        .iter()
+                        .filter(|command| {
+                            matches!(command, remote_control::RemoteCommand::Fullscreen)
+                        })
+                        .count()
+                        % 2
+                        == 1;
+                    if let Some(playback) = web_player.peek().as_ref() {
+                        let title = serde_json::to_string(&playback.file.name)
+                            .unwrap_or_else(|_| "\"Video\"".into());
+                        let commands =
+                            serde_json::to_string(&commands).unwrap_or_else(|_| "[]".into());
+                        let script = format!(
+                            r#"
+                        const art=window.__pirateCinemaArt;
+                        const commands={commands};
+                        let fullscreenState=Boolean(art?.fullscreen||art?.fullscreenWeb||document.fullscreenElement);
+                        if(art) for(const command of commands) {{
+                            if(command.action==='toggle') art.playing ? art.pause() : art.play();
+                            else if(command.action==='seek_relative') art.currentTime=Math.max(0,Math.min(art.duration||0,(art.currentTime||0)+command.seconds));
+                            else if(command.action==='seek_absolute') art.currentTime=Math.max(0,Math.min(art.duration||0,command.seconds));
+                            else if(command.action==='volume') art.volume=Math.max(0,Math.min(1,command.value));
+                            else if(command.action==='next') document.querySelector('.pc-next-episode')?.click();
+                            else if(command.action==='fullscreen') {{ fullscreenState=!fullscreenState; art.fullscreen=false; art.fullscreenWeb=fullscreenState; if(!fullscreenState && document.fullscreenElement) document.exitFullscreen().catch(()=>{{}}); }}
+                            else if(command.action==='audio') {{ const select=document.querySelector('.pc-audio'); if(select && [...select.options].some(option=>option.value===command.value)) {{ select.value=command.value; select.dispatchEvent(new Event('change')); }} }}
+                        }}
+                        const audio=document.querySelector('.pc-audio');
+                        dioxus.send(art ? {{available:true,title:{title},playing:Boolean(art.playing),current_time:Number(art.currentTime)||0,duration:Number(art.duration)||0,volume:Number(art.volume)||0,audio:audio?[...audio.options].filter(option=>option.value).map(option=>({{value:option.value,label:option.textContent||option.value}})):[],selected_audio:audio?.value||'',fullscreen:fullscreenState}} : {{available:false,title:'',playing:false,current_time:0,duration:0,volume:1,audio:[],selected_audio:'',fullscreen:false}});
+                        "#
+                        );
+                        let mut eval = document::eval(&script);
+                        if let Ok(status) = eval.recv::<RemoteStatus>().await {
+                            if fullscreen_requested {
+                                remote_window.set_fullscreen(status.fullscreen);
+                            }
+                            remote_control::update_status(status);
+                        }
+                    } else {
+                        remote_control::update_status(RemoteStatus::default());
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(350)).await;
+            }
+        }
+    });
     let mut return_page = use_signal(|| Page::Library);
     let mut busy = use_signal(|| false);
     let mut metadata_status = use_signal(String::new);
@@ -439,6 +501,14 @@ fn App() -> Element {
             .is_some_and(|preferences| preferences.onboarding_complete)
     });
     let mut startup_update = use_signal(|| None::<ReleaseUpdate>);
+    let mut startup_preview = use_signal(|| true);
+
+    use_future(move || async move {
+        // The Rust backend already lives in this process. Keep the brand visible
+        // just long enough to avoid flashing partially initialized UI.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        startup_preview.set(false);
+    });
 
     use_effect(move || {
         let Some(playback) = web_player() else {
@@ -685,6 +755,11 @@ fn App() -> Element {
                 }}
             }};
             art.setting.add(subtitleSetting);
+            art.setting.add({{
+                name:'pc-remote',html:'Веб-пульт',tooltip:'QR',
+                selector:[{{html:'Показать QR-код',value:'open'}}],
+                onSelect:item=>{{dioxus.send({{kind:'remote'}});return item.html;}}
+            }});
             const updateSubtitles = () => art.setting.update({{...subtitleSetting,selector:[
                 {{html:'Отключены',value:-1}},
                 ...subtitleTracks.map((track,index) => ({{html:String(track.name || track.lang || `Дорожка ${{index+1}}`).replace(/[<>&"']/g,''),value:index}})),
@@ -964,6 +1039,13 @@ fn App() -> Element {
                     break;
                 }
                 let playback = current_playback;
+                if value.get("kind").and_then(|item| item.as_str()) == Some("remote") {
+                    match remote_control::start() {
+                        Ok(info) => remote_modal.set(Some(info)),
+                        Err(error) => server.write().error = error,
+                    }
+                    continue;
+                }
                 if value.get("kind").and_then(|item| item.as_str()) == Some("audio_preference") {
                     if let Ok(path) = history_path() {
                         if let Ok(history) = HistoryStore::open(&path) {
@@ -1459,6 +1541,29 @@ fn App() -> Element {
     rsx! {
         style { {CSS} }
         document::Title { "Pirate Cinema {VERSION} — librqbit локальный прототип" }
+        if startup_preview() {
+            div { class: "startup-preview", role: "status", "aria-label": "Pirate Cinema запускается",
+                div { class: "startup-preview-content",
+                    img { src: "{brand_icon}", alt: "" }
+                    strong { "Pirate Cinema" }
+                    span { {language().pick("Локальная медиатека", "Local media library")} }
+                }
+            }
+        }
+        if let Some(info) = remote_modal() {
+            div { class: "remote-overlay", role: "dialog", "aria-modal": "true", "aria-label": language().pick("Веб-пульт", "Web remote"),
+                section { class: "remote-card",
+                    h2 { {language().pick("Веб-пульт", "Web remote")} }
+                    img { src: "{info.qr_data_uri}", alt: language().pick("QR-код веб-пульта", "Web remote QR code") }
+                    p { {language().pick("Отсканируйте QR-код телефоном в той же Wi-Fi сети.", "Scan the QR code with a phone on the same Wi-Fi network.")} }
+                    input { readonly: true, value: "{info.url}" }
+                    div { class: "remote-actions",
+                        button { class: "secondary", onclick: move |_| remote_modal.set(None), {language().pick("Закрыть", "Close")} }
+                        button { class: "secondary", onclick: move |_| { remote_control::stop(); remote_modal.set(None); }, {language().pick("Выключить пульт", "Stop remote")} }
+                    }
+                }
+            }
+        }
         if !onboarding() {
             Welcome { on_complete: move |preferences: Preferences| {
                 language.set(preferences.language);
@@ -2115,6 +2220,8 @@ fn Settings(
     let mut maintenance_busy = use_signal(|| false);
     let mut update_status = use_signal(String::new);
     let mut available_update = use_signal(|| None::<ReleaseUpdate>);
+    let mut remote_info = use_signal(remote_control::info);
+    let mut remote_message = use_signal(String::new);
     let window = dioxus::desktop::use_window();
 
     let save = move |_| {
@@ -2266,6 +2373,22 @@ fn Settings(
                 label { {language().pick("API-ключ", "API key")} input { r#type: "password", value: "{torznab_api_key}", oninput: move |event| torznab_api_key.set(event.value()) } }
                 button { class: "primary", onclick: save, {language().pick("Сохранить", "Save")} }
                 if !status().is_empty() { div { class: "notice", "{status}" } }
+            }
+
+            section { class: "settings-card",
+                h2 { {language().pick("Веб-пульт", "Web remote")} }
+                p { class: "hint", {language().pick("Управляет только текущим плеером в локальной сети. Медиатека и поиск недоступны с телефона.", "Controls only the active player on your local network. The library and search stay unavailable from the phone.")} }
+                if let Some(info) = remote_info() {
+                    img { class: "remote-qr", src: "{info.qr_data_uri}", alt: language().pick("QR-код веб-пульта", "Web remote QR code") }
+                    label { {language().pick("Адрес для телефона", "Phone URL")}
+                        input { readonly: true, value: "{info.url}", onclick: move |event| event.stop_propagation() }
+                    }
+                    p { class: "hint", {language().pick("Телефон и компьютер должны быть в одной Wi-Fi сети. При желании добавьте страницу на главный экран через меню браузера.", "The phone and computer must use the same Wi-Fi network. You can add the page to the home screen from the browser menu.")} }
+                    button { class: "secondary", onclick: move |_| { remote_control::stop(); remote_info.set(None); remote_message.set(language().pick("Веб-пульт выключен", "Web remote stopped").into()); }, {language().pick("Выключить пульт", "Stop remote")} }
+                } else {
+                    button { class: "primary", onclick: move |_| match remote_control::start() { Ok(info) => { remote_info.set(Some(info)); remote_message.set(language().pick("Откройте адрес на телефоне в той же Wi-Fi сети", "Open the address on a phone on the same Wi-Fi network").into()); }, Err(error) => remote_message.set(error) }, {language().pick("Включить веб-пульт", "Start web remote")} }
+                }
+                if !remote_message().is_empty() { div { class: "notice", "{remote_message}" } }
             }
 
             section { class: "settings-card",

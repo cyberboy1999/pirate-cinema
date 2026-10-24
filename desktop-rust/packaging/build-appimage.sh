@@ -13,7 +13,8 @@ trap 'rm -rf "$appdir"' EXIT
 
 mkdir -p "$appdir/usr/bin" "$appdir/usr/share/applications" "$appdir/usr/share/icons/hicolor/256x256/apps" "$output"
 install -m755 "$binary" "$appdir/usr/bin/pirate-cinema"
-sed 's|Exec=/opt/pirate-cinema/pirate-cinema %U|Exec=pirate-cinema %U|' "$root/packaging/pirate-cinema.desktop" > "$appdir/usr/share/applications/pirate-cinema.desktop"
+sed 's|Exec=/opt/pirate-cinema/pirate-cinema %U|Exec=pirate-cinema %U|' "$root/packaging/pirate-cinema.desktop" \
+  | tr -d '\r' > "$appdir/usr/share/applications/pirate-cinema.desktop"
 install -m644 "$root/../public/favicon.png" "$appdir/usr/share/icons/hicolor/256x256/apps/pirate-cinema.png"
 
 APPIMAGE_EXTRACT_AND_RUN=1 \
