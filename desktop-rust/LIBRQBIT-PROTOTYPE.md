@@ -1,6 +1,6 @@
 # Local desktop engine prototype
 
-The desktop feature now includes the same pinned librqbit 8.1.1 engine as Android.
+The desktop feature includes the pinned librqbit 9.0.1 engine.
 It replaces the external torrent service for search, magnet add, library, video files,
 stream URLs and removal. No fixed server port, service binary, restart action or
 remote endpoint is used. Existing installed software and old data are not removed.

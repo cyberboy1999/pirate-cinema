@@ -34,7 +34,7 @@ jobs:
           node-version: '24'
       - name: Install native build tools
         run: choco install nasm -y --no-progress
-      - name: Test player controller
+      - name: Test JavaScript controllers
         run: |
           node desktop-rust/tests/player-state.cjs
           node desktop-rust/tests/player-switch.cjs
@@ -48,7 +48,7 @@ jobs:
         run: |
           $version=(Select-String desktop-rust/Cargo.toml -Pattern '^version = "(.+)"$').Matches.Groups[1].Value
           if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag does not match Cargo version $version" }
-      - name: Restore verified runtime
+      - name: Restore verified runtime and packaging tools
         shell: pwsh
         run: |
           npm install --no-save ffmpeg-static@5.2.0
@@ -62,10 +62,10 @@ jobs:
           if ((Get-FileHash nsis-3.13.zip -Algorithm SHA256).Hash -ne 'BA63DFFC4410EE89193E1CB5A41989991BD77C61068DA17E3156D136B7B0B3D8') { throw 'NSIS hash mismatch' }
           Expand-Archive nsis-3.13.zip -DestinationPath .
       - run: cargo fmt --manifest-path desktop-rust/Cargo.toml -- --check
-      - run: cargo check --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
-      - run: cargo test --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
-      - run: cargo clippy --manifest-path desktop-rust/Cargo.toml --all-targets --all-features -- -D warnings
-      - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
+      - run: cargo check --locked --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
+      - run: cargo test --locked --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
+      - run: cargo clippy --locked --manifest-path desktop-rust/Cargo.toml --all-targets --all-features -- -D warnings
+      - run: cargo build --locked --release --manifest-path desktop-rust/Cargo.toml --bin pirate-cinema
       - name: Build production NSIS installer
         shell: pwsh
         run: |
@@ -89,7 +89,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Test player controller
+      - name: Test JavaScript controllers
         run: |
           node desktop-rust/tests/player-state.cjs
           node desktop-rust/tests/player-switch.cjs
@@ -101,7 +101,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)" = "$GITHUB_REF_NAME"
       - name: Install build and package dependencies
-        run: sudo apt-get update && sudo apt-get install -y nasm libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libfuse2 ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y nasm cmake clang libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libfuse2 ffmpeg
       - name: Restore pinned AppImage tools
         run: |
           curl -fL 'https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage' -o linuxdeploy-x86_64.AppImage
@@ -112,17 +112,16 @@ jobs:
           echo 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool-x86_64.AppImage' | sha256sum -c -
           chmod 755 linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh appimagetool-x86_64.AppImage
       - run: cargo fmt --manifest-path desktop-rust/Cargo.toml -- --check
-      - run: cargo check --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
-      - run: cargo test --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
-      - run: cargo clippy --manifest-path desktop-rust/Cargo.toml --all-targets --all-features -- -D warnings
-      - run: cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinema
+      - run: cargo check --locked --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
+      - run: cargo test --locked --manifest-path desktop-rust/Cargo.toml --all-targets --all-features
+      - run: cargo clippy --locked --manifest-path desktop-rust/Cargo.toml --all-targets --all-features -- -D warnings
+      - run: cargo build --locked --release --manifest-path desktop-rust/Cargo.toml --bin pirate-cinema
       - name: Build AppImage
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop-rust/Cargo.toml | head -1)
           mkdir -p release-linux
           chmod 755 desktop-rust/packaging/*.sh
           desktop-rust/packaging/build-appimage.sh "$version" desktop-rust/target/release/pirate-cinema release-linux "$PWD/linuxdeploy-x86_64.AppImage" "$PWD/appimagetool-x86_64.AppImage"
-          (cd release-linux && sha256sum *.AppImage > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: linux-release
@@ -139,7 +138,7 @@ jobs:
           name: linux-release
           path: release-linux
       - name: Install Arch runtime dependencies
-        run: pacman -Syu --noconfirm base-devel rustup nasm ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool xorg-server-xvfb dbus
+        run: pacman -Syu --noconfirm base-devel rustup nasm cmake clang ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool xorg-server-xvfb dbus
       - name: Smoke-test the packaged application
         shell: bash
         run: |
@@ -169,7 +168,24 @@ jobs:
         with:
           path: publish
           merge-multiple: true
+      - name: Create combined checksums
+        run: |
+          cd publish
+          rm -f SHA256SUMS
+          sha256sum Pirate-Cinema-* > SHA256SUMS
+          cat SHA256SUMS
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --title "Pirate Cinema ${GITHUB_REF_NAME#v}" --notes-file "docs/RELEASE_${GITHUB_REF_NAME#v}.md"
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          title="Pirate Cinema $version"
+          notes="docs/RELEASE_$version.md"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "$title" --notes-file "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" publish/* THIRD_PARTY_NOTICES.md \
+              --title "$title" \
+              --notes-file "$notes"
+          fi

@@ -278,9 +278,7 @@ fn main() {
                 .with_menu(None)
                 .with_window(
                     dioxus::desktop::WindowBuilder::new()
-                        .with_title(format!(
-                            "Pirate Cinema {VERSION} — librqbit локальный прототип"
-                        ))
+                        .with_title(format!("Pirate Cinema {VERSION}"))
                         .with_inner_size(dioxus::desktop::tao::dpi::LogicalSize::new(1440.0, 900.0))
                         .with_min_inner_size(dioxus::desktop::tao::dpi::LogicalSize::new(
                             1024.0, 700.0,
@@ -1540,7 +1538,7 @@ fn App() -> Element {
 
     rsx! {
         style { {CSS} }
-        document::Title { "Pirate Cinema {VERSION} — librqbit локальный прототип" }
+        document::Title { "Pirate Cinema {VERSION}" }
         if startup_preview() {
             div { class: "startup-preview", role: "status", "aria-label": "Pirate Cinema запускается",
                 div { class: "startup-preview-content",

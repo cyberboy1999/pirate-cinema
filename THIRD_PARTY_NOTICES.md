@@ -6,10 +6,11 @@ component remains governed by its own license.
 
 ## librqbit
 
-- Version: 8.1.1, linked into the Rust application.
+- Version: 9.0.1, linked into the Rust application.
 - License: Apache-2.0.
 - Project/source: https://github.com/ikatson/rqbit
-- Cargo package: https://crates.io/crates/librqbit/8.1.1
+- Cargo package: https://crates.io/crates/librqbit/9.0.1
+- The loopback listener also links `librqbit-dualstack-sockets` 0.7.0 (Apache-2.0, same project).
 - The application does not distribute or start a separate torrent-server executable.
 
 ## FFmpeg

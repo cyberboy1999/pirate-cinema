@@ -52,6 +52,15 @@ yarn-error.log*
 /mobile-rust/target/
 /mobile-rust/dist/
 /desktop-rust/vendor/torrserver/
+/desktop-rust/vendor/
+/desktop-rust/.cargo/
+/runtime/
+/stage/
+/profile/
+*.sqlite
+*.sqlite-*
+*.log
+/dht_config.json
 /local-builds/
 /artifacts/
 

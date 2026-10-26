@@ -1,5 +1,26 @@
 # Pirate Cinema — project context
 
+2026-10-26 librqbit 9 upgrade: the pinned in-process engine was upgraded to
+librqbit 9.0.1 (Rust TLS and HTTP API features unchanged). The
+loopback HTTP server now takes a `librqbit-dualstack-sockets` 0.7.0 listener;
+DHT persistence is disabled through `DhtSessionConfig { persistence: None }`,
+and `create_torrent`/`torrent_from_bytes` were adapted to their v9 signatures.
+The persisted `session.json` schema and file-sharing IDs are unchanged, so
+existing libraries resume paused without data loss. `health_version()` now
+reports `librqbit::version()` instead of a hardcoded string. Verified with
+55 deterministic Rust tests across all targets (51 core, 4 example), 8 opt-in
+public-network tests left ignored, clippy with warnings denied, the JavaScript
+controller suite, the owned two-episode librqbit/FFmpeg/HLS smoke and the
+desktop GUI on both isolated and existing profiles.
+
+2026-10-25 desktop restored-torrent launch fix: `play_url` now waits up to
+60 seconds for the selected librqbit handle to finish initialization before
+changing `only_files`. This closes the startup race that surfaced as
+`error updating only_files ... can't update initializing torrent` when a
+saved title was launched immediately after opening the application. The wait
+is bounded, reports a Russian preparation error, and does not retry or mutate
+another torrent.
+
 2026-10-21 local HLS quality: FFmpeg no longer forces every source to 24 fps,
 so native frame cadence is preserved. The required browser-compatible H.264
 transcode now uses CRF 18 instead of CRF 23; resolution remains unchanged
@@ -76,9 +97,9 @@ Verified Settings and repeat Cars/Тачки search on the physical Infinix afte
 
 Current local APK: `local-builds/Pirate-Cinema-Rust-Android-Prototype.apk`, 43,979,212 bytes, SHA-256 `214c271075e219cc91d47cc51fb65a66075f60615afc5a1f36612f7d616548c5`. Installed over the existing phone prototype without clearing its data. Still debug-signed and local-only; no publication or signing-key action.
 
-2026-10-18 librqbit local prototype: added pinned in-process librqbit 8.1.1 (Rust TLS), sharing the existing external MPV/SQLite bridge. Embedded mode is used when external TorrServe is disabled. Explicit torrent Search downloads a fixed HTTPS public RuTor index once (observed 50,949,782 bytes), then performs word-based matching locally with streaming deflate/JSON parsing, bounded decompressed input and at most 121 retained candidates before trimming to 60. No search query/library/history is uploaded by this index path. The separate engine uses app-private rqbit/ data and a read-only ephemeral 127.0.0.1 HTTP endpoint. Add resolves metadata paused with no selected payload files; Play validates the real file, maps shared one-based IDs to zero-based engine IDs, and selects just that file. Persisted sessions are rewritten atomically to paused before engine restoration; repeat playback does not restart an already-live handle. The owned HTTP task and session cancellation token are cancelled on Engine drop.
+2026-10-18 librqbit local prototype: added pinned in-process librqbit (Rust TLS), sharing the existing external MPV/SQLite bridge. Embedded mode is used when external TorrServe is disabled. Explicit torrent Search downloads a fixed HTTPS public RuTor index once (observed 50,949,782 bytes), then performs word-based matching locally with streaming deflate/JSON parsing, bounded decompressed input and at most 121 retained candidates before trimming to 60. No search query/library/history is uploaded by this index path. The separate engine uses app-private rqbit/ data and a read-only ephemeral 127.0.0.1 HTTP endpoint. Add resolves metadata paused with no selected payload files; Play validates the real file, maps shared one-based IDs to zero-based engine IDs, and selects just that file. Persisted sessions are rewritten atomically to paused before engine restoration; repeat playback does not restart an already-live handle. The owned HTTP task and session cancellation token are cancelled on Engine drop.
 
-Verified actual Cars/Тачки search both through an isolated Windows diagnostic and the physical Infinix Android UI with external TorrServe disabled: 60 results, first Cars (2006) BDRip 1080p, 4.37 GB, 32 seeds according to the downloaded index (not a live swarm measurement). No Cars torrent was added or played. All 11 deterministic mobile tests passed (two public online tests remain ignored in that run), clippy with warnings denied passed. A synthetic four-byte torrent regression verifies repeated launch, original file ID mapping and HTTP 206 for open Range bytes=1- without public media. The stock librqbit8 HTTP handler ignores closed ranges; arbitrary closed-range/browser compatibility is not claimed. Independent review's restart/autodownload findings were fixed and re-reviewed with no remaining Important finding for the local search scope. Physical MPV torrent playback/background survival on XOS remains unverified; Android online playback evidence above is separate. No release/push/signing-key action occurred.
+Verified actual Cars/Тачки search both through an isolated Windows diagnostic and the physical Infinix Android UI with external TorrServe disabled: 60 results, first Cars (2006) BDRip 1080p, 4.37 GB, 32 seeds according to the downloaded index (not a live swarm measurement). No Cars torrent was added or played. All 11 deterministic mobile tests passed (two public online tests remain ignored in that run), clippy with warnings denied passed. A synthetic four-byte torrent regression verifies repeated launch, original file ID mapping and HTTP 206 for open Range bytes=1- without public media. The stock librqbit HTTP handler in that build ignored closed ranges; arbitrary closed-range/browser compatibility is not claimed. Independent review's restart/autodownload findings were fixed and re-reviewed with no remaining Important finding for the local search scope. Physical MPV torrent playback/background survival on XOS remains unverified; Android online playback evidence above is separate. No release/push/signing-key action occurred.
 
 Final local librqbit APK: 44,177,998 bytes, SHA-256 `3a81ea8b397750a79516e99ba2e55d3c72901ca3b78b8cee41740705aef1b717`, replacing `local-builds/Pirate-Cinema-Rust-Android-Prototype.apk`. Both ARM64 and x86_64 were built from the same source; signature, ZIP alignment and all ELF LOAD segment alignments (at least 0x4000) passed. Installed over the Infinix prototype without deleting history, posters or the search index. Still debug-signed and local-only, not a production Android release.
 

@@ -126,7 +126,7 @@ fn engine() -> Result<Arc<Engine>, String> {
 
 pub fn health_version(_: &str) -> Result<String, String> {
     if engine()?.healthy() {
-        Ok("8.1.1".into())
+        Ok(librqbit::version().into())
     } else {
         Err("Локальный поток librqbit остановлен".into())
     }

@@ -11,10 +11,14 @@ fn main() -> Result<(), String> {
     let fixture = PathBuf::from(args.next().ok_or("torrent or fixture directory required")?);
     let (torrent, videos) = if fixture.is_dir() {
         std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
-        let created = tokio::runtime::Runtime::new()
-            .map_err(|error| error.to_string())?
-            .block_on(librqbit::create_torrent(&fixture, Default::default()))
-            .map_err(|error| error.to_string())?;
+        let created = {
+            let runtime = tokio::runtime::Runtime::new().map_err(|error| error.to_string())?;
+            runtime.block_on(async {
+                let spawner = librqbit::spawn_utils::BlockingSpawner::new(1);
+                librqbit::create_torrent(&fixture, Default::default(), &spawner).await
+            })
+        }
+        .map_err(|error| error.to_string())?;
         let torrent = root.join("owned-series.torrent");
         std::fs::write(
             &torrent,
@@ -41,7 +45,7 @@ fn main() -> Result<(), String> {
         return Err("No owned video fixtures".into());
     }
     let bytes = std::fs::read(&torrent).map_err(|error| error.to_string())?;
-    let hash = librqbit::torrent_from_bytes::<librqbit::ByteBufOwned>(&bytes)
+    let hash = librqbit::torrent_from_bytes(&bytes)
         .map_err(|error| error.to_string())?
         .info_hash
         .as_string();

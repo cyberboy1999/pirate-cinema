@@ -114,7 +114,10 @@ impl Engine {
         let session = Session::new_with_opts(
             payload_root.clone(),
             SessionOptions {
-                disable_dht_persistence: true,
+                dht: Some(librqbit::DhtSessionConfig {
+                    persistence: None,
+                    ..Default::default()
+                }),
                 persistence: Some(SessionPersistenceConfig::Json {
                     folder: Some(root.join("session")),
                 }),
@@ -128,10 +131,15 @@ impl Engine {
 
     async fn serve(session: Arc<Session>, payload_root: PathBuf) -> Result<Arc<Self>, String> {
         let api = Api::new(session, None, None);
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .map_err(|e| e.to_string())?;
-        let address = listener.local_addr().map_err(|e| e.to_string())?;
+        let listener = librqbit_dualstack_sockets::TcpListener::bind_tcp(
+            std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+            librqbit_dualstack_sockets::BindOpts {
+                request_dualstack: false,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        let address = listener.bind_addr();
         let endpoint = format!("http://127.0.0.1:{}", address.port());
         let server = librqbit::http_api::HttpApi::new(
             api.clone(),
@@ -253,7 +261,7 @@ impl Engine {
         if bytes.len() > 8 * 1024 * 1024 {
             return Err("Слишком большой torrent-файл".into());
         }
-        let hash = librqbit::torrent_from_bytes::<librqbit::ByteBufOwned>(&bytes)
+        let hash = librqbit::torrent_from_bytes(&bytes)
             .map_err(|e| e.to_string())?
             .info_hash
             .as_string();
@@ -345,17 +353,16 @@ impl Engine {
         }
         let index = usize::try_from(file.id - 1).map_err(|e| e.to_string())?;
         let id = Self::id(hash)?;
+        let handle = self.api.mgr_handle(id).map_err(|e| e.to_string())?;
+        tokio::time::timeout(Duration::from_secs(60), handle.wait_until_initialized())
+            .await
+            .map_err(|_| "librqbit: подготовка раздачи к запуску превысила 60 секунд".to_owned())?
+            .map_err(|e| format!("librqbit: раздача не готова к запуску: {e:#}"))?;
         self.api
             .api_torrent_action_update_only_files(id, &[index].into())
             .await
             .map_err(|e| e.to_string())?;
-        if self
-            .api
-            .mgr_handle(id)
-            .map_err(|e| e.to_string())?
-            .live()
-            .is_none()
-        {
+        if handle.live().is_none() {
             self.api
                 .api_torrent_action_start(id)
                 .await
@@ -590,8 +597,7 @@ mod tests {
             let session = Session::new_with_opts(
                 root.clone(),
                 SessionOptions {
-                    disable_dht: true,
-                    disable_dht_persistence: true,
+                    dht: None,
                     ..Default::default()
                 },
             )
@@ -604,7 +610,7 @@ mod tests {
                 0xe9, 0x87, 0x98, 0x2f, 0xbb, 0xd3,
             ]);
             torrent.extend(b"ee");
-            let hash = librqbit::torrent_from_bytes::<librqbit::ByteBufOwned>(&torrent)
+            let hash = librqbit::torrent_from_bytes(&torrent)
                 .unwrap()
                 .info_hash
                 .as_string();
