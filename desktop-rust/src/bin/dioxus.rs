@@ -11,18 +11,19 @@ use pirate_cinema_core::desktop_engine::{
     torrent_video_files,
 };
 use pirate_cinema_core::history::{
-    create_local_backup, HistoryStore, MediaMetadata, PlaybackPreferences,
+    create_local_backup, GeneratedPoster, HistoryStore, MediaMetadata, PlaybackPreferences,
 };
 use pirate_cinema_core::metadata::{self, Movie};
 use pirate_cinema_core::migration::{legacy_profile_paths, migrate_legacy_profiles};
 use pirate_cinema_core::remote_control::{self, RemoteStatus};
 use pirate_cinema_core::settings::{self, Language, Preferences};
+use pirate_cinema_core::thumbnail::{ThumbnailCache, ThumbnailEngine, ThumbnailResolver};
 use pirate_cinema_core::{
     check_rust_update, download_rust_update, magnet_info_hash, magnet_title, ReleaseUpdate,
     SearchResult, Torrent, VideoFile,
 };
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, OnceLock,
@@ -54,12 +55,12 @@ const ARTPLAYER_JS: &str = include_str!("../../assets/artplayer.js");
 const PLAYER_STATE_JS: &str = include_str!("../../assets/player-state.js");
 
 const CSS: &str = r#"
-:root { color-scheme: dark; font-family: Inter, "Segoe UI", sans-serif; font-size:17px; background: #050505; color: #f2f2f2; }
+:root { color-scheme: dark; font-family:"SF Pro Display","Segoe UI Variable Display","Segoe UI",sans-serif; font-size:17px; background:#060606; color:#f5f5f7; --plex:#e5a00d; --glass:#161616c7; --line:#ffffff17; }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 760px; background: #050505; }
+body { margin:0; min-width:760px; background:radial-gradient(circle at 78% -10%,#392a0d 0,transparent 32%),#060606; }
 button, input { font: inherit; }
 button { color: inherit; cursor: pointer; }
-.shell { min-height: 100vh; display: grid; grid-template-columns: 230px minmax(0, 1fr); }
+.shell { min-height:100vh; display:grid; grid-template-columns:244px minmax(0,1fr); }
 .welcome-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 20%, #1d1d1d, #050505 58%); }
 .welcome-card { width: min(520px, 100%); display: grid; gap: 15px; padding: 34px; border: 1px solid #292929; border-radius: 20px; background: #0d0d0d; box-shadow: 0 22px 80px #000; }
 .welcome-card label { display: grid; gap: 8px; color: #aaa; }
@@ -72,39 +73,40 @@ button { color: inherit; cursor: pointer; }
 .startup-preview span { color:#858585; font-size:13px; letter-spacing:1.5px; text-transform:uppercase; }
 .remote-overlay{position:fixed;inset:0;z-index:11000;display:grid;place-items:center;padding:24px;background:#000c}.remote-card{width:min(430px,100%);display:grid;justify-items:center;gap:14px;padding:26px;border:1px solid #303030;border-radius:18px;background:#101010;box-shadow:0 24px 90px #000}.remote-card h2,.remote-card p{margin:0;text-align:center}.remote-card img,.remote-qr{width:220px;height:220px;padding:10px;border-radius:12px;background:#fff}.remote-card input{width:100%;padding:12px;border:1px solid #303030;border-radius:9px;background:#080808;color:#ddd;text-align:center}.remote-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @keyframes startup-fade { from { opacity:0 } to { opacity:1 } }
-.sidebar { position: sticky; top: 0; height: 100vh; padding: 28px 14px 22px; border-right: 1px solid #202020; display: flex; flex-direction: column; background: #080808; }
+.sidebar { position:sticky;top:0;height:100vh;padding:28px 16px 22px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:linear-gradient(180deg,#151515e8,#090909f5);backdrop-filter:blur(24px) saturate(140%);box-shadow:18px 0 50px #0005; }
 .brand { margin: 0 4px 34px; display:flex; align-items:center; gap:10px; font-size: 20px; font-weight: 800; letter-spacing: -.7px; white-space:nowrap; }
 .brand img { width:30px; height:30px; padding:3px; border-radius:7px; background:#ddd; object-fit:contain; }
 .nav { display: grid; gap: 8px; }
 .rail-bottom{margin-top:auto;display:grid;gap:8px}
-.nav button,.rail-bottom button { width: 100%; min-height:52px; padding: 0 14px; display:flex; align-items:center; gap:13px; border: 0; border-radius: 10px; background: transparent; color: #969696; font-weight:600; text-align: left; transition:background .15s,color .15s; }
-.nav button:hover, .nav button.active,.rail-bottom button:hover,.rail-bottom button.active { color: #f2f2f2; background: #1a1a1a; }
+.nav button,.rail-bottom button { width:100%;min-height:52px;padding:0 14px;display:flex;align-items:center;gap:13px;border:1px solid transparent;border-radius:13px;background:transparent;color:#9b9ba1;font-weight:650;text-align:left;transition:background .18s,color .18s,transform .18s,border-color .18s; }
+.nav button:hover,.rail-bottom button:hover{color:#fff;background:#ffffff0d;transform:translateX(2px)}
+.nav button.active,.rail-bottom button.active{color:#fff;background:linear-gradient(90deg,#e5a00d20,#ffffff0c);border-color:#e5a00d66;box-shadow:0 8px 22px #0005}
 .nav-icon { width:24px; height:24px; flex:0 0 auto; object-fit:contain; filter:invert(1); opacity:.62; }
 .nav button:hover .nav-icon,.nav button.active .nav-icon,.rail-bottom button:hover .nav-icon,.rail-bottom button.active .nav-icon{opacity:.95}
 .search-icon { width:20px; height:20px; border:2px solid currentColor; border-radius:50%; position:relative; opacity:.66; }
 .search-icon:after { content:""; position:absolute; width:7px; height:2px; right:-5px; bottom:-2px; border-radius:2px; background:currentColor; transform:rotate(45deg); }
 .version { padding: 14px 10px 0; color: #666; font-size: 12px; }
-.content { min-width: 0; padding: 30px 32px 52px; }
+.content { min-width:0;padding:30px 38px 58px; }
 .topbar { display: grid; grid-template-columns: minmax(360px, 920px) minmax(180px,1fr); gap: 22px; align-items: center; }
-.search { height: 54px; display: flex; gap: 10px; padding: 5px 6px 5px 18px; border: 1px solid #242424; border-radius: 13px; background: #101010; }
+.search { height:54px;display:flex;gap:10px;padding:5px 6px 5px 18px;border:1px solid var(--line);border-radius:15px;background:var(--glass);backdrop-filter:blur(18px);box-shadow:0 12px 30px #0004; }
 .search>.search-icon{margin:auto 5px auto 0;width:17px;height:17px;flex:0 0 auto}
 .search input { min-width: 0; flex: 1; border: 0; outline: 0; color: white; background: transparent; }
-.search button, .primary { border: 0; border-radius: 9px; padding: 0 18px; background: #ededed; color: #080808; font-weight: 700; transition:background .15s,transform .15s; }
-.search button:hover,.primary:hover{background:#fff}.search button:active,.primary:active{transform:translateY(1px)}
+.search button,.primary { border:0;border-radius:10px;padding:0 18px;background:#f5f5f7;color:#090909;font-weight:750;transition:background .15s,transform .15s,box-shadow .15s;box-shadow:0 7px 20px #0008; }
+.search button:hover,.primary:hover{background:#fff;box-shadow:0 9px 26px #000a}.search button:active,.primary:active{transform:translateY(1px);background:#e8e8eb}
 .status { justify-self:end; display:flex;align-items:center;gap:8px;white-space: nowrap; color: #73d99a; font-size: 14px; }
 .status img{width:21px;height:21px;object-fit:contain;filter:invert(78%) sepia(29%) saturate(725%) hue-rotate(91deg);}
 .status.offline{color:#ef6464}
 .status.offline img{filter:invert(48%) sepia(92%) saturate(1088%) hue-rotate(323deg) brightness(100%)}
 .server-control{justify-self:end;display:grid;justify-items:end;gap:5px}.server-restart{background:transparent;border:0;padding:2px 0;color:#999;font-size:12px}.server-restart:hover{color:#fff}.server-restart:disabled{opacity:.45;cursor:default}
 .page { margin-top: 48px; }
-.eyebrow { color: #747474; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
+.media-hash{display:block;margin-top:8px;color:#858585;font-size:11px;font-weight:650;letter-spacing:.8px;text-transform:uppercase}
 h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
 .lead { max-width: 760px; margin: 0 0 30px; color: #8b8b8b; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 188px)); gap: 28px 18px; align-items:start; }
+.grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,205px));gap:32px 20px;align-items:start; }
 .card { min-width: 0; border: 0; padding: 0; background: transparent; text-align: left; }
-.poster { aspect-ratio: 2 / 3; border-radius: 10px; overflow: hidden; display: grid; place-items: center; background: linear-gradient(145deg, #202020, #101010); color: #5f5f5f; font-size: 42px; transition:transform .16s,box-shadow .16s; }
+.poster { aspect-ratio:2/3;border-radius:16px;overflow:hidden;display:grid;place-items:center;background:linear-gradient(145deg,#272727,#111);color:#656565;font-size:42px;border:1px solid #ffffff12;transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s,border-color .22s; }
 .poster img { width: 100%; height: 100%; object-fit: cover; }
-.card:hover .poster{transform:translateY(-3px);box-shadow:0 14px 28px rgba(0,0,0,.45)}
+.card:hover .poster{transform:translateY(-6px) scale(1.025);box-shadow:0 22px 42px #000b,0 0 0 1px #e5a00d6b;border-color:#e5a00d7a}
 .card strong { display: block; margin-top: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size:15px;line-height:1.35; }
 .card small { display: block; margin-top: 6px; color: #888; font-size:13px; }
 .card small.viewed { color: #71cc91; }
@@ -116,16 +118,20 @@ h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
 .result { display: grid; grid-template-columns: minmax(0, 1fr) 90px 70px auto auto; gap: 10px; align-items: center; padding: 14px 16px; border: 1px solid #222; border-radius: 12px; background: #0d0d0d; }
 .result strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result span, .result small { color: #888; }
-.secondary, .result button, .file button { min-height: 42px; border: 1px solid #303030; border-radius: 9px; padding: 0 16px; background: #191919; font-weight:600; transition:background .15s,border-color .15s; }
+.secondary,.result button,.file button { min-height:42px;border:1px solid #ffffff1c;border-radius:10px;padding:0 16px;background:#ffffff0b;backdrop-filter:blur(12px);font-weight:650;transition:background .15s,border-color .15s; }
 .secondary:hover,.result button:hover,.file button:hover{background:#242424;border-color:#555}
 .result button.result-action{background:#fff;color:#080808;border-color:#fff}
 .result button.result-action:hover{background:#e5e5e5;border-color:#e5e5e5}
-.file button.launch-button{background:#fff;color:#080808;border-color:#fff}
+.file button.launch-button{background:#fff;color:#080808;border-color:#fff;box-shadow:0 7px 20px #0007}
 .file button.launch-button:hover{background:#e5e5e5;border-color:#e5e5e5}
 button:disabled{cursor:not-allowed;opacity:.48;transform:none!important}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #ddd;outline-offset:2px}
-.detail-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 28px; }
-.detail-cover { width: 210px; aspect-ratio: 2 / 3; border-radius: 14px; object-fit: cover; background: #171717; }
+.detail-hero{position:relative;isolation:isolate;margin:-18px -18px 34px;padding:44px 30px 34px;overflow:hidden;border:1px solid var(--line);border-radius:28px;background:linear-gradient(110deg,#0a0a0af5 18%,#111111d9 72%);box-shadow:0 30px 80px #0009}
+.detail-hero:before{content:"";position:absolute;z-index:-2;inset:-80px;background-image:linear-gradient(90deg,#080808 8%,#080808bf 46%,#080808e8),var(--detail-art);background-size:cover;background-position:center;filter:blur(30px) saturate(.8);opacity:.55;transform:scale(1.08)}
+.detail-hero:after{content:"";position:absolute;z-index:-1;inset:0;background:linear-gradient(180deg,transparent 20%,#080808d9 100%)}
+.detail-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:34px;position:relative;z-index:1}.detail-artwork{display:grid;gap:14px;align-content:start}.detail-cover-wrap{position:relative}.detail-cover{width:240px;aspect-ratio:2/3;border-radius:18px;object-fit:cover;background:#171717;border:1px solid #ffffff24;box-shadow:0 24px 55px #000b}
+.preview-badge{position:absolute;left:10px;bottom:10px;padding:6px 9px;border-radius:999px;background:#e5a00de8;color:#111;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px}
+.thumbnail-panel{display:grid;gap:9px;padding:13px;border:1px solid #e5a00d55;border-radius:14px;background:#111111e8;backdrop-filter:blur(16px);box-shadow:0 10px 28px #0006}.thumbnail-panel>strong{font-size:13px}.thumbnail-panel select{width:100%;min-height:38px;padding:0 9px;border:1px solid #ffffff1c;border-radius:9px;background:#090909;color:#ddd;font-size:12px}.thumbnail-actions{display:flex;flex-wrap:wrap;gap:7px}.thumbnail-actions button{min-height:36px;padding:0 10px;font-size:12px}.thumbnail-panel small{color:#b0b0b4;line-height:1.4}.thumbnail-progress{height:3px;overflow:hidden;border-radius:4px;background:#ffffff10}.thumbnail-progress span{display:block;width:45%;height:100%;background:var(--plex);animation:thumbnail-progress 1.1s ease-in-out infinite alternate}@keyframes thumbnail-progress{from{transform:translateX(-30%)}to{transform:translateX(150%)}}
 .detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: end; }
 .overview { max-width: 780px; color: #aaa; line-height: 1.65; }
 .files { display: grid; gap: 9px; margin-top: 28px; }
@@ -150,7 +156,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .pc-next-episode{position:absolute;z-index:80;right:18px;bottom:74px;display:none;padding:10px 16px;border:0;border-radius:8px;background:#f2f2f2;color:#111;font:700 14px system-ui;cursor:pointer;box-shadow:0 4px 18px #0009}.pc-next-episode:hover{background:#fff}.pc-next-episode:focus-visible{outline:2px solid #287cff;outline-offset:2px}
 .pc-auto-next{display:flex;align-items:center;white-space:nowrap;font:600 13px system-ui;gap:4px;padding:0 6px}.pc-auto-next input{width:16px;height:16px;accent-color:#287cff}.pc-stream-status{position:absolute;z-index:75;bottom:80px;left:18px;max-width:65%;padding:8px 12px;background:#111d;border-radius:8px;font:14px system-ui}.pc-stream-status[hidden]{display:none}.pc-stream-status button{margin-left:10px;padding:5px 9px;background:#fff;color:#111;border:0;border-radius:5px}
 .season-progress{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 18px}.season-progress span{padding:8px 11px;border:1px solid #292929;border-radius:9px;background:#101010;color:#aaa;font-size:13px}
-@media (max-width: 900px) { .shell { grid-template-columns: 78px 1fr; } .brand { margin-inline:auto;font-size: 0; } .brand img{width:34px;height:34px}.nav button { justify-content:center;overflow: hidden; white-space: nowrap; } .nav button span { display: none; } .content { padding: 24px 22px; } .topbar{grid-template-columns:1fr}.status{justify-self:start}.search-layout{grid-template-columns:1fr}.search-feature{position:static;display:grid;grid-template-columns:130px 1fr;gap:18px}.setting-row{grid-template-columns:1fr;gap:7px}.settings-actions,.choice-row,.settings-facts{grid-template-columns:1fr}.file { grid-template-columns: 1fr 1fr; } .file > div { grid-column: 1 / -1; } }
+@media (max-width:900px){.shell{grid-template-columns:78px 1fr}.brand{margin-inline:auto;font-size:0}.brand img{width:34px;height:34px}.nav button{justify-content:center;overflow:hidden;white-space:nowrap}.nav button span{display:none}.content{padding:24px 22px}.topbar{grid-template-columns:1fr}.status{justify-self:start}.search-layout{grid-template-columns:1fr}.search-feature{position:static;display:grid;grid-template-columns:130px 1fr;gap:18px}.detail-hero{margin:-12px -10px 26px;padding:26px 18px}.detail-layout{grid-template-columns:180px minmax(0,1fr);gap:22px}.detail-cover{width:180px}.setting-row{grid-template-columns:1fr;gap:7px}.settings-actions,.choice-row,.settings-facts{grid-template-columns:1fr}.file{grid-template-columns:1fr 1fr}.file>div{grid-column:1/-1}}
 "#;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -200,6 +206,7 @@ struct LibraryCard {
     media_type: Option<String>,
     viewed: bool,
     poster: Option<String>,
+    generated_poster: Option<GeneratedPoster>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -491,6 +498,11 @@ fn App() -> Element {
     let mut return_page = use_signal(|| Page::Library);
     let mut busy = use_signal(|| false);
     let mut metadata_status = use_signal(String::new);
+    let mut thumbnail_busy = use_signal(|| false);
+    let mut thumbnail_status = use_signal(String::new);
+    let mut thumbnail_preview = use_signal(|| None::<String>);
+    let mut thumbnail_candidate = use_signal(|| None::<String>);
+    let mut thumbnail_cancel = use_signal(|| None::<Arc<AtomicBool>>);
     let mut pending_duplicate = use_signal(|| None::<(SearchResult, bool)>);
     let mut pending_playback = use_signal(|| None::<PendingPlayback>);
     let mut onboarding = use_signal(|| {
@@ -506,6 +518,19 @@ fn App() -> Element {
         // just long enough to avoid flashing partially initialized UI.
         tokio::time::sleep(Duration::from_millis(1100)).await;
         startup_preview.set(false);
+    });
+
+    use_effect(move || {
+        let _ = selected();
+        if let Some(cancel) = thumbnail_cancel.write().take() {
+            cancel.store(true, Ordering::Release);
+        }
+        if let Some(candidate) = thumbnail_candidate.write().take() {
+            remove_generated_poster_file(&candidate);
+        }
+        thumbnail_busy.set(false);
+        thumbnail_status.set(String::new());
+        thumbnail_preview.set(None);
     });
 
     use_effect(move || {
@@ -1470,6 +1495,134 @@ fn App() -> Element {
         });
     };
 
+    let generate_thumbnail = move |file: VideoFile| {
+        if thumbnail_busy() {
+            return;
+        }
+        let Some(torrent) = selected.read().clone() else {
+            return;
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        thumbnail_cancel.set(Some(cancel.clone()));
+        if let Some(candidate) = thumbnail_candidate.write().take() {
+            remove_generated_poster_file(&candidate);
+        }
+        thumbnail_preview.set(None);
+        thumbnail_status.set("Извлекаем и оцениваем кадры…".into());
+        thumbnail_busy.set(true);
+        let endpoint_value = endpoint();
+        spawn(async move {
+            let hash = torrent.hash.clone();
+            let task_hash = hash.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                let _lease = desktop_engine::StreamLease::new(&task_hash)?;
+                let source = desktop_engine::stream_url(&endpoint_value, &task_hash, &file)?;
+                let ffmpeg = pirate_cinema_core::web_stream::executable()?;
+                let history_file = history_path()?;
+                let poster_dir = history_file
+                    .parent()
+                    .ok_or("Не удалось определить папку обложек")?
+                    .join("cache")
+                    .join("posters");
+                let engine_cancel = cancel.clone();
+                let generated =
+                    ThumbnailEngine::new(ffmpeg, ThumbnailCache::new(poster_dir.clone()))
+                        .generate(&source, &task_hash, engine_cancel)?;
+                if cancel.load(Ordering::Acquire) {
+                    let _ = std::fs::remove_file(poster_dir.join(&generated.file_name));
+                    return Err("Генерация отменена".into());
+                }
+                Ok(generated)
+            })
+            .await;
+            if selected
+                .read()
+                .as_ref()
+                .is_some_and(|current| current.hash == hash)
+            {
+                match result {
+                    Ok(Ok(generated)) => {
+                        thumbnail_candidate.set(Some(generated.file_name));
+                        thumbnail_preview.set(Some(format!(
+                            "data:image/webp;base64,{}",
+                            base64::engine::general_purpose::STANDARD.encode(&generated.bytes)
+                        )));
+                        thumbnail_status.set(format!(
+                            "Предпросмотр готов · оценка {:.1}. Обложка ещё не применена.",
+                            generated.score
+                        ));
+                        cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
+                    }
+                    Ok(Err(error)) => thumbnail_status.set(error),
+                    Err(error) => thumbnail_status.set(error.to_string()),
+                }
+                thumbnail_busy.set(false);
+                thumbnail_cancel.set(None);
+            }
+        });
+    };
+
+    let cancel_thumbnail = move |_| {
+        if let Some(cancel) = thumbnail_cancel.read().as_ref() {
+            cancel.store(true, Ordering::Release);
+            thumbnail_status.set("Отменяем генерацию…".into());
+        }
+    };
+
+    let apply_thumbnail = move |_| {
+        let Some(torrent) = selected.read().clone() else {
+            return;
+        };
+        let Some(candidate) = thumbnail_candidate.read().clone() else {
+            thumbnail_status.set("Сначала сгенерируйте обложку".into());
+            return;
+        };
+        let result = history_path()
+            .and_then(|path| HistoryStore::open(&path).map_err(|error| error.to_string()))
+            .and_then(|history| {
+                let previous = history
+                    .generated_poster(&torrent.hash)
+                    .map_err(|error| error.to_string())?;
+                history
+                    .set_generated_poster(&torrent.hash, &candidate, true)
+                    .map_err(|error| error.to_string())?;
+                if let Some(previous) = previous.filter(|item| item.file_name != candidate) {
+                    remove_generated_poster_file(&previous.file_name);
+                }
+                Ok(())
+            });
+        match result {
+            Ok(()) => {
+                cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
+                thumbnail_candidate.set(None);
+                thumbnail_preview.set(None);
+                thumbnail_status.set("Сгенерированная обложка применена".into());
+            }
+            Err(error) => thumbnail_status.set(error),
+        }
+    };
+
+    let restore_original_thumbnail = move |_| {
+        let Some(torrent) = selected.read().clone() else {
+            return;
+        };
+        let result = history_path()
+            .and_then(|path| HistoryStore::open(&path).map_err(|error| error.to_string()))
+            .and_then(|history| {
+                history
+                    .use_original_poster(&torrent.hash)
+                    .map_err(|error| error.to_string())
+            });
+        match result {
+            Ok(()) => {
+                cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
+                thumbnail_preview.set(None);
+                thumbnail_status.set("Возвращена оригинальная обложка".into());
+            }
+            Err(error) => thumbnail_status.set(error),
+        }
+    };
+
     let remove_saved = move |_| {
         let Some(torrent) = selected.read().clone() else {
             return;
@@ -1657,7 +1810,7 @@ fn App() -> Element {
                     Page::Home => rsx! { Home { language: language(), recent: recent(), cards: cards(), on_open: open_saved } },
                     Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
                     Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
-                    Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_remove: remove_saved } },
+                    Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), generated_applied: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.generated_poster.as_ref()).map(|poster| poster.applied)).unwrap_or(false), thumbnail_busy: thumbnail_busy(), thumbnail_status: thumbnail_status(), thumbnail_preview: thumbnail_preview(), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_generate_thumbnail: generate_thumbnail, on_cancel_thumbnail: cancel_thumbnail, on_apply_thumbnail: apply_thumbnail, on_restore_thumbnail: restore_original_thumbnail, on_remove: remove_saved } },
                     Page::Player => rsx! { h1 { {language().pick("Просмотр", "Now playing")} } },
                     Page::Rutube => rsx! {},
                     Page::Settings => rsx! { Settings { language, busy, server, cards, recent, metadata_status, online_icon: online_icon.clone(), on_sync: sync_metadata } },
@@ -1719,7 +1872,6 @@ fn Welcome(on_complete: EventHandler<Preferences>) -> Element {
     rsx! {
         main { class: "welcome-shell",
             section { class: "welcome-card",
-                span { class: "eyebrow", "Pirate Cinema · Rust" }
                 h1 { if english() { "Welcome" } else { "Добро пожаловать" } }
                 p { class: "lead", if english() { "Embedded librqbit and ArtPlayer are ready." } else { "Встроенные librqbit и ArtPlayer готовы." } }
                 div { class: "filters",
@@ -1779,7 +1931,6 @@ fn Home(
         .collect::<Vec<_>>();
     rsx! {
         section { class: "page",
-            span { class: "eyebrow", {language.pick("Локальная медиатека", "Local media library")} }
             h1 { {language.pick("Недавно запускали", "Recently played")} }
             p { class: "lead", {language.pick("Фильмы и сериалы из вашей локальной истории.", "Movies and series from your local history.")} }
             if recently_played.is_empty() {
@@ -1833,7 +1984,6 @@ fn SearchPage(
             aside { class: "search-feature",
                 if !poster.is_empty() { div { class: "poster", img { src: "{poster}", alt: "" } } }
                 div {
-                    span { class: "eyebrow", {language.pick("Фильм или сериал", "Movie or series")} }
                     h1 { if let Some(item) = metadata.as_ref() { "{item.title}" } else if query.is_empty() { {language.pick("Поиск", "Search")} } else { "{query}" } }
                     if let Some(item) = metadata.as_ref() {
                         p { class: "lead", "{item.year.map(|year| year.to_string()).unwrap_or_default()}" if let Some(rating) = item.rating { " · ★ {rating:.1}" } }
@@ -1842,7 +1992,6 @@ fn SearchPage(
                 }
             }
             div { class: "search-results",
-                span { class: "eyebrow", {language.pick("Результаты поиска", "Search results")} }
                 h2 { {language.pick("Раздачи", "Releases")} }
                 if !qualities.is_empty() {
                     div { class: "filters",
@@ -1947,7 +2096,6 @@ fn Library(
     }
     rsx! {
         section { class: "page",
-            span { class: "eyebrow", {language.pick("Локальная медиатека", "Local library")} }
             div { class: "detail-head",
                 h1 { {language.pick("Медиатека", "Library")} }
                 button { class: "secondary", disabled: busy, onclick: move |event| on_sync.call(event), if busy { {language.pick("Обновляем…", "Updating…")} } else { {language.pick("Обновить описания и постеры", "Refresh descriptions and posters")} } }
@@ -1990,6 +2138,10 @@ fn Detail(
     metadata: Option<MediaMetadata>,
     media_type: Option<String>,
     poster: Option<String>,
+    generated_applied: bool,
+    thumbnail_busy: bool,
+    thumbnail_status: String,
+    thumbnail_preview: Option<String>,
     files: Vec<PlayableFile>,
     busy: bool,
     metadata_status: String,
@@ -1998,6 +2150,10 @@ fn Detail(
     on_media_type: EventHandler<String>,
     on_title: EventHandler<String>,
     on_refresh_metadata: EventHandler<MouseEvent>,
+    on_generate_thumbnail: EventHandler<VideoFile>,
+    on_cancel_thumbnail: EventHandler<MouseEvent>,
+    on_apply_thumbnail: EventHandler<MouseEvent>,
+    on_restore_thumbnail: EventHandler<MouseEvent>,
     on_remove: EventHandler<MouseEvent>,
 ) -> Element {
     let saved_preferences = torrent
@@ -2025,6 +2181,7 @@ fn Detail(
     });
     let mut file_kind = use_signal(|| "all".to_owned());
     let mut auto_next = use_signal(|| saved_preferences.auto_next);
+    let mut thumbnail_file_id = use_signal(|| 0_i64);
     let Some(torrent) = torrent else {
         return rsx! { section { class: "page", div { class: "empty", {language.pick("Раздача не выбрана", "No torrent selected")} } } };
     };
@@ -2070,9 +2227,16 @@ fn Detail(
     let has_movies = files.iter().any(|item| !is_episode(&item.file.path));
     let has_episodes = files.iter().any(|item| is_episode(&item.file.path));
     let files_empty = files.is_empty();
+    let thumbnail_source = files
+        .iter()
+        .find(|item| item.file.id == thumbnail_file_id())
+        .or_else(|| files.first())
+        .map(|item| item.file.clone());
+    let thumbnail_source_id = thumbnail_source.as_ref().map_or(0, |file| file.id);
+    let display_poster = thumbnail_preview.as_ref().or(poster.as_ref()).cloned();
     let has_next_file = files.len() > 1;
     let mut visible_files = files
-        .into_iter()
+        .iter()
         .filter(|item| {
             (needle.is_empty()
                 || item.file.name.to_lowercase().contains(&needle)
@@ -2093,6 +2257,7 @@ fn Detail(
                     _ => true,
                 }
         })
+        .cloned()
         .collect::<Vec<_>>();
     visible_files.sort_by_key(|item| {
         (
@@ -2104,11 +2269,40 @@ fn Detail(
     });
     rsx! {
         section { class: "page",
+            div { class: "detail-hero", style: if let Some(image) = display_poster.as_ref() { format!("--detail-art:url('{}')", image) } else { String::new() },
             div { class: "detail-layout",
-                div { if let Some(poster) = poster { img { class: "detail-cover", src: "{poster}", alt: "" } } else { div { class: "detail-cover poster", "▶" } } }
+                div { class: "detail-artwork",
+                    div { class: "detail-cover-wrap",
+                        if let Some(poster) = display_poster.as_ref() { img { class: "detail-cover", src: "{poster}", alt: "" } } else { div { class: "detail-cover poster", "▶" } }
+                        if thumbnail_preview.is_some() { span { class: "preview-badge", {language.pick("Предпросмотр", "Preview")} } }
+                    }
+                    div { class: "thumbnail-panel",
+                        strong { {language.pick("Обложка из видео", "Cover from video")} }
+                        if files.len() > 1 {
+                            select { value: "{thumbnail_source_id}", disabled: thumbnail_busy, onchange: move |event| thumbnail_file_id.set(event.value().parse().unwrap_or(0)),
+                                for item in files.iter() { option { value: "{item.file.id}", "{item.file.name}" } }
+                            }
+                        }
+                        div { class: "thumbnail-actions",
+                            if thumbnail_busy {
+                                button { class: "secondary", onclick: move |event| on_cancel_thumbnail.call(event), {language.pick("Отменить", "Cancel")} }
+                            } else if let Some(source) = thumbnail_source.as_ref() {
+                                button { class: "primary", onclick: { let source = source.clone(); move |_| on_generate_thumbnail.call(source.clone()) }, {language.pick("Сгенерировать обложку", "Generate cover")} }
+                            }
+                            if thumbnail_preview.is_some() {
+                                button { class: "primary", onclick: move |event| on_apply_thumbnail.call(event), {language.pick("Применить", "Apply")} }
+                            }
+                            if generated_applied || thumbnail_preview.is_some() {
+                                button { class: "secondary", onclick: move |event| on_restore_thumbnail.call(event), {language.pick("Вернуть оригинал", "Use original")} }
+                            }
+                        }
+                        if thumbnail_busy { div { class: "thumbnail-progress", span {} } }
+                        if !thumbnail_status.is_empty() { small { "{thumbnail_status}" } }
+                    }
+                }
                 div {
                     div { class: "detail-head",
-                        div { span { class: "eyebrow", "BTIH · {short_hash(&torrent.hash)}" } h1 { "{metadata.as_ref().map(|item| item.title.as_str()).unwrap_or(&torrent.title)}" } }
+                        div { h1 { "{metadata.as_ref().map(|item| item.title.as_str()).unwrap_or(&torrent.title)}" } span { class: "media-hash", "BTIH · {short_hash(&torrent.hash)}" } }
                         button { class: "secondary", onclick: move |event| on_back.call(event), {language.pick("Назад к медиатеке", "Back to library")} }
                     }
                     if let Some(item) = metadata.as_ref() {
@@ -2138,6 +2332,7 @@ fn Detail(
                         button { class: "secondary", onclick: move |_| confirm_remove.set(true), {language.pick("Убрать из медиатеки", "Remove from library")} }
                     }
                 }
+            }
             }
             h2 { {language.pick("Выберите файл", "Choose a file")} }
             if has_next_file { label { class: "auto-next", input { r#type: "checkbox", checked: auto_next(), onchange: { let hash = torrent.hash.clone(); move |event| { auto_next.set(event.checked()); save_detail_preferences(&hash, &season(), &episode(), auto_next()); } } } {language.pick(" Автопереход к следующей серии", " Play the next episode automatically")} } }
@@ -2340,7 +2535,6 @@ fn Settings(
 
     rsx! {
         section { class: "page settings",
-            span { class: "eyebrow", {language().pick("Локальная конфигурация", "Local configuration")} }
             h1 { {language().pick("Настройки", "Settings")} }
             p { class: "lead", "Pirate Cinema · {VERSION}. " {language().pick("Все данные хранятся на этом компьютере.", "All data stays on this computer.")} }
 
@@ -2838,6 +3032,34 @@ fn launch_playback(
     });
 }
 
+fn remove_generated_poster_file(name: &str) {
+    let Ok(path) = history_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if let Some(path) = ThumbnailCache::new(parent.join("cache").join("posters")).path(name) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+fn poster_data_uri(poster_dir: &Path, name: &str) -> Option<String> {
+    let bytes = std::fs::read(poster_dir.join(name)).ok()?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return None;
+    }
+    let mime = if name.ends_with(".webp") {
+        "image/webp"
+    } else {
+        "image/jpeg"
+    };
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
 fn load_library_cards(torrents: &[Torrent]) -> Result<Vec<LibraryCard>, String> {
     let history_path = history_path()?;
     let history = HistoryStore::open(&history_path).map_err(|error| error.to_string())?;
@@ -2853,18 +3075,22 @@ fn load_library_cards(torrents: &[Torrent]) -> Result<Vec<LibraryCard>, String> 
             let metadata = history.metadata(&torrent.hash).ok().flatten();
             let media_type = history.media_type(&torrent.hash).ok().flatten();
             let viewed = history.has_viewed_file(&torrent.hash).unwrap_or(false);
-            let poster = metadata
+            let generated_poster = history.generated_poster(&torrent.hash).ok().flatten();
+            let original_name = metadata
                 .as_ref()
-                .and_then(|item| item.poster_file.as_ref())
-                .and_then(|name| {
-                    let path = poster_dir.join(name);
-                    let bytes = std::fs::read(path).ok()?;
-                    (bytes.len() <= 8 * 1024 * 1024).then(|| {
-                        format!(
-                            "data:image/jpeg;base64,{}",
-                            base64::engine::general_purpose::STANDARD.encode(bytes)
-                        )
-                    })
+                .and_then(|item| item.poster_file.as_deref());
+            let poster_name = ThumbnailResolver::selected(
+                generated_poster
+                    .as_ref()
+                    .map(|poster| (poster.file_name.as_str(), poster.applied)),
+                original_name,
+            );
+            let poster = poster_name
+                .and_then(|name| poster_data_uri(&poster_dir, name))
+                .or_else(|| {
+                    original_name
+                        .filter(|name| Some(*name) != poster_name)
+                        .and_then(|name| poster_data_uri(&poster_dir, name))
                 });
             LibraryCard {
                 torrent,
@@ -2872,6 +3098,7 @@ fn load_library_cards(torrents: &[Torrent]) -> Result<Vec<LibraryCard>, String> 
                 media_type,
                 viewed,
                 poster,
+                generated_poster,
             }
         })
         .collect())
@@ -3240,6 +3467,7 @@ mod tests {
             media_type: Some("movie".into()),
             viewed: false,
             poster: Some("data:image/jpeg;base64,x".into()),
+            generated_poster: None,
         };
         let incomplete = LibraryCard {
             torrent: Torrent {
@@ -3250,6 +3478,7 @@ mod tests {
             media_type: Some("movie".into()),
             viewed: false,
             poster: None,
+            generated_poster: None,
         };
         assert_eq!(
             missing_metadata_torrents(&[complete, incomplete])[0].title,

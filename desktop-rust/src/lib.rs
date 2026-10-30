@@ -19,6 +19,8 @@ pub mod migration;
 pub mod mobile;
 #[cfg(not(target_os = "android"))]
 pub mod settings;
+#[cfg(feature = "desktop")]
+pub mod thumbnail;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Torrent {

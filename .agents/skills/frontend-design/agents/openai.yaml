@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frontend Design"
+  short_description: "Polished frontend design and visual QA"
+  default_prompt: "Use $frontend-design to design, build, polish, and browser-check a distinctive frontend interface."

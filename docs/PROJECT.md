@@ -1,5 +1,28 @@
 # Pirate Cinema — project context
 
+2026-10-31 manual video-cover prototype: the desktop detail page now offers an
+explicit `Сгенерировать обложку` action for a selected video file. It samples a
+bounded set of frames through the already bundled FFmpeg, rejects dark, flat and
+low-detail frames, selects the strongest candidate, center-crops it to a 600×900
+WebP and shows a preview before any library state changes. Apply persists only
+the generated file name and active/original choice in SQLite; restore keeps the
+provider poster and description intact. Cancellation kills the owned FFmpeg
+process, generation is limited to one job, loopback/local-file inputs only, 24
+seconds per frame and 75 seconds overall, and uncommitted files are removed when
+leaving the title. A missing generated file falls back to the original cached
+poster. Cinemeta, TVmaze and Russian Wikipedia/Wikidata remain the independent
+metadata pipeline; no automatic frame generation was added.
+
+The same local prototype receives a restrained Apple TV/Plex-inspired Dioxus
+polish: immersive artwork on the detail surface, larger poster-first browsing,
+one amber action/selection accent, familiar dense controls and responsive
+layouts. The reference `sadCTNBEH/pirate-cinema-2` was reviewed for compatible
+presentation ideas only. Its Python/FastAPI, TorrServer, MPV and user-list paths
+are intentionally not imported because the current desktop architecture is
+Rust/Dioxus, embedded librqbit and ArtPlayer, and user lists were previously
+rejected. Real FFmpeg integration covers both generated MP4 and MKV fixtures in
+addition to deterministic analysis, cache, cancellation and SQLite tests.
+
 2026-10-26 librqbit 9 upgrade: the pinned in-process engine was upgraded to
 librqbit 9.0.1 (Rust TLS and HTTP API features unchanged). The
 loopback HTTP server now takes a `librqbit-dualstack-sockets` 0.7.0 listener;
@@ -209,6 +232,13 @@ Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrSer
 - Tests: pnpm test. Lint: pnpm run lint. Windows build: node node_modules/vinext/dist/cli.js build. Offline installer: pnpm run desktop:package. Web installer: pnpm run desktop:package:web.
 
 Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source is DietrichGebert/ponytail, commit 2ed6c52c9d7e5e56942508591085fd45dea277d3 (MIT). It is instruction-only: no runtime dependency, hooks, telemetry or code graph.
+
+Project-local UI guidance is also available under `.agents/skills/impeccable`
+from [pbakaus/impeccable](https://github.com/pbakaus/impeccable) and
+`.agents/skills/frontend-design` from
+[dobromirdikov/codex-frontend-design-skill](https://github.com/dobromirdikov/codex-frontend-design-skill).
+Both are Apache-2.0 instruction/tooling assets for development only; neither is
+linked into, shipped with, or executed by the Pirate Cinema application.
 
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
