@@ -15,7 +15,7 @@ Pirate Cinema 0.8.0 — обновление встроенного torrent-дв
 
 ### Проверки
 
-- 55 детерминированных Rust-тестов по всем целям (51 основной и 4 примеров); 8 сетевых тестов доступны отдельно как opt-in.
+- 55 детерминированных Rust-тестов по всем целям (40 библиотечных, 11 бинарных и 4 примеров); 8 сетевых тестов доступны отдельно как opt-in.
 - `clippy` со строгим `-D warnings` и проверка форматирования.
 - Все 6 наборов JavaScript-тестов контроллеров плеера и пульта.
 - Сборка Windows NSIS и Linux x86_64 AppImage в GitHub Actions.
@@ -45,7 +45,7 @@ Pirate Cinema 0.8.0 upgrades the embedded torrent engine and hardens local playb
 
 ### Verification
 
-- 55 deterministic Rust tests across all targets (51 core and 4 example tests); 8 public-network tests remain available as opt-in checks.
+- 55 deterministic Rust tests across all targets (40 library, 11 binary and 4 example tests); 8 public-network tests remain available as opt-in checks.
 - `clippy` with warnings denied and a formatting check.
 - All 6 JavaScript controller suites for the player and web remote.
 - Windows NSIS and Linux x86_64 AppImage builds in GitHub Actions.
