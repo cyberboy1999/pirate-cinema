@@ -1,5 +1,22 @@
 # Pirate Cinema — project context
 
+## Current state — 0.8.0 (2026-10-26)
+
+Pirate Cinema 0.8.0 is published on GitHub. The production desktop app is
+Rust/Dioxus with embedded librqbit 9.0.1, the local FFmpeg/HLS bridge,
+ArtPlayer/hls.js and SQLite. It does not use Electron, TorrServer or MPV. The
+window title is `Pirate Cinema 0.8.0`.
+
+Release assets: `Pirate-Cinema-Setup-0.8.0-win-x64.exe`,
+`Pirate-Cinema-0.8.0-x86_64.AppImage`, `SHA256SUMS` and
+`THIRD_PARTY_NOTICES.md`. `docs/RELEASE_0.8.0.md` is the bilingual release
+description (Russian and English). GitHub Actions built and tested both
+packages and passed the Arch Linux smoke test.
+
+The dated entries below are an engineering log. Sections describing Electron,
+TorrServer or MPV are historical and do not describe the current desktop
+architecture.
+
 2026-10-26 librqbit 9 upgrade: the pinned in-process engine was upgraded to
 librqbit 9.0.1 (Rust TLS and HTTP API features unchanged). The
 loopback HTTP server now takes a `librqbit-dualstack-sockets` 0.7.0 listener;
@@ -8,10 +25,11 @@ and `create_torrent`/`torrent_from_bytes` were adapted to their v9 signatures.
 The persisted `session.json` schema and file-sharing IDs are unchanged, so
 existing libraries resume paused without data loss. `health_version()` now
 reports `librqbit::version()` instead of a hardcoded string. Verified with
-55 deterministic Rust tests across all targets (51 core, 4 example), 8 opt-in
-public-network tests left ignored, clippy with warnings denied, the JavaScript
-controller suite, the owned two-episode librqbit/FFmpeg/HLS smoke and the
-desktop GUI on both isolated and existing profiles.
+55 deterministic Rust tests across all targets (40 library, 11 binary,
+4 example), 8 opt-in public-network tests left ignored, clippy with warnings
+denied, the JavaScript controller suite, the owned two-episode
+librqbit/FFmpeg/HLS smoke and the desktop GUI on both isolated and existing
+profiles.
 
 2026-10-25 desktop restored-torrent launch fix: `play_url` now waits up to
 60 seconds for the selected librqbit handle to finish initialization before
@@ -212,7 +230,10 @@ Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source i
 
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
-## Rust desktop
+## Rust desktop — historical TorrServer/MPV notes
+
+The 0.6/0.7 desktop architecture below is retired. Current desktop uses the
+embedded librqbit engine and ArtPlayer; see “Current state” above.
 
 `desktop-rust/` is the production desktop application. Dioxus provides the Rust UI; TorrServer ownership, MPV IPC, SQLite history, metadata, backup/restore, updates and tray integration are implemented in Rust. The release replaces Electron program files and performs a one-time, non-destructive import of the Electron 0.5.8 profile. Windows ships one offline NSIS installer; Linux ships one x86_64 AppImage. The retired egui application is not built or packaged.
 
