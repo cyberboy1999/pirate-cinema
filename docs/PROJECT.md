@@ -17,6 +17,31 @@ The dated entries below are an engineering log. Sections describing Electron,
 TorrServer or MPV are historical and do not describe the current desktop
 architecture.
 
+## Design skills (2026-10-31)
+
+Two project-local instruction skills are vendored under `.agents/skills/` and
+are discovered by OpenCode and Codex:
+
+- `impeccable` 4.8.0 from `pbakaus/impeccable`, commit
+  `df3a4abe7d0840d5f60324812c432e00b66a4e75`, Apache-2.0. It provides the
+  design direction, critique, audit, polish, motion, typography,
+  accessibility and responsive/edge-case workflows. Invoke it with the native
+  `skill` tool or `/impeccable` in OpenCode.
+- `frontend-design` from `dobromirdikov/codex-frontend-design-skill`, commit
+  `983119775a936d123df9fbfbc3821bdee5bb58fd`, Apache-2.0. It is a
+  Codex-focused port of Anthropic's `frontend-design` skill and covers
+  distinctive production-grade frontend work plus browser-based visual QA.
+  Invoke it with the native `skill` tool as `frontend-design`.
+
+Each skill carries its upstream license, `NOTICE.md` and `UPSTREAM.md`.
+The Impeccable engine is not committed: its launchers download the pinned
+0.1.18 binary into `~/.impeccable/bin/<version>/` and verify it against
+`scripts/engine-checksums.txt`. `.opencode/commands/impeccable.md` exposes the
+OpenCode command. Project telemetry is disabled in `.impeccable/config.json`;
+the optional design-catalog request never includes the library, history,
+local files or `PRODUCT.md`. Engine binaries, hooks, provider trees and
+`.impeccable` runtime state are ignored by Git.
+
 2026-10-26 librqbit 9 upgrade: the pinned in-process engine was upgraded to
 librqbit 9.0.1 (Rust TLS and HTTP API features unchanged). The
 loopback HTTP server now takes a `librqbit-dualstack-sockets` 0.7.0 listener;

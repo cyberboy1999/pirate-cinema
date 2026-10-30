@@ -74,3 +74,17 @@ yarn-error.log*
 /.openai/
 # Local desktop visual QA captures
 desktop-rust/design-qa-*.png
+
+# Impeccable design skill: engine binaries and runtime state stay local.
+.agents/skills/impeccable/scripts/bin/
+**/.impeccable/hook.cache.json
+**/.impeccable/hook.pending.json
+.impeccable/config.local.json
+.impeccable/history/
+.impeccable/live/
+.impeccable/questions/
+.impeccable/mocks/
+.impeccable/build/
+.impeccable/review/
+.impeccable/critique/*
+!.impeccable/critique/ignore.md
