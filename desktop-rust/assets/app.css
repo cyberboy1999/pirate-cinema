@@ -2336,6 +2336,37 @@ svg {
   white-space: nowrap;
 }
 
+.web-player .player-heading {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.web-player .player-heading strong {
+  display: block;
+  flex: none;
+  max-width: 100%;
+}
+
+.web-player .player-heading small {
+  color: var(--muted-strong);
+  font-size: 11px;
+}
+
+.web-player .player-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.web-player .player-actions button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .web-player header .button {
   min-height: 34px;
   padding: 0 12px;
@@ -2354,7 +2385,8 @@ svg {
 }
 
 .web-player.mini .artplayer-host {
-  height: 226px;
+  height: auto;
+  aspect-ratio: 16 / 9;
   min-height: 0;
   border-radius: 13px;
 }
@@ -3039,7 +3071,7 @@ svg {
   }
 
   .web-player.mini .artplayer-host {
-    height: 190px;
+    height: auto;
   }
 
   .file-row {
@@ -3067,6 +3099,7 @@ svg {
   }
 }
 :root .popular-poster { display: flex; flex-direction: column; gap: 8px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
-:root .popular-poster img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 12px; background: var(--surface, #171719); }
+:root .popular-artwork { display: block; position: relative; width: 100%; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 12px; background: var(--surface, #171719); }
+:root .popular-artwork img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
 :root .popular-poster strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
 :root .popular-poster:focus-visible { outline: 2px solid white; outline-offset: 5px; }

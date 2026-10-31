@@ -1136,11 +1136,15 @@ fn App() -> Element {
                 tokio::task::spawn_blocking(move || desktop_engine::health_version(&target)).await;
             // Discard a health result that raced with a restart or endpoint change.
             if endpoint() == url && !busy() && !ENGINE_STARTING.load(Ordering::Acquire) {
-                server.write().apply_health(
+                let mut next = server.peek().clone();
+                next.apply_health(
                     result.unwrap_or_else(|error| Err(error.to_string())),
                     generation,
                     ENGINE_GENERATION.load(Ordering::Acquire),
                 );
+                if next != *server.peek() {
+                    server.set(next);
+                }
             }
         }
     });

@@ -1,5 +1,14 @@
 # Pirate Cinema — project context
 
+Linux fix preparation: popular artwork now has a fixed 2:3 clipping wrapper,
+independent of source-image intrinsic dimensions. Linux updater selects x86_64
+AppImage, validates ELF and sets executable permissions. Release publication
+requires the remaining Linux playback and UI checks to pass.
+
+Mini-player layout fix: shared Windows/Linux CSS now constrains the heading
+wrapper, ellipsizes long file names and reserves a non-shrinking action row.
+The video uses a responsive 16:9 aspect ratio, including narrow windows.
+
 ## 0.8.2 — Cinemeta Home
 
 Home includes a compact horizontal shelf of up to 18 popular Cinemeta movies.

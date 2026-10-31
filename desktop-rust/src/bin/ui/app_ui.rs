@@ -185,7 +185,13 @@ pub fn card_cover(card: &LibraryCard, mode: CoverMode) -> String {
     let genres = metadata
         .map(|item| item.genres.as_slice())
         .unwrap_or_default();
-    let generated = covers::data_uri(&CoverRequest {
+    let poster = card.poster.as_deref().filter(|poster| !poster.is_empty());
+    if mode == CoverMode::Poster || (mode == CoverMode::Auto && metadata.is_none()) {
+        if let Some(poster) = poster {
+            return poster.to_owned();
+        }
+    }
+    covers::data_uri(&CoverRequest {
         hash: &card.torrent.hash,
         raw_title: &card.torrent.title,
         title: metadata.map(|item| item.title.as_str()),
@@ -193,14 +199,7 @@ pub fn card_cover(card: &LibraryCard, mode: CoverMode) -> String {
         rating: metadata.and_then(|item| item.rating),
         genres,
         media_type: card.media_type.as_deref(),
-    });
-    let poster = card.poster.as_deref().filter(|poster| !poster.is_empty());
-    match mode {
-        CoverMode::Generated => generated,
-        CoverMode::Poster => poster.map(str::to_owned).unwrap_or(generated),
-        CoverMode::Auto if metadata.is_some() => generated,
-        CoverMode::Auto => poster.map(str::to_owned).unwrap_or(generated),
-    }
+    })
 }
 
 /// Persist a cover choice and update the live preference signal so every
@@ -719,7 +718,9 @@ pub fn Home(
                                     button { class: "popular-poster", title: "{movie.title}",
                                         onclick: { let title = movie.title.clone(); move |_| on_popular.call(title.clone()) },
                                         if let Some(poster) = &movie.poster_url {
-                                            img { src: "{poster}", alt: "{movie.title}", loading: "lazy" }
+                                            span { class: "popular-artwork",
+                                                img { src: "{poster}", alt: "{movie.title}", loading: "lazy", decoding: "async" }
+                                            }
                                         }
                                         strong { "{movie.title}" }
                                         if let Some(year) = movie.year { small { "{year}" } }

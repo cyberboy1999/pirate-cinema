@@ -98,7 +98,11 @@ pub fn check_rust_update(current: &str) -> Result<Option<ReleaseUpdate>, String>
                     .and_then(|value| value.as_str())
                     .unwrap_or_default()
                     .to_ascii_lowercase();
-                name.starts_with("pirate-cinema-setup-") && name.ends_with("-win-x64.exe")
+                if cfg!(target_os = "linux") {
+                    name.starts_with("pirate-cinema-") && name.ends_with("-x86_64.appimage")
+                } else {
+                    name.starts_with("pirate-cinema-setup-") && name.ends_with("-win-x64.exe")
+                }
             })?;
             Some(ReleaseUpdate {
                 version: version.to_owned(),
@@ -113,16 +117,24 @@ pub fn download_rust_update(update: &ReleaseUpdate) -> Result<std::path::PathBuf
     use std::io::Read as _;
     const MAX_INSTALLER_BYTES: u64 = 300 * 1024 * 1024;
     let expected_prefix = "https://github.com/cyberboy1999/pirate-cinema/releases/download/";
-    if !update.download_url.starts_with(expected_prefix) || !update.download_url.ends_with(".exe") {
+    let suffix = if cfg!(target_os = "linux") {
+        "-x86_64.AppImage"
+    } else {
+        "-win-x64.exe"
+    };
+    if !update.download_url.starts_with(expected_prefix) || !update.download_url.ends_with(suffix) {
         return Err("GitHub вернул недопустимый адрес установщика".into());
     }
     let directory = std::env::temp_dir().join("Pirate Cinema Updates");
     std::fs::create_dir_all(&directory)
         .map_err(|error| format!("Не удалось создать папку обновления: {error}"))?;
-    let destination = directory.join(format!(
-        "Pirate-Cinema-Setup-{}-win-x64.exe",
-        update.version
-    ));
+    let destination = directory.join(
+        update
+            .download_url
+            .rsplit('/')
+            .next()
+            .ok_or("Нет имени пакета")?,
+    );
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(180)))
         .user_agent("Pirate-Cinema-Rust")
@@ -158,12 +170,23 @@ pub fn download_rust_update(update: &ReleaseUpdate) -> Result<std::path::PathBuf
     }
     let header = std::fs::read(&temporary)
         .map_err(|error| format!("Не удалось проверить обновление: {error}"))?;
-    if header.len() < 2 || &header[..2] != b"MZ" {
+    let valid_header = if cfg!(target_os = "linux") {
+        header.starts_with(b"\x7fELF")
+    } else {
+        header.starts_with(b"MZ")
+    };
+    if !valid_header {
         let _ = std::fs::remove_file(&temporary);
         return Err("Загруженный файл не является установщиком Windows".into());
     }
     std::fs::rename(&temporary, &destination)
         .map_err(|error| format!("Не удалось подготовить обновление: {error}"))?;
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&destination, std::fs::Permissions::from_mode(0o755))
+            .map_err(|error| error.to_string())?;
+    }
     Ok(destination)
 }
 
