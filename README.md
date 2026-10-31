@@ -26,6 +26,8 @@ Windows-установщик включает FFmpeg и Visual C++ Runtime. Torr
 - локальный поиск по индексу RuTor и опциональный Jackett/Prowlarr Torznab;
 - добавление `magnet:`-ссылок из приложения и браузера;
 - медиатека с постерами, русскими описаниями, фильтрами и сортировкой;
+- локальные типографические обложки с режимами «Авто», «Локальные» и «Постеры»;
+- локальные списки «Избранное» и «Смотреть позже»;
 - выбор фильма, сезона, серии и конкретного видеофайла;
 - встроенный ArtPlayer: продолжение просмотра, перемотка, аудиодорожка, полноэкранный режим и следующий эпизод;
 - отметка «Просмотрено» при первом запуске файла;
@@ -126,6 +128,8 @@ The repository also contains an experimental Dioxus Mobile Android client. It is
 ### Features
 
 - local RuTor index search and optional Jackett/Prowlarr Torznab;
+- deterministic local cover art with Auto, Local, and Posters modes;
+- local Favorites and Watch Later collections;
 - `magnet:` links from the application or browser;
 - a poster library with descriptions, filters, and sorting;
 - movie, season, episode, and exact-file selection;
@@ -202,3 +206,41 @@ cargo build --manifest-path desktop-rust/Cargo.toml --release --bin pirate-cinem
 ```
 
 Third-party components and licenses are listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+Готовому AppImage не нужны Rust и компилятор. Нужны FFmpeg, GTK3,
+WebKitGTK 4.1 и GStreamer-декодеры: FFmpeg приложения не заменяет
+декодеры HTML5-видео внутри WebKitGTK.
+
+Ubuntu / Debian:
+
+```sh
+sudo apt update
+sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 xdotool libfuse2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+```
+
+В новых Ubuntu пакет FUSE может называться `libfuse2t64`.
+
+Arch Linux / CachyOS:
+
+```sh
+sudo pacman -Syu --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator librsvg xdotool fuse2 gst-plugins-base gst-plugins-good gst-plugins-bad gst-libav
+chmod +x Pirate-Cinema-*-x86_64.AppImage
+```
+
+После установки декодеров полностью закройте и снова запустите приложение.
+При ошибках EGL/Mesa проверьте драйвер GPU и доступ текущего пользователя
+к `/dev/dri/renderD*`. Программная отрисовка пригодна для диагностики,
+но не является рекомендуемой постоянной настройкой.
+
+### English
+
+The AppImage needs system FFmpeg, GTK3, WebKitGTK 4.1 and GStreamer codecs.
+Rust and a compiler are only required when building from source. Use the
+Ubuntu/Debian or Arch/CachyOS commands above; restart the app after installing
+codecs. The FFmpeg executable does not supply codecs to WebKitGTK HTML5 video.
+On recent Ubuntu versions, use `libfuse2t64` if `libfuse2` is unavailable.
+EGL/Mesa failures require checking GPU drivers and access to `/dev/dri/renderD*`.
+
+Package references: [Arch WebKitGTK](https://archlinux.org/packages/extra/x86_64/webkit2gtk-4.1/),
+[Arch gst-libav](https://archlinux.org/packages/extra/x86_64/gst-libav/),
+[Ubuntu GStreamer packages](https://packages.ubuntu.com/search?keywords=gstreamer).
