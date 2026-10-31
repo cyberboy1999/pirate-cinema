@@ -26,6 +26,8 @@ Windows-установщик включает FFmpeg и Visual C++ Runtime. Torr
 - локальный поиск по индексу RuTor и опциональный Jackett/Prowlarr Torznab;
 - добавление `magnet:`-ссылок из приложения и браузера;
 - медиатека с постерами, русскими описаниями, фильтрами и сортировкой;
+- локальные типографические обложки с режимами «Авто», «Локальные» и «Постеры»;
+- локальные списки «Избранное» и «Смотреть позже»;
 - выбор фильма, сезона, серии и конкретного видеофайла;
 - встроенный ArtPlayer: продолжение просмотра, перемотка, аудиодорожка, полноэкранный режим и следующий эпизод;
 - отметка «Просмотрено» при первом запуске файла;
@@ -126,6 +128,8 @@ The repository also contains an experimental Dioxus Mobile Android client. It is
 ### Features
 
 - local RuTor index search and optional Jackett/Prowlarr Torznab;
+- deterministic local cover art with Auto, Local, and Posters modes;
+- local Favorites and Watch Later collections;
 - `magnet:` links from the application or browser;
 - a poster library with descriptions, filters, and sorting;
 - movie, season, episode, and exact-file selection;

@@ -64,6 +64,33 @@ https://github.com/zhw2590582/ArtPlayer/tree/v5.4.0. The vendored
 - Included license: `.agents/skills/ponytail/LICENSE`
 - Source: https://github.com/DietrichGebert/ponytail
 
+## Impeccable
+
+- Design skill by Paul Bakaus, version 4.8.0, commit
+  `df3a4abe7d0840d5f60324812c432e00b66a4e75`
+- License: Apache-2.0
+- Included license and notices: `.agents/skills/impeccable/LICENSE`,
+  `.agents/skills/impeccable/NOTICE.md`
+- Source: https://github.com/pbakaus/impeccable
+- The `ios.md` and `android.md` platform references are derived from ehmo's
+  `platform-design-skills` (MIT): https://github.com/ehmo/platform-design-skills
+- The engine binary is downloaded and checksum-verified at first run into
+  `~/.impeccable/bin`; it is not committed or included in release packages.
+  This is development tooling, not part of the installed application payload.
+
+## Frontend Design skill
+
+- Codex-focused port by dobromirdikov, commit
+  `983119775a936d123df9fbfbc3821bdee5bb58fd`
+- Derived from Anthropic's `frontend-design` skill in
+  https://github.com/anthropics/claude-plugins-official
+- License: Apache-2.0
+- Included license and notice: `.agents/skills/frontend-design/LICENSE`,
+  `.agents/skills/frontend-design/NOTICE.md`
+- Source: https://github.com/dobromirdikov/codex-frontend-design-skill
+- Instruction-only development tooling; not part of the installed application
+  payload.
+
 ## Metadata and artwork
 
 - `public/pirate-cinema-logo.png` is derived from a user-provided third-party

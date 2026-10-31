@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "dist/**",
     "out/**",
     "build/**",
+    ".agents/**",
+    ".impeccable/**",
     "desktop-rust/assets/**",
     "desktop-rust/tests/**",
     "next-env.d.ts",

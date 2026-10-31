@@ -1,9 +1,16 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+#[path = "ui/app_ui.rs"]
+mod app_ui;
+
 #[cfg(feature = "rutube-prototype")]
 #[path = "../rutube_prototype.rs"]
 mod rutube_prototype;
 
+use app_ui::{
+    CollectionPage, Detail, HistoryPage, Home, Icon, Library, NavButton, SearchPage, Settings,
+    Welcome,
+};
 use base64::Engine;
 use dioxus::prelude::*;
 use pirate_cinema_core::desktop_engine::{
@@ -11,19 +18,19 @@ use pirate_cinema_core::desktop_engine::{
     torrent_video_files,
 };
 use pirate_cinema_core::history::{
-    create_local_backup, GeneratedPoster, HistoryStore, MediaMetadata, PlaybackPreferences,
+    CollectionList, HistoryStore, MediaMetadata, PlaybackPreferences,
 };
 use pirate_cinema_core::metadata::{self, Movie};
 use pirate_cinema_core::migration::{legacy_profile_paths, migrate_legacy_profiles};
 use pirate_cinema_core::remote_control::{self, RemoteStatus};
-use pirate_cinema_core::settings::{self, Language, Preferences};
-use pirate_cinema_core::thumbnail::{ThumbnailCache, ThumbnailEngine, ThumbnailResolver};
+use pirate_cinema_core::settings::{self, CoverMode, Language, Preferences};
 use pirate_cinema_core::{
-    check_rust_update, download_rust_update, magnet_info_hash, magnet_title, ReleaseUpdate,
-    SearchResult, Torrent, VideoFile,
+    check_rust_update, magnet_info_hash, magnet_title, ReleaseUpdate, SearchResult, Torrent,
+    VideoFile,
 };
+
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, OnceLock,
@@ -41,129 +48,20 @@ static PLAYBACK_GENERATION: AtomicUsize = AtomicUsize::new(0);
 static STARTUP_MIGRATION_ERROR: OnceLock<String> = OnceLock::new();
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const APP_ICON: &[u8] = include_bytes!("../../../public/favicon.png");
-const HOME_ICON: &[u8] = include_bytes!(
-    "../../assets/icons/building_business_home_house_mobile_navigation_office_icon_123210.png"
-);
-const LIBRARY_ICON: &[u8] =
-    include_bytes!("../../assets/icons/video-camera_icon-icons.com_53843.png");
-const SETTINGS_ICON: &[u8] = include_bytes!(
-    "../../assets/icons/3643771-configuration-configure-gear-set-setting_113449.png"
-);
-const ONLINE_ICON: &[u8] = include_bytes!("../../assets/icons/online_4158.png");
 const HLS_JS: &str = include_str!("../../assets/hls.min.js");
 const ARTPLAYER_JS: &str = include_str!("../../assets/artplayer.js");
 const PLAYER_STATE_JS: &str = include_str!("../../assets/player-state.js");
 
-const CSS: &str = r#"
-:root { color-scheme: dark; font-family:"SF Pro Display","Segoe UI Variable Display","Segoe UI",sans-serif; font-size:17px; background:#060606; color:#f5f5f7; --plex:#e5a00d; --glass:#161616c7; --line:#ffffff17; }
-* { box-sizing: border-box; }
-body { margin:0; min-width:760px; background:radial-gradient(circle at 78% -10%,#392a0d 0,transparent 32%),#060606; }
-button, input { font: inherit; }
-button { color: inherit; cursor: pointer; }
-.shell { min-height:100vh; display:grid; grid-template-columns:244px minmax(0,1fr); }
-.welcome-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 20%, #1d1d1d, #050505 58%); }
-.welcome-card { width: min(520px, 100%); display: grid; gap: 15px; padding: 34px; border: 1px solid #292929; border-radius: 20px; background: #0d0d0d; box-shadow: 0 22px 80px #000; }
-.welcome-card label { display: grid; gap: 8px; color: #aaa; }
-.welcome-card input { padding: 13px 14px; border: 1px solid #292929; border-radius: 10px; background: #080808; color: white; }
-.welcome-action { min-height: 46px; }
-.startup-preview { position:fixed; inset:0; z-index:10000; display:grid; place-items:center; background:radial-gradient(circle at 50% 45%,#242424 0,#0b0b0b 34%,#050505 68%); animation:startup-fade .22s ease-out; }
-.startup-preview-content { display:grid; justify-items:center; gap:18px; color:#f4f4f4; }
-.startup-preview img { width:132px; height:132px; padding:18px; border-radius:30px; background:#e8e8e8; object-fit:contain; box-shadow:0 24px 80px #000; }
-.startup-preview strong { font-size:29px; letter-spacing:-1px; }
-.startup-preview span { color:#858585; font-size:13px; letter-spacing:1.5px; text-transform:uppercase; }
-.remote-overlay{position:fixed;inset:0;z-index:11000;display:grid;place-items:center;padding:24px;background:#000c}.remote-card{width:min(430px,100%);display:grid;justify-items:center;gap:14px;padding:26px;border:1px solid #303030;border-radius:18px;background:#101010;box-shadow:0 24px 90px #000}.remote-card h2,.remote-card p{margin:0;text-align:center}.remote-card img,.remote-qr{width:220px;height:220px;padding:10px;border-radius:12px;background:#fff}.remote-card input{width:100%;padding:12px;border:1px solid #303030;border-radius:9px;background:#080808;color:#ddd;text-align:center}.remote-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@keyframes startup-fade { from { opacity:0 } to { opacity:1 } }
-.sidebar { position:sticky;top:0;height:100vh;padding:28px 16px 22px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:linear-gradient(180deg,#151515e8,#090909f5);backdrop-filter:blur(24px) saturate(140%);box-shadow:18px 0 50px #0005; }
-.brand { margin: 0 4px 34px; display:flex; align-items:center; gap:10px; font-size: 20px; font-weight: 800; letter-spacing: -.7px; white-space:nowrap; }
-.brand img { width:30px; height:30px; padding:3px; border-radius:7px; background:#ddd; object-fit:contain; }
-.nav { display: grid; gap: 8px; }
-.rail-bottom{margin-top:auto;display:grid;gap:8px}
-.nav button,.rail-bottom button { width:100%;min-height:52px;padding:0 14px;display:flex;align-items:center;gap:13px;border:1px solid transparent;border-radius:13px;background:transparent;color:#9b9ba1;font-weight:650;text-align:left;transition:background .18s,color .18s,transform .18s,border-color .18s; }
-.nav button:hover,.rail-bottom button:hover{color:#fff;background:#ffffff0d;transform:translateX(2px)}
-.nav button.active,.rail-bottom button.active{color:#fff;background:linear-gradient(90deg,#e5a00d20,#ffffff0c);border-color:#e5a00d66;box-shadow:0 8px 22px #0005}
-.nav-icon { width:24px; height:24px; flex:0 0 auto; object-fit:contain; filter:invert(1); opacity:.62; }
-.nav button:hover .nav-icon,.nav button.active .nav-icon,.rail-bottom button:hover .nav-icon,.rail-bottom button.active .nav-icon{opacity:.95}
-.search-icon { width:20px; height:20px; border:2px solid currentColor; border-radius:50%; position:relative; opacity:.66; }
-.search-icon:after { content:""; position:absolute; width:7px; height:2px; right:-5px; bottom:-2px; border-radius:2px; background:currentColor; transform:rotate(45deg); }
-.version { padding: 14px 10px 0; color: #666; font-size: 12px; }
-.content { min-width:0;padding:30px 38px 58px; }
-.topbar { display: grid; grid-template-columns: minmax(360px, 920px) minmax(180px,1fr); gap: 22px; align-items: center; }
-.search { height:54px;display:flex;gap:10px;padding:5px 6px 5px 18px;border:1px solid var(--line);border-radius:15px;background:var(--glass);backdrop-filter:blur(18px);box-shadow:0 12px 30px #0004; }
-.search>.search-icon{margin:auto 5px auto 0;width:17px;height:17px;flex:0 0 auto}
-.search input { min-width: 0; flex: 1; border: 0; outline: 0; color: white; background: transparent; }
-.search button,.primary { border:0;border-radius:10px;padding:0 18px;background:#f5f5f7;color:#090909;font-weight:750;transition:background .15s,transform .15s,box-shadow .15s;box-shadow:0 7px 20px #0008; }
-.search button:hover,.primary:hover{background:#fff;box-shadow:0 9px 26px #000a}.search button:active,.primary:active{transform:translateY(1px);background:#e8e8eb}
-.status { justify-self:end; display:flex;align-items:center;gap:8px;white-space: nowrap; color: #73d99a; font-size: 14px; }
-.status img{width:21px;height:21px;object-fit:contain;filter:invert(78%) sepia(29%) saturate(725%) hue-rotate(91deg);}
-.status.offline{color:#ef6464}
-.status.offline img{filter:invert(48%) sepia(92%) saturate(1088%) hue-rotate(323deg) brightness(100%)}
-.server-control{justify-self:end;display:grid;justify-items:end;gap:5px}.server-restart{background:transparent;border:0;padding:2px 0;color:#999;font-size:12px}.server-restart:hover{color:#fff}.server-restart:disabled{opacity:.45;cursor:default}
-.page { margin-top: 48px; }
-.media-hash{display:block;margin-top:8px;color:#858585;font-size:11px;font-weight:650;letter-spacing:.8px;text-transform:uppercase}
-h1 { margin: 8px 0 10px; font-size: 36px; letter-spacing: -1.2px; }
-.lead { max-width: 760px; margin: 0 0 30px; color: #8b8b8b; }
-.grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,205px));gap:32px 20px;align-items:start; }
-.card { min-width: 0; border: 0; padding: 0; background: transparent; text-align: left; }
-.poster { aspect-ratio:2/3;border-radius:16px;overflow:hidden;display:grid;place-items:center;background:linear-gradient(145deg,#272727,#111);color:#656565;font-size:42px;border:1px solid #ffffff12;transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s,border-color .22s; }
-.poster img { width: 100%; height: 100%; object-fit: cover; }
-.card:hover .poster{transform:translateY(-6px) scale(1.025);box-shadow:0 22px 42px #000b,0 0 0 1px #e5a00d6b;border-color:#e5a00d7a}
-.card strong { display: block; margin-top: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size:15px;line-height:1.35; }
-.card small { display: block; margin-top: 6px; color: #888; font-size:13px; }
-.card small.viewed { color: #71cc91; }
-.card-open{display:block;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left}
-.home-recent{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:22px 18px;max-width:1320px}
-.empty, .panel { border: 1px solid #242424; border-radius: 16px; padding: 26px; background: #101010; color: #999; }
-.results { display: grid; gap: 8px; }
-.search-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:34px;align-items:start}.search-feature{position:sticky;top:24px}.search-feature .poster{width:100%;margin-bottom:18px}.search-feature h1{font-size:32px;margin:0 0 8px}.search-feature .overview{font-size:14px;line-height:1.55}.search-results h2{margin:0 0 18px;font-size:25px}
-.result { display: grid; grid-template-columns: minmax(0, 1fr) 90px 70px auto auto; gap: 10px; align-items: center; padding: 14px 16px; border: 1px solid #222; border-radius: 12px; background: #0d0d0d; }
-.result strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.result span, .result small { color: #888; }
-.secondary,.result button,.file button { min-height:42px;border:1px solid #ffffff1c;border-radius:10px;padding:0 16px;background:#ffffff0b;backdrop-filter:blur(12px);font-weight:650;transition:background .15s,border-color .15s; }
-.secondary:hover,.result button:hover,.file button:hover{background:#242424;border-color:#555}
-.result button.result-action{background:#fff;color:#080808;border-color:#fff}
-.result button.result-action:hover{background:#e5e5e5;border-color:#e5e5e5}
-.file button.launch-button{background:#fff;color:#080808;border-color:#fff;box-shadow:0 7px 20px #0007}
-.file button.launch-button:hover{background:#e5e5e5;border-color:#e5e5e5}
-button:disabled{cursor:not-allowed;opacity:.48;transform:none!important}
-button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #ddd;outline-offset:2px}
-.detail-hero{position:relative;isolation:isolate;margin:-18px -18px 34px;padding:44px 30px 34px;overflow:hidden;border:1px solid var(--line);border-radius:28px;background:linear-gradient(110deg,#0a0a0af5 18%,#111111d9 72%);box-shadow:0 30px 80px #0009}
-.detail-hero:before{content:"";position:absolute;z-index:-2;inset:-80px;background-image:linear-gradient(90deg,#080808 8%,#080808bf 46%,#080808e8),var(--detail-art);background-size:cover;background-position:center;filter:blur(30px) saturate(.8);opacity:.55;transform:scale(1.08)}
-.detail-hero:after{content:"";position:absolute;z-index:-1;inset:0;background:linear-gradient(180deg,transparent 20%,#080808d9 100%)}
-.detail-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:34px;position:relative;z-index:1}.detail-artwork{display:grid;gap:14px;align-content:start}.detail-cover-wrap{position:relative}.detail-cover{width:240px;aspect-ratio:2/3;border-radius:18px;object-fit:cover;background:#171717;border:1px solid #ffffff24;box-shadow:0 24px 55px #000b}
-.preview-badge{position:absolute;left:10px;bottom:10px;padding:6px 9px;border-radius:999px;background:#e5a00de8;color:#111;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px}
-.thumbnail-panel{display:grid;gap:9px;padding:13px;border:1px solid #e5a00d55;border-radius:14px;background:#111111e8;backdrop-filter:blur(16px);box-shadow:0 10px 28px #0006}.thumbnail-panel>strong{font-size:13px}.thumbnail-panel select{width:100%;min-height:38px;padding:0 9px;border:1px solid #ffffff1c;border-radius:9px;background:#090909;color:#ddd;font-size:12px}.thumbnail-actions{display:flex;flex-wrap:wrap;gap:7px}.thumbnail-actions button{min-height:36px;padding:0 10px;font-size:12px}.thumbnail-panel small{color:#b0b0b4;line-height:1.4}.thumbnail-progress{height:3px;overflow:hidden;border-radius:4px;background:#ffffff10}.thumbnail-progress span{display:block;width:45%;height:100%;background:var(--plex);animation:thumbnail-progress 1.1s ease-in-out infinite alternate}@keyframes thumbnail-progress{from{transform:translateX(-30%)}to{transform:translateX(150%)}}
-.detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: end; }
-.overview { max-width: 780px; color: #aaa; line-height: 1.65; }
-.files { display: grid; gap: 9px; margin-top: 28px; }
-.file { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 10px; align-items: center; padding: 14px 16px; border: 1px solid #222; border-radius: 12px; background: #0d0d0d; }
-.file strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings { width:min(820px,100%); display: grid; gap: 18px; padding-bottom:60px; }
-.settings>h1{margin-bottom:0}.settings>.lead{margin-bottom:8px}
-.settings-card{display:grid;gap:16px;padding:22px;border:1px solid #292929;border-radius:15px;background:#0d0d0d}.settings-card h2{margin:0;font-size:20px}.settings-card .hint{margin:-7px 0 0;color:#777;font-size:13px;line-height:1.45}
-.settings label { display: grid; gap: 8px; color: #aaa; }
-.settings input, .settings select { min-height:46px;padding: 13px 14px; border: 1px solid #292929; border-radius: 10px; background: #0b0b0b; color: white; }
-.settings label.auto-next{display:flex;align-items:center;gap:10px}.settings .auto-next input[type="checkbox"]{width:18px;height:18px;min-height:0;margin:0;padding:0;flex:0 0 18px;accent-color:#e8e8e8}
-.setting-row{display:grid;grid-template-columns:180px minmax(0,1fr);gap:18px;align-items:center}.setting-row>span{color:#aaa;font-size:14px;text-transform:uppercase;letter-spacing:.6px}.setting-row label{display:contents}.choice-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.choice-row button.selected{border-color:#777;background:#282828;color:#fff}.settings-actions { display:grid;grid-template-columns:1fr 1fr;gap:10px}.settings-card .primary{min-height:46px}.settings-output{display:grid;gap:10px}.server-summary{grid-template-columns:52px minmax(0,1fr);align-items:center}.server-summary img{width:34px;height:34px;object-fit:contain;filter:brightness(0) invert(1);opacity:.82}.server-summary strong{display:block;font-size:17px}.server-summary small{display:block;margin-top:4px;color:#8a8a8a}.settings-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.settings-facts article{padding:15px;border:1px solid #282828;border-radius:11px;background:#111}.settings-facts span,.settings-facts small{display:block;color:#777;font-size:12px}.settings-facts strong{display:block;margin:6px 0;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stacked-options{display:grid;gap:10px}
-.filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 24px; }
-.filters input, .filters select { min-height: 42px; padding: 0 13px; border: 1px solid #292929; border-radius: 10px; background: #0b0b0b; color: white; }
-.filters input { min-width: 240px; }
-.notice { margin: 22px 0; padding: 13px 15px; border-radius: 10px; background: #191919; color: #aaa; }
-.player-strip { margin: 14px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); gap: 8px; align-items: center; padding: 10px; border: 1px solid #242424; border-radius: 12px; background: #0d0d0d; }
-.player-strip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.player-strip button { min-height: 34px; border: 1px solid #303030; border-radius: 8px; background: #191919; }
-.web-player{margin-top:14px;padding:12px;border:1px solid #292929;border-radius:12px;background:#090909}.web-player header{display:flex;align-items:center;gap:10px;margin-bottom:10px}.web-player header strong{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.artplayer-host{width:100%;height:min(72vh,760px);min-height:420px;border-radius:9px;overflow:hidden;background:#000}.web-player.mini{position:fixed;z-index:100;right:20px;bottom:20px;width:min(420px,calc(100vw - 40px));margin:0;box-shadow:0 14px 48px #000b}.web-player.mini .artplayer-host{height:220px;min-height:0}.web-player.mini .pc-player-topbar{display:none}.art-video-player{--art-theme:#287cff}.pc-player-topbar{position:absolute;z-index:80;top:12px;left:12px;display:flex;gap:6px;max-width:calc(100% - 24px);padding:5px;border:1px solid #ffffff26;border-radius:9px;background:#090909d9;backdrop-filter:blur(8px);opacity:.42;transition:opacity .18s}.art-video-player:hover .pc-player-topbar,.pc-player-topbar:focus-within{opacity:1}.pc-player-topbar select{width:auto;min-width:96px;max-width:190px;height:32px;padding:0 28px 0 10px;border:1px solid #ffffff29;border-radius:7px;background:#181818;color:#fff;font:600 13px system-ui;cursor:pointer}.pc-player-topbar .pc-season{min-width:105px}.pc-player-topbar .pc-episode{min-width:112px}.pc-player-topbar .pc-audio{min-width:130px;max-width:240px}
-.pc-next-episode{position:absolute;z-index:80;right:18px;bottom:74px;display:none;padding:10px 16px;border:0;border-radius:8px;background:#f2f2f2;color:#111;font:700 14px system-ui;cursor:pointer;box-shadow:0 4px 18px #0009}.pc-next-episode:hover{background:#fff}.pc-next-episode:focus-visible{outline:2px solid #287cff;outline-offset:2px}
-.pc-auto-next{display:flex;align-items:center;white-space:nowrap;font:600 13px system-ui;gap:4px;padding:0 6px}.pc-auto-next input{width:16px;height:16px;accent-color:#287cff}.pc-stream-status{position:absolute;z-index:75;bottom:80px;left:18px;max-width:65%;padding:8px 12px;background:#111d;border-radius:8px;font:14px system-ui}.pc-stream-status[hidden]{display:none}.pc-stream-status button{margin-left:10px;padding:5px 9px;background:#fff;color:#111;border:0;border-radius:5px}
-.season-progress{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 18px}.season-progress span{padding:8px 11px;border:1px solid #292929;border-radius:9px;background:#101010;color:#aaa;font-size:13px}
-@media (max-width:900px){.shell{grid-template-columns:78px 1fr}.brand{margin-inline:auto;font-size:0}.brand img{width:34px;height:34px}.nav button{justify-content:center;overflow:hidden;white-space:nowrap}.nav button span{display:none}.content{padding:24px 22px}.topbar{grid-template-columns:1fr}.status{justify-self:start}.search-layout{grid-template-columns:1fr}.search-feature{position:static;display:grid;grid-template-columns:130px 1fr;gap:18px}.detail-hero{margin:-12px -10px 26px;padding:26px 18px}.detail-layout{grid-template-columns:180px minmax(0,1fr);gap:22px}.detail-cover{width:180px}.setting-row{grid-template-columns:1fr;gap:7px}.settings-actions,.choice-row,.settings-facts{grid-template-columns:1fr}.file{grid-template-columns:1fr 1fr}.file>div{grid-column:1/-1}}
-"#;
+const CSS: &str = include_str!("../../assets/app.css");
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
     Home,
     Search,
     Library,
+    Favorites,
+    WatchLater,
+    History,
     Detail,
     Player,
     Settings,
@@ -206,7 +104,10 @@ struct LibraryCard {
     media_type: Option<String>,
     viewed: bool,
     poster: Option<String>,
-    generated_poster: Option<GeneratedPoster>,
+    position: i64,
+    duration: i64,
+    favorite: bool,
+    watch_later: bool,
 }
 
 #[derive(Clone, PartialEq)]
@@ -222,6 +123,7 @@ struct ContinueItem {
     torrent: Torrent,
     title: String,
     file_name: String,
+    file_index: i64,
     position: i64,
     duration: i64,
 }
@@ -251,13 +153,11 @@ struct WebPlayback {
 struct TrayState(tray_icon::TrayIcon);
 
 fn main() {
-    if let Some(magnet) = std::env::args().skip(1).find(|argument| {
-        argument
-            .trim_matches(['\'', '"'])
-            .to_ascii_lowercase()
-            .starts_with("magnet:?")
-    }) {
-        let _ = STARTUP_MAGNET.set(magnet.trim_matches(['\'', '"']).to_owned());
+    if let Some(magnet) = std::env::args()
+        .skip(1)
+        .find(|argument| argument.contains("magnet:") && !argument.is_empty())
+    {
+        let _ = STARTUP_MAGNET.set(magnet.trim_matches(|c| c == '\'' || c == '"').to_owned());
     }
     if let Ok(data_dir) = default_data_dir() {
         if let Some(root) = data_dir.parent() {
@@ -306,10 +206,6 @@ fn App() -> Element {
     let _shutdown_guard = use_hook(|| Arc::new(ShutdownGuard));
     let desktop = dioxus::desktop::use_window();
     let brand_icon = png_data_uri(APP_ICON);
-    let home_icon = png_data_uri(HOME_ICON);
-    let library_icon = png_data_uri(LIBRARY_ICON);
-    let settings_icon = png_data_uri(SETTINGS_ICON);
-    let online_icon = png_data_uri(ONLINE_ICON);
     let tray = use_hook(|| {
         let menu = tray_icon::menu::Menu::new();
         let open = tray_icon::menu::MenuItem::with_id("open", "Открыть Pirate Cinema", true, None);
@@ -375,6 +271,12 @@ fn App() -> Element {
             .get()
             .map_or(Language::Russian, |preferences| preferences.language)
     });
+    let cover_mode = use_signal(|| {
+        INITIAL_PREFERENCES
+            .get()
+            .map_or(CoverMode::Auto, |preferences| preferences.cover_mode)
+    });
+    use_context_provider(|| cover_mode);
     let mut query = use_signal(String::new);
     // Temporary opaque context for shared function signatures. The embedded
     // engine owns its loopback endpoint and ignores this value.
@@ -498,11 +400,6 @@ fn App() -> Element {
     let mut return_page = use_signal(|| Page::Library);
     let mut busy = use_signal(|| false);
     let mut metadata_status = use_signal(String::new);
-    let mut thumbnail_busy = use_signal(|| false);
-    let mut thumbnail_status = use_signal(String::new);
-    let mut thumbnail_preview = use_signal(|| None::<String>);
-    let mut thumbnail_candidate = use_signal(|| None::<String>);
-    let mut thumbnail_cancel = use_signal(|| None::<Arc<AtomicBool>>);
     let mut pending_duplicate = use_signal(|| None::<(SearchResult, bool)>);
     let mut pending_playback = use_signal(|| None::<PendingPlayback>);
     let mut onboarding = use_signal(|| {
@@ -518,19 +415,6 @@ fn App() -> Element {
         // just long enough to avoid flashing partially initialized UI.
         tokio::time::sleep(Duration::from_millis(1100)).await;
         startup_preview.set(false);
-    });
-
-    use_effect(move || {
-        let _ = selected();
-        if let Some(cancel) = thumbnail_cancel.write().take() {
-            cancel.store(true, Ordering::Release);
-        }
-        if let Some(candidate) = thumbnail_candidate.write().take() {
-            remove_generated_poster_file(&candidate);
-        }
-        thumbnail_busy.set(false);
-        thumbnail_status.set(String::new());
-        thumbnail_preview.set(None);
     });
 
     use_effect(move || {
@@ -1434,6 +1318,80 @@ fn App() -> Element {
         }
     };
 
+    let toggle_collection = move |(torrent, list, included): (Torrent, CollectionList, bool)| {
+        let result = history_path()
+            .and_then(|path| HistoryStore::open(&path).map_err(|error| error.to_string()))
+            .and_then(|history| {
+                history
+                    .set_collection(&torrent.hash, list, included)
+                    .map_err(|error| error.to_string())
+            });
+        match result {
+            Ok(()) => cards.set(load_library_cards(&server.read().torrents).unwrap_or_default()),
+            Err(error) => server.write().error = error,
+        }
+    };
+
+    let resume_continue = move |item: ContinueItem| {
+        let endpoint_value = endpoint();
+        let torrent = item.torrent.clone();
+        let no_files = language()
+            .pick(
+                "В этой раздаче нет видеофайлов",
+                "This release has no video files",
+            )
+            .to_owned();
+        let auto_next = history_path()
+            .ok()
+            .and_then(|path| HistoryStore::open(&path).ok())
+            .and_then(|history| history.playback_preferences(&torrent.hash).ok())
+            .is_some_and(|preferences| preferences.auto_next);
+        busy.set(true);
+        spawn(async move {
+            let hash = torrent.hash.clone();
+            let result =
+                tokio::task::spawn_blocking(move || torrent_video_files(&endpoint_value, &hash))
+                    .await;
+            match result {
+                Ok(Ok(found)) => {
+                    let playable = load_file_history(&torrent.hash, found);
+                    let selected_file = playable
+                        .iter()
+                        .find(|file| file.file.id == item.file_index)
+                        .cloned()
+                        .or_else(|| playable.first().cloned());
+                    if let Some(file) = selected_file {
+                        let queue = playable.iter().map(|item| item.file.clone()).collect();
+                        launch_playback(
+                            PendingPlayback {
+                                torrent,
+                                file: file.file,
+                                resume: true,
+                                queue,
+                                auto_next,
+                            },
+                            endpoint(),
+                            busy,
+                            web_player,
+                            server,
+                        );
+                    } else {
+                        server.write().error = no_files;
+                        busy.set(false);
+                    }
+                }
+                Ok(Err(error)) => {
+                    server.write().error = error;
+                    busy.set(false);
+                }
+                Err(error) => {
+                    server.write().error = error.to_string();
+                    busy.set(false);
+                }
+            }
+        });
+    };
+
     let update_media_type = move |kind: String| {
         let Some(torrent) = selected.read().clone() else {
             return;
@@ -1493,134 +1451,6 @@ fn App() -> Element {
             }
             busy.set(false);
         });
-    };
-
-    let generate_thumbnail = move |file: VideoFile| {
-        if thumbnail_busy() {
-            return;
-        }
-        let Some(torrent) = selected.read().clone() else {
-            return;
-        };
-        let cancel = Arc::new(AtomicBool::new(false));
-        thumbnail_cancel.set(Some(cancel.clone()));
-        if let Some(candidate) = thumbnail_candidate.write().take() {
-            remove_generated_poster_file(&candidate);
-        }
-        thumbnail_preview.set(None);
-        thumbnail_status.set("Извлекаем и оцениваем кадры…".into());
-        thumbnail_busy.set(true);
-        let endpoint_value = endpoint();
-        spawn(async move {
-            let hash = torrent.hash.clone();
-            let task_hash = hash.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                let _lease = desktop_engine::StreamLease::new(&task_hash)?;
-                let source = desktop_engine::stream_url(&endpoint_value, &task_hash, &file)?;
-                let ffmpeg = pirate_cinema_core::web_stream::executable()?;
-                let history_file = history_path()?;
-                let poster_dir = history_file
-                    .parent()
-                    .ok_or("Не удалось определить папку обложек")?
-                    .join("cache")
-                    .join("posters");
-                let engine_cancel = cancel.clone();
-                let generated =
-                    ThumbnailEngine::new(ffmpeg, ThumbnailCache::new(poster_dir.clone()))
-                        .generate(&source, &task_hash, engine_cancel)?;
-                if cancel.load(Ordering::Acquire) {
-                    let _ = std::fs::remove_file(poster_dir.join(&generated.file_name));
-                    return Err("Генерация отменена".into());
-                }
-                Ok(generated)
-            })
-            .await;
-            if selected
-                .read()
-                .as_ref()
-                .is_some_and(|current| current.hash == hash)
-            {
-                match result {
-                    Ok(Ok(generated)) => {
-                        thumbnail_candidate.set(Some(generated.file_name));
-                        thumbnail_preview.set(Some(format!(
-                            "data:image/webp;base64,{}",
-                            base64::engine::general_purpose::STANDARD.encode(&generated.bytes)
-                        )));
-                        thumbnail_status.set(format!(
-                            "Предпросмотр готов · оценка {:.1}. Обложка ещё не применена.",
-                            generated.score
-                        ));
-                        cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
-                    }
-                    Ok(Err(error)) => thumbnail_status.set(error),
-                    Err(error) => thumbnail_status.set(error.to_string()),
-                }
-                thumbnail_busy.set(false);
-                thumbnail_cancel.set(None);
-            }
-        });
-    };
-
-    let cancel_thumbnail = move |_| {
-        if let Some(cancel) = thumbnail_cancel.read().as_ref() {
-            cancel.store(true, Ordering::Release);
-            thumbnail_status.set("Отменяем генерацию…".into());
-        }
-    };
-
-    let apply_thumbnail = move |_| {
-        let Some(torrent) = selected.read().clone() else {
-            return;
-        };
-        let Some(candidate) = thumbnail_candidate.read().clone() else {
-            thumbnail_status.set("Сначала сгенерируйте обложку".into());
-            return;
-        };
-        let result = history_path()
-            .and_then(|path| HistoryStore::open(&path).map_err(|error| error.to_string()))
-            .and_then(|history| {
-                let previous = history
-                    .generated_poster(&torrent.hash)
-                    .map_err(|error| error.to_string())?;
-                history
-                    .set_generated_poster(&torrent.hash, &candidate, true)
-                    .map_err(|error| error.to_string())?;
-                if let Some(previous) = previous.filter(|item| item.file_name != candidate) {
-                    remove_generated_poster_file(&previous.file_name);
-                }
-                Ok(())
-            });
-        match result {
-            Ok(()) => {
-                cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
-                thumbnail_candidate.set(None);
-                thumbnail_preview.set(None);
-                thumbnail_status.set("Сгенерированная обложка применена".into());
-            }
-            Err(error) => thumbnail_status.set(error),
-        }
-    };
-
-    let restore_original_thumbnail = move |_| {
-        let Some(torrent) = selected.read().clone() else {
-            return;
-        };
-        let result = history_path()
-            .and_then(|path| HistoryStore::open(&path).map_err(|error| error.to_string()))
-            .and_then(|history| {
-                history
-                    .use_original_poster(&torrent.hash)
-                    .map_err(|error| error.to_string())
-            });
-        match result {
-            Ok(()) => {
-                cards.set(load_library_cards(&server.read().torrents).unwrap_or_default());
-                thumbnail_preview.set(None);
-                thumbnail_status.set("Возвращена оригинальная обложка".into());
-            }
-            Err(error) => thumbnail_status.set(error),
-        }
     };
 
     let remove_saved = move |_| {
@@ -1689,6 +1519,46 @@ fn App() -> Element {
         });
     };
 
+    let engine_online = !server.read().version.is_empty();
+    let engine_version = server.read().version.clone();
+    let engine_label = if engine_online {
+        format!("librqbit {engine_version}")
+    } else {
+        language()
+            .pick("Движок недоступен", "Engine offline")
+            .to_owned()
+    };
+    let favorite_count = cards.read().iter().filter(|card| card.favorite).count();
+    let watch_later_count = cards.read().iter().filter(|card| card.watch_later).count();
+    let history_count = recent.read().len();
+    let can_go_back = matches!(
+        page(),
+        Page::Detail
+            | Page::Player
+            | Page::Settings
+            | Page::Favorites
+            | Page::WatchLater
+            | Page::History
+            | Page::Rutube
+    );
+    let detail_torrent = selected();
+    let detail_card = detail_torrent.as_ref().and_then(|torrent| {
+        cards
+            .read()
+            .iter()
+            .find(|card| card.torrent.hash == torrent.hash)
+            .cloned()
+    });
+    let detail_metadata = detail_card.as_ref().and_then(|card| card.metadata.clone());
+    let detail_media_type = detail_card
+        .as_ref()
+        .and_then(|card| card.media_type.clone());
+    let detail_poster = detail_card
+        .as_ref()
+        .map(|card| app_ui::card_cover(card, cover_mode()));
+    let detail_favorite = detail_card.as_ref().is_some_and(|card| card.favorite);
+    let detail_watch_later = detail_card.as_ref().is_some_and(|card| card.watch_later);
+
     rsx! {
         style { {CSS} }
         document::Title { "Pirate Cinema {VERSION}" }
@@ -1704,7 +1574,7 @@ fn App() -> Element {
         if let Some(info) = remote_modal() {
             div { class: "remote-overlay", role: "dialog", "aria-modal": "true", "aria-label": language().pick("Веб-пульт", "Web remote"),
                 section { class: "remote-card",
-                    h2 { {language().pick("Веб-пульт", "Web remote")} }
+                    h2 { {language().pick("Веб пул", "Web remote")} }
                     img { src: "{info.qr_data_uri}", alt: language().pick("QR-код веб-пульта", "Web remote QR code") }
                     p { {language().pick("Отсканируйте QR-код телефоном в той же Wi-Fi сети.", "Scan the QR code with a phone on the same Wi-Fi network.")} }
                     input { readonly: true, value: "{info.url}" }
@@ -1724,99 +1594,396 @@ fn App() -> Element {
                     Err(error) => server.write().error = error,
                 }
             } }
-        } else { div { class: "shell",
-            aside { class: "sidebar",
-                div { class: "brand", img { src: "{brand_icon}", alt: "" } span { "Pirate Cinema" } }
-                nav { class: "nav",
-                    NavButton { label: language().pick("Главная", "Home"), icon: home_icon.clone(), active: page() == Page::Home, onclick: move |_| page.set(Page::Home) }
-                    NavButton { label: language().pick("Поиск", "Search"), icon: String::new(), active: page() == Page::Search, onclick: move |_| page.set(Page::Search) }
-                    if cfg!(feature = "rutube-prototype") {
-                        NavButton { label: "Rutube", icon: library_icon.clone(), active: page() == Page::Rutube, onclick: move |_| {
-                            document::eval("window.__pirateCinemaRutubeActive=true; window.__pirateCinemaArt?.pause();");
-                            page.set(Page::Rutube);
-                        } }
-                    }
-                    NavButton { label: language().pick("Медиатека", "Library"), icon: library_icon.clone(), active: page() == Page::Library, onclick: move |_| page.set(Page::Library) }
-                }
-                div { class: "rail-bottom",
-                    NavButton { label: language().pick("Настройки", "Settings"), icon: settings_icon.clone(), active: page() == Page::Settings, onclick: move |_| page.set(Page::Settings) }
-                }
-                div { class: "version", "Pirate Cinema · {VERSION}" }
-            }
-            main { class: "content",
-                header { class: "topbar",
-                    form { class: "search", onsubmit: move |event| { event.prevent_default(); run_search(); },
-                        i { class: "search-icon" }
-                        input {
-                            value: "{query}",
-                            placeholder: language().pick("Найти фильм, сериал или вставить magnet-ссылку", "Find a movie, series, or paste a magnet link"),
-                            oninput: move |event| query.set(event.value())
+        } else {
+            div { class: "app-shell",
+                aside { class: "app-rail",
+                    button {
+                        class: "rail-brand",
+                        title: "Pirate Cinema",
+                        onclick: move |_| page.set(Page::Home),
+                        img { class: "rail-brand-mark", src: "{brand_icon}", alt: "" }
+                        div { class: "rail-brand-copy",
+                            strong { "Pirate Cinema" }
+                            small { {language().pick("Личный кинотеатр", "Private cinema")} }
                         }
-                        button { r#type: "submit", disabled: busy(), if busy() { "…" } else { {language().pick("Найти", "Find")} } }
                     }
-                    div { class: "server-control",
-                      div { class: if server.read().version.is_empty() { "status offline" } else { "status" },
-                        img { src: "{online_icon}", alt: "" }
-                        if server.read().version.is_empty() { {language().pick("librqbit недоступен", "librqbit unavailable")} } else { "librqbit · {server.read().version}" }
-                      }
-
-                    }
-                }
-                if !server.read().error.is_empty() { div { class: "notice", "{server.read().error}" } }
-                if let Some(error) = STARTUP_MIGRATION_ERROR.get() { div { class: "notice", "{error}" } }
-                if let Some(update) = startup_update() {
-                    div { class: "notice", {language().pick("Доступно обновление Pirate Cinema ", "Pirate Cinema update available ")} "{update.version}. "
-                        button { class: "secondary", onclick: move |_| page.set(Page::Settings), {language().pick("Открыть настройки", "Open settings")} }
-                    }
-                }
-                if let Some((item, open)) = pending_duplicate() {
-                    div { class: "notice",
-                        {language().pick("В медиатеке уже есть другая раздача с таким названием. Добавить её всё равно? ", "The library already contains another release with this title. Add it anyway? ")}
-                        button { class: "secondary", onclick: { let item = item.clone(); move |_| { pending_duplicate.set(None); add_search_result(item.clone(), open, endpoint(), page, busy, selected, files, server, cards, recent); } }, {language().pick("Добавить", "Add")} }
-                        button { class: "secondary", onclick: move |_| pending_duplicate.set(None), {language().pick("Отмена", "Cancel")} }
-                    }
-                }
-                if let Some(request) = pending_playback() {
-                    div { class: "notice",
-                        {language().pick("Плеер уже воспроизводит другой файл. Заменить его? ", "The player is already playing another file. Replace it? ")}
-                        button { class: "secondary", onclick: { let request = request.clone(); move |_| { pending_playback.set(None); launch_playback(request.clone(), endpoint(), busy, web_player, server); } }, {language().pick("Заменить", "Replace")} }
-                        button { class: "secondary", onclick: move |_| pending_playback.set(None), {language().pick("Отмена", "Cancel")} }
-                    }
-                }
-                if let Some(playback) = web_player() {
-                    div { style: if page() == Page::Rutube { "display:none" } else { "display:block" }, class: if page() == Page::Player { "web-player" } else { "web-player mini" },
-                        header {
-                            strong { title: "{playback.file.name}", "{playback.file.name}" }
-                            if page() != Page::Player {
-                                button { class: "secondary", onclick: move |_| { return_page.set(page()); page.set(Page::Player); }, {language().pick("Развернуть", "Expand")} }
-                            } else {
-                                button { class: "secondary", onclick: move |_| page.set(return_page()), {language().pick("Свернуть", "Minimize")} }
+                    nav { class: "rail-nav", "aria-label": language().pick("Основная навигация", "Primary navigation"),
+                        NavButton {
+                            label: language().pick("Главная", "Home").to_string(),
+                            icon: "home",
+                            active: page() == Page::Home,
+                            count: None,
+                            onclick: move |_| page.set(Page::Home),
+                        }
+                        NavButton {
+                            label: language().pick("Поиск", "Search").to_string(),
+                            icon: "search",
+                            active: page() == Page::Search,
+                            count: None,
+                            onclick: move |_| page.set(Page::Search),
+                        }
+                        NavButton {
+                            label: language().pick("Медиатека", "Library").to_string(),
+                            icon: "library",
+                            active: page() == Page::Library,
+                            count: Some(cards.read().len()).filter(|count| *count > 0),
+                            onclick: move |_| page.set(Page::Library),
+                        }
+                        div { class: "rail-divider" }
+                        NavButton {
+                            label: language().pick("Избранное", "Favorites").to_string(),
+                            icon: "heart",
+                            active: page() == Page::Favorites,
+                            count: Some(favorite_count).filter(|count| *count > 0),
+                            onclick: move |_| page.set(Page::Favorites),
+                        }
+                        NavButton {
+                            label: language().pick("Смотреть позже", "Watch later").to_string(),
+                            icon: "clock",
+                            active: page() == Page::WatchLater,
+                            count: Some(watch_later_count).filter(|count| *count > 0),
+                            onclick: move |_| page.set(Page::WatchLater),
+                        }
+                        NavButton {
+                            label: language().pick("История", "History").to_string(),
+                            icon: "history",
+                            active: page() == Page::History,
+                            count: Some(history_count).filter(|count| *count > 0),
+                            onclick: move |_| page.set(Page::History),
+                        }
+                        if cfg!(feature = "rutube-prototype") {
+                            NavButton {
+                                label: "Rutube".to_string(),
+                                icon: "external",
+                                active: page() == Page::Rutube,
+                                count: None,
+                                onclick: move |_| {
+                                    document::eval("window.__pirateCinemaRutubeActive=true; window.__pirateCinemaArt?.pause();");
+                                    page.set(Page::Rutube);
+                                },
                             }
-                            button { class: "secondary", onclick: move |_| { PLAYBACK_GENERATION.fetch_add(1, Ordering::AcqRel); spawn(async move { flush_web_progress().await; web_player.set(None); let _=tokio::task::spawn_blocking(pirate_cinema_core::web_stream::close).await; if page() == Page::Player { page.set(return_page()); } }); }, {language().pick("Закрыть", "Close")} }
                         }
-                        div {
-                            class: "artplayer-host",
-                            id: "pirate-cinema-video",
-                            "data-playback-key": "{playback.torrent.hash}-{playback.file.id}",
-                            "data-hls-url": "{playback.url}",
-                            "data-probe-url": "{playback.probe_url}",
-                            "data-heartbeat-url": "{playback.heartbeat_url}",
-                            "data-title": "{playback.file.name}",
+                    }
+                    div { class: "rail-bottom",
+                        div { class: if engine_online { "rail-engine" } else { "rail-engine offline" },
+                            span { class: "rail-engine-dot" }
+                            span { class: "engine-copy", "{engine_label}" }
+                        }
+                        NavButton {
+                            label: language().pick("Настройки", "Settings").to_string(),
+                            icon: "settings",
+                            active: page() == Page::Settings,
+                            count: None,
+                            onclick: move |_| page.set(Page::Settings),
+                        }
+                        div { class: "rail-version", "Pirate Cinema · v{VERSION}" }
+                    }
+                }
+                div { class: "app-workspace",
+                    header { class: "app-topbar",
+                        button {
+                            class: "icon-button subtle topbar-back",
+                            style: if can_go_back { "" } else { "visibility:hidden;pointer-events:none;" },
+                            disabled: !can_go_back,
+                            title: language().pick("Назад", "Back"),
+                            "aria-label": language().pick("Назад", "Back"),
+                            onclick: move |_| match page() {
+                                Page::Player => page.set(return_page()),
+                                Page::Detail => page.set(Page::Library),
+                                _ => page.set(Page::Home),
+                            },
+                            Icon { name: "arrow-left", size: 18 }
+                        }
+                        form {
+                            class: "topbar-search",
+                            onsubmit: move |event| {
+                                event.prevent_default();
+                                run_search();
+                            },
+                            Icon { name: "search", size: 18 }
+                            input {
+                                id: "pc-global-search",
+                                value: "{query}",
+                                placeholder: language().pick("Найти фильм, сериал или вставить magnet-ссылку", "Find a film, series, or paste a magnet link"),
+                                "aria-label": language().pick("Поиск по раздачам", "Search releases"),
+                                oninput: move |event| query.set(event.value()),
+                            }
+                            span { class: "search-shortcut", "Enter" }
+                            button {
+                                r#type: "submit",
+                                class: "search-submit",
+                                disabled: busy(),
+                                if busy() { {language().pick("Ищем…", "Searching…")} } else { {language().pick("Найти", "Find")} }
+                            }
+                        }
+                        div { class: "topbar-actions",
+                            div { class: if engine_online { "engine-pill" } else { "engine-pill offline" },
+                                span { class: "engine-dot" }
+                                span { class: "engine-copy", "{engine_label}" }
+                            }
+                            button {
+                                class: "icon-button",
+                                title: language().pick("Обновить описания и постеры", "Refresh metadata"),
+                                "aria-label": language().pick("Обновить описания и постеры", "Refresh metadata"),
+                                disabled: busy(),
+                                onclick: sync_metadata,
+                                Icon { name: "refresh", size: 18 }
+                            }
+                            button {
+                                class: if page() == Page::Settings { "icon-button active" } else { "icon-button" },
+                                title: language().pick("Настройки", "Settings"),
+                                "aria-label": language().pick("Настройки", "Settings"),
+                                onclick: move |_| page.set(if page() == Page::Settings { Page::Home } else { Page::Settings }),
+                                Icon { name: "settings", size: 18 }
+                            }
+                        }
+                    }
+                    main { class: "app-content",
+                        if !server.read().error.is_empty() {
+                            div { class: "app-notice error", role: "alert",
+                                span { "{server.read().error}" }
+                                button {
+                                    class: "button ghost small",
+                                    onclick: move |_| server.write().error.clear(),
+                                    Icon { name: "x", size: 14 }
+                                    {language().pick("Закрыть", "Dismiss")}
+                                }
+                            }
+                        }
+                        if let Some(error) = STARTUP_MIGRATION_ERROR.get() {
+                            div { class: "app-notice error", role: "alert", "{error}" }
+                        }
+                        if let Some(update) = startup_update() {
+                            div { class: "app-notice",
+                                span { {language().pick("Доступна новая версия Pirate Cinema", "A new Pirate Cinema version is available")} " {update.version}." }
+                                button {
+                                    class: "button secondary small",
+                                    onclick: move |_| page.set(Page::Settings),
+                                    {language().pick("Открыть настройки", "Open settings")}
+                                }
+                            }
+                        }
+                        if let Some((item, open)) = pending_duplicate() {
+                            div { class: "app-notice",
+                                span { {language().pick("В медиатеке уже есть другой релиз с этим названием. Добавить его всё равно?", "The library already contains another release with this title. Add it anyway?")} }
+                                div { class: "notice-actions",
+                                    button {
+                                        class: "button primary small",
+                                        onclick: {
+                                            let item = item.clone();
+                                            move |_| {
+                                                pending_duplicate.set(None);
+                                                add_search_result(item.clone(), open, endpoint(), page, busy, selected, files, server, cards, recent);
+                                            }
+                                        },
+                                        {language().pick("Добавить", "Add")}
+                                    }
+                                    button {
+                                        class: "button ghost small",
+                                        onclick: move |_| pending_duplicate.set(None),
+                                        {language().pick("Отмена", "Cancel")}
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(request) = pending_playback() {
+                            div { class: "app-notice",
+                                span { {language().pick("Плеер уже воспроизводит другой файл. Заменить его?", "The player is already playing another file. Replace it?")} }
+                                div { class: "notice-actions",
+                                    button {
+                                        class: "button primary small",
+                                        onclick: {
+                                            let request = request.clone();
+                                            move |_| {
+                                                pending_playback.set(None);
+                                                launch_playback(request.clone(), endpoint(), busy, web_player, server);
+                                            }
+                                        },
+                                        {language().pick("Заменить", "Replace")}
+                                    }
+                                    button {
+                                        class: "button ghost small",
+                                        onclick: move |_| pending_playback.set(None),
+                                        {language().pick("Отмена", "Cancel")}
+                                    }
+                                }
+                            }
+                        }
+                        RutubePrototype { active: page() == Page::Rutube, home: page() == Page::Home, on_open: move |_| page.set(Page::Rutube) }
+                        if let Some(playback) = web_player() {
+                            if page() != Page::Rutube {
+                                div {
+                                    class: if page() == Page::Player { "web-player" } else { "web-player mini" },
+                                    header {
+                                        div { class: "player-heading",
+                                            small { {language().pick("Сейчас играет", "Now playing")} }
+                                            strong { title: "{playback.file.name}", "{playback.file.name}" }
+                                        }
+                                        div { class: "player-actions",
+                                            if page() != Page::Player {
+                                                button {
+                                                    class: "button secondary small",
+                                                    onclick: move |_| { return_page.set(page()); page.set(Page::Player); },
+                                                    {language().pick("Развернуть", "Expand")}
+                                                }
+                                            } else {
+                                                button {
+                                                    class: "button secondary small",
+                                                    onclick: move |_| page.set(return_page()),
+                                                    {language().pick("Свернуть", "Minimize")}
+                                                }
+                                            }
+                                            button {
+                                                class: "icon-button small",
+                                                title: language().pick("Закрыть плеер", "Close player"),
+                                                "aria-label": language().pick("Закрыть плеер", "Close player"),
+                                                onclick: move |_| {
+                                                    PLAYBACK_GENERATION.fetch_add(1, Ordering::AcqRel);
+                                                    spawn(async move {
+                                                        flush_web_progress().await;
+                                                        web_player.set(None);
+                                                        let _ = tokio::task::spawn_blocking(pirate_cinema_core::web_stream::close).await;
+                                                        if page() == Page::Player {
+                                                            page.set(return_page());
+                                                        }
+                                                    });
+                                                },
+                                                Icon { name: "x", size: 16 }
+                                            }
+                                        }
+                                    }
+                                    div {
+                                        class: "artplayer-host",
+                                        id: "pirate-cinema-video",
+                                        "data-playback-key": "{playback.torrent.hash}-{playback.file.id}",
+                                        "data-hls-url": "{playback.url}",
+                                        "data-probe-url": "{playback.probe_url}",
+                                        "data-heartbeat-url": "{playback.heartbeat_url}",
+                                        "data-title": "{playback.file.name}",
+                                    }
+                                }
+                            }
+                        }
+                        match page() {
+                            Page::Home => rsx! {
+                                Home {
+                                    language: language(),
+                                    recent: recent(),
+                                    cards: cards(),
+                                    on_open: open_saved,
+                                    on_resume: resume_continue,
+                                    on_collection: toggle_collection,
+                                    on_browse: move |_| page.set(Page::Library),
+                                    on_search: move |_| page.set(Page::Search),
+                                }
+                            },
+                            Page::Search => rsx! {
+                                SearchPage {
+                                    language: language(),
+                                    query: query(),
+                                    metadata: search_metadata(),
+                                    poster: search_poster(),
+                                    results: results(),
+                                    busy: busy(),
+                                    on_add: add_result,
+                                }
+                            },
+                            Page::Library => rsx! {
+                                Library {
+                                    language: language(),
+                                    cards: cards(),
+                                    busy: busy(),
+                                    status: metadata_status(),
+                                    on_open: open_saved,
+                                    on_collection: toggle_collection,
+                                    on_sync: sync_metadata,
+                                }
+                            },
+                            Page::Favorites => rsx! {
+                                CollectionPage {
+                                    language: language(),
+                                    cards: cards(),
+                                    list: CollectionList::Favorites,
+                                    on_open: open_saved,
+                                    on_collection: toggle_collection,
+                                    on_browse: move |_| page.set(Page::Library),
+                                }
+                            },
+                            Page::WatchLater => rsx! {
+                                CollectionPage {
+                                    language: language(),
+                                    cards: cards(),
+                                    list: CollectionList::WatchLater,
+                                    on_open: open_saved,
+                                    on_collection: toggle_collection,
+                                    on_browse: move |_| page.set(Page::Library),
+                                }
+                            },
+                            Page::History => rsx! {
+                                HistoryPage {
+                                    language: language(),
+                                    recent: recent(),
+                                    cards: cards(),
+                                    on_open: open_saved,
+                                    on_resume: resume_continue,
+                                    on_browse: move |_| page.set(Page::Library),
+                                }
+                            },
+                            Page::Detail => rsx! {
+                                Detail {
+                                    language: language(),
+                                    torrent: detail_torrent.clone(),
+                                    metadata: detail_metadata.clone(),
+                                    media_type: detail_media_type.clone(),
+                                    poster: detail_poster.clone(),
+                                    favorite: detail_favorite,
+                                    watch_later: detail_watch_later,
+                                    files: files(),
+                                    busy: busy(),
+                                    metadata_status: metadata_status(),
+                                    on_back: move |_| page.set(Page::Library),
+                                    on_play: play_file,
+                                    on_media_type: update_media_type,
+                                    on_title: update_title,
+                                    on_refresh_metadata: refresh_selected_metadata,
+                                    on_remove: remove_saved,
+                                    on_collection: toggle_collection,
+                                }
+                            },
+                            Page::Player => rsx! {
+                                if web_player().is_none() {
+                                    section { class: "screen now-playing-screen",
+                                        div { class: "empty-state",
+                                            div { class: "empty-state-icon", Icon { name: "play", size: 30 } }
+                                            h1 { {language().pick("Сейчас ничего не играет", "Nothing is playing")} }
+                                            p { {language().pick("Выберите фильм или серию в медиатеке, чтобы начать просмотр.", "Choose a film or episode in the library to start watching.")} }
+                                            button {
+                                                class: "button primary",
+                                                onclick: move |_| page.set(Page::Library),
+                                                Icon { name: "library", size: 16 }
+                                                {language().pick("Открыть медиатеку", "Open library")}
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            Page::Rutube => rsx! {},
+                            Page::Settings => rsx! {
+                                Settings {
+                                    language,
+                                    busy,
+                                    server,
+                                    cards,
+                                    recent,
+                                    metadata_status,
+                                    on_sync: sync_metadata,
+                                }
+                            },
                         }
                     }
                 }
-                RutubePrototype { active: page() == Page::Rutube, home: page() == Page::Home, on_open: move |_| page.set(Page::Rutube) }
-                match page() {
-                    Page::Home => rsx! { Home { language: language(), recent: recent(), cards: cards(), on_open: open_saved } },
-                    Page::Search => rsx! { SearchPage { language: language(), query: query(), metadata: search_metadata(), poster: search_poster(), results: results(), on_add: add_result } },
-                    Page::Library => rsx! { Library { language: language(), cards: cards(), busy: busy(), status: metadata_status(), on_open: open_saved, on_sync: sync_metadata } },
-                    Page::Detail => rsx! { Detail { language: language(), torrent: selected(), metadata: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.metadata.clone())), media_type: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.media_type.clone())), poster: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.poster.clone())), generated_applied: selected.read().as_ref().and_then(|torrent| cards.read().iter().find(|card| card.torrent.hash == torrent.hash).and_then(|card| card.generated_poster.as_ref()).map(|poster| poster.applied)).unwrap_or(false), thumbnail_busy: thumbnail_busy(), thumbnail_status: thumbnail_status(), thumbnail_preview: thumbnail_preview(), files: files(), busy: busy(), metadata_status: metadata_status(), on_back: move |_| page.set(Page::Library), on_play: play_file, on_media_type: update_media_type, on_title: update_title, on_refresh_metadata: refresh_selected_metadata, on_generate_thumbnail: generate_thumbnail, on_cancel_thumbnail: cancel_thumbnail, on_apply_thumbnail: apply_thumbnail, on_restore_thumbnail: restore_original_thumbnail, on_remove: remove_saved } },
-                    Page::Player => rsx! { h1 { {language().pick("Просмотр", "Now playing")} } },
-                    Page::Rutube => rsx! {},
-                    Page::Settings => rsx! { Settings { language, busy, server, cards, recent, metadata_status, online_icon: online_icon.clone(), on_sync: sync_metadata } },
-                }
             }
-        } }
+        }
     }
 }
 
@@ -1848,56 +2015,6 @@ impl Drop for ShutdownGuard {
     }
 }
 
-#[component]
-fn Welcome(on_complete: EventHandler<Preferences>) -> Element {
-    let initial = INITIAL_PREFERENCES
-        .get()
-        .cloned()
-        .unwrap_or_else(default_preferences);
-    let mut english = use_signal(|| initial.language == Language::English);
-    let submit = move |_| {
-        let preferences = Preferences {
-            language: if english() {
-                Language::English
-            } else {
-                Language::Russian
-            },
-            onboarding_complete: true,
-            torznab_url: initial.torznab_url.clone(),
-            torznab_api_key: initial.torznab_api_key.clone(),
-            close_to_tray: initial.close_to_tray,
-        };
-        on_complete.call(preferences);
-    };
-    rsx! {
-        main { class: "welcome-shell",
-            section { class: "welcome-card",
-                h1 { if english() { "Welcome" } else { "Добро пожаловать" } }
-                p { class: "lead", if english() { "Embedded librqbit and ArtPlayer are ready." } else { "Встроенные librqbit и ArtPlayer готовы." } }
-                div { class: "filters",
-                    button { class: if !english() { "primary" } else { "secondary" }, onclick: move |_| english.set(false), "Русский" }
-                    button { class: if english() { "primary" } else { "secondary" }, onclick: move |_| english.set(true), "English" }
-                }
-                p { "Встроенный ArtPlayer · локальное воспроизведение" }
-                button { class: "primary welcome-action", onclick: submit, if english() { "Continue" } else { "Начать" } }
-            }
-        }
-    }
-}
-
-#[component]
-fn NavButton(
-    label: &'static str,
-    icon: String,
-    active: bool,
-    onclick: EventHandler<MouseEvent>,
-) -> Element {
-    rsx! { button { class: if active { "active" } else { "" }, onclick: move |event| onclick.call(event),
-        if icon.is_empty() { i { class: "search-icon" } } else { img { class: "nav-icon", src: "{icon}", alt: "" } }
-        span { "{label}" }
-    } }
-}
-
 fn png_data_uri(bytes: &[u8]) -> String {
     format!(
         "data:image/png;base64,{}",
@@ -1910,702 +2027,6 @@ fn jpeg_data_uri(bytes: &[u8]) -> String {
         "data:image/jpeg;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(bytes)
     )
-}
-
-#[component]
-fn Home(
-    language: Language,
-    recent: Vec<ContinueItem>,
-    cards: Vec<LibraryCard>,
-    on_open: EventHandler<Torrent>,
-) -> Element {
-    let recently_played = recent
-        .into_iter()
-        .filter_map(|item| {
-            cards
-                .iter()
-                .find(|card| card.torrent.hash.eq_ignore_ascii_case(&item.torrent.hash))
-                .cloned()
-                .map(|card| (item, card))
-        })
-        .collect::<Vec<_>>();
-    rsx! {
-        section { class: "page",
-            h1 { {language.pick("Недавно запускали", "Recently played")} }
-            p { class: "lead", {language.pick("Фильмы и сериалы из вашей локальной истории.", "Movies and series from your local history.")} }
-            if recently_played.is_empty() {
-                div { class: "panel", {language.pick("Здесь появятся фильмы и сериалы после первого запуска.", "Movies and series will appear here after the first launch.")} }
-            } else {
-                div { class: "home-recent",
-                    for (item, card) in recently_played {
-                        button { class: "card", onclick: { let torrent = item.torrent.clone(); move |_| on_open.call(torrent.clone()) },
-                            div { class: "poster",
-                                if let Some(poster) = card.poster { img { src: "{poster}", alt: "" } } else { "▶" }
-                            }
-                            strong { title: "{item.title}", "{item.title}" }
-                            small { "{item.file_name} · {clock(item.position)} / {clock(item.duration)}" }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn SearchPage(
-    language: Language,
-    query: String,
-    metadata: Option<Movie>,
-    poster: String,
-    results: Vec<SearchResult>,
-    on_add: EventHandler<(SearchResult, bool)>,
-) -> Element {
-    let mut quality = use_signal(|| "all".to_owned());
-    let mut qualities = results
-        .iter()
-        .map(|item| release_quality(&item.title))
-        .collect::<Vec<_>>();
-    qualities.sort_unstable();
-    qualities.dedup();
-    let selected_quality = if qualities.contains(&quality().as_str()) {
-        quality()
-    } else {
-        "all".to_owned()
-    };
-    let visible = results
-        .into_iter()
-        .filter(|item| {
-            selected_quality == "all" || release_quality(&item.title) == selected_quality
-        })
-        .collect::<Vec<_>>();
-    rsx! {
-        section { class: "page search-layout",
-            aside { class: "search-feature",
-                if !poster.is_empty() { div { class: "poster", img { src: "{poster}", alt: "" } } }
-                div {
-                    h1 { if let Some(item) = metadata.as_ref() { "{item.title}" } else if query.is_empty() { {language.pick("Поиск", "Search")} } else { "{query}" } }
-                    if let Some(item) = metadata.as_ref() {
-                        p { class: "lead", "{item.year.map(|year| year.to_string()).unwrap_or_default()}" if let Some(rating) = item.rating { " · ★ {rating:.1}" } }
-                        if let Some(overview) = item.overview.as_ref() { p { class: "overview", "{overview}" } }
-                    } else { p { class: "lead", {language.pick("Выберите подходящую раздачу справа.", "Choose a suitable release on the right.")} } }
-                }
-            }
-            div { class: "search-results",
-                h2 { {language.pick("Раздачи", "Releases")} }
-                if !qualities.is_empty() {
-                    div { class: "filters",
-                        button { class: if selected_quality == "all" { "primary" } else { "secondary" }, onclick: move |_| quality.set("all".into()), {language.pick("Все", "All")} }
-                        for item in qualities {
-                            button { class: if selected_quality == item { "primary" } else { "secondary" }, onclick: { let item = item.to_owned(); move |_| quality.set(item.clone()) }, if item == "Другое" { {language.pick("Другое", "Other")} } else { "{item}" } }
-                        }
-                    }
-                }
-                if visible.is_empty() { div { class: "empty", {language.pick("Введите название в строке сверху или измените фильтр.", "Enter a title above or change the filter.")} } } else { div { class: "results",
-                    for item in visible {
-                        article { class: "result",
-                            strong { title: "{item.title}", "[{release_quality(&item.title)}] {item.title}" }
-                            span { "{item.size}" }
-                            small { if language == Language::Russian { "{item.seeders} сидов" } else { "{item.seeders} seeders" } }
-                            button { class: "primary result-action", onclick: { let item = item.clone(); move |_| on_add.call((item.clone(), false)) }, {language.pick("Добавить", "Add")} }
-                            button { class: "primary result-action", onclick: { let item = item.clone(); move |_| on_add.call((item.clone(), true)) }, {language.pick("Смотреть", "Watch")} }
-                        }
-                    }
-                } }
-            }
-        }
-    }
-}
-
-#[component]
-fn Library(
-    language: Language,
-    cards: Vec<LibraryCard>,
-    busy: bool,
-    status: String,
-    on_open: EventHandler<Torrent>,
-    on_sync: EventHandler<MouseEvent>,
-) -> Element {
-    let mut filter = use_signal(String::new);
-    let mut kind = use_signal(|| "all".to_owned());
-    let mut watched = use_signal(|| "all".to_owned());
-    let mut genre = use_signal(|| "all".to_owned());
-    let mut year = use_signal(|| "all".to_owned());
-    let mut order = use_signal(|| "recent".to_owned());
-    let mut genres = cards
-        .iter()
-        .flat_map(|card| {
-            card.metadata
-                .as_ref()
-                .into_iter()
-                .flat_map(|item| item.genres.iter().cloned())
-        })
-        .collect::<Vec<_>>();
-    genres.sort();
-    genres.dedup();
-    let mut years = cards
-        .iter()
-        .filter_map(|card| card.metadata.as_ref().and_then(|item| item.year))
-        .collect::<Vec<_>>();
-    years.sort_unstable_by(|left, right| right.cmp(left));
-    years.dedup();
-    let mut visible = cards.clone();
-    let needle = filter().trim().to_lowercase();
-    visible.retain(|card| {
-        let title = card
-            .metadata
-            .as_ref()
-            .map_or(card.torrent.title.as_str(), |item| item.title.as_str());
-        (needle.is_empty() || title.to_lowercase().contains(&needle))
-            && (kind() == "all" || card.media_type.as_deref() == Some(kind().as_str()))
-            && (genre() == "all"
-                || card
-                    .metadata
-                    .as_ref()
-                    .is_some_and(|item| item.genres.contains(&genre())))
-            && (year() == "all"
-                || card
-                    .metadata
-                    .as_ref()
-                    .and_then(|item| item.year)
-                    .map(|value| value.to_string())
-                    .as_deref()
-                    == Some(year().as_str()))
-            && match watched().as_str() {
-                "viewed" => card.viewed,
-                "unviewed" => !card.viewed,
-                _ => true,
-            }
-    });
-    match order().as_str() {
-        "title" => visible.sort_by_key(|card| {
-            card.metadata
-                .as_ref()
-                .map_or(card.torrent.title.as_str(), |item| item.title.as_str())
-                .to_lowercase()
-        }),
-        "year" => visible.sort_by_key(|card| {
-            std::cmp::Reverse(
-                card.metadata
-                    .as_ref()
-                    .and_then(|item| item.year)
-                    .unwrap_or(0),
-            )
-        }),
-        _ => {}
-    }
-    rsx! {
-        section { class: "page",
-            div { class: "detail-head",
-                h1 { {language.pick("Медиатека", "Library")} }
-                button { class: "secondary", disabled: busy, onclick: move |event| on_sync.call(event), if busy { {language.pick("Обновляем…", "Updating…")} } else { {language.pick("Обновить описания и постеры", "Refresh descriptions and posters")} } }
-            }
-            p { class: "lead", if language == Language::Russian { "Раздач: {cards.len()}. Метаданные, постеры и история хранятся в локальной SQLite." } else { "Items: {cards.len()}. Metadata, posters, and history are stored in local SQLite." } }
-            div { class: "filters",
-                input { value: "{filter}", placeholder: language.pick("Фильтр по названию", "Filter by title"), oninput: move |event| filter.set(event.value()) }
-                select { value: "{kind}", onchange: move |event| kind.set(event.value()), option { value: "all", {language.pick("Все типы", "All types")} } option { value: "movie", {language.pick("Фильмы", "Movies")} } option { value: "series", {language.pick("Сериалы", "Series")} } }
-                select { value: "{watched}", onchange: move |event| watched.set(event.value()), option { value: "all", {language.pick("Любой статус", "Any status")} } option { value: "viewed", {language.pick("Просмотрено", "Viewed")} } option { value: "unviewed", {language.pick("Не просмотрено", "Not viewed")} } }
-                select { value: "{genre}", onchange: move |event| genre.set(event.value()), option { value: "all", {language.pick("Любой жанр", "Any genre")} } for item in genres { option { value: "{item}", "{item}" } } }
-                select { value: "{year}", onchange: move |event| year.set(event.value()), option { value: "all", {language.pick("Любой год", "Any year")} } for item in years { option { value: "{item}", "{item}" } } }
-                select { value: "{order}", onchange: move |event| order.set(event.value()), option { value: "recent", {language.pick("Недавно добавленные", "Recently added")} } option { value: "title", {language.pick("По названию", "By title")} } option { value: "year", {language.pick("По году", "By year")} } }
-            }
-            if !status.is_empty() { div { class: "notice", "{status}" } }
-            if visible.is_empty() {
-                div { class: "empty", {language.pick("Медиатека пока пуста.", "The library is empty.")} }
-            } else {
-                div { class: "grid",
-                    for card in visible {
-                        article { class: "card", title: "{card.torrent.title}",
-                            button { class: "card-open", onclick: { let torrent = card.torrent.clone(); move |_| on_open.call(torrent.clone()) },
-                            div { class: "poster", if let Some(poster) = card.poster.as_ref() { img { src: "{poster}", alt: "" } } else { "▶" } }
-                            strong { "{card.metadata.as_ref().map(|item| item.title.as_str()).unwrap_or(&card.torrent.title)}" }
-                            small { class: if card.viewed { "viewed" } else { "" },
-                                if card.viewed { {language.pick("✓ Просмотрено", "✓ Viewed")} } else if let Some(year) = card.metadata.as_ref().and_then(|item| item.year) { "{year}" } else { "BTIH · {short_hash(&card.torrent.hash)}" }
-                            }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn Detail(
-    language: Language,
-    torrent: Option<Torrent>,
-    metadata: Option<MediaMetadata>,
-    media_type: Option<String>,
-    poster: Option<String>,
-    generated_applied: bool,
-    thumbnail_busy: bool,
-    thumbnail_status: String,
-    thumbnail_preview: Option<String>,
-    files: Vec<PlayableFile>,
-    busy: bool,
-    metadata_status: String,
-    on_back: EventHandler<MouseEvent>,
-    on_play: EventHandler<(VideoFile, bool, bool)>,
-    on_media_type: EventHandler<String>,
-    on_title: EventHandler<String>,
-    on_refresh_metadata: EventHandler<MouseEvent>,
-    on_generate_thumbnail: EventHandler<VideoFile>,
-    on_cancel_thumbnail: EventHandler<MouseEvent>,
-    on_apply_thumbnail: EventHandler<MouseEvent>,
-    on_restore_thumbnail: EventHandler<MouseEvent>,
-    on_remove: EventHandler<MouseEvent>,
-) -> Element {
-    let saved_preferences = torrent
-        .as_ref()
-        .and_then(|torrent| {
-            history_path().ok().and_then(|path| {
-                HistoryStore::open(&path)
-                    .ok()?
-                    .playback_preferences(&torrent.hash)
-                    .ok()
-            })
-        })
-        .unwrap_or_default();
-    let mut confirm_remove = use_signal(|| false);
-    let mut file_filter = use_signal(String::new);
-    let mut season = use_signal(|| {
-        saved_preferences
-            .season
-            .map_or_else(|| "all".into(), |value| value.to_string())
-    });
-    let mut episode = use_signal(|| {
-        saved_preferences
-            .episode
-            .map_or_else(|| "all".into(), |value| value.to_string())
-    });
-    let mut file_kind = use_signal(|| "all".to_owned());
-    let mut auto_next = use_signal(|| saved_preferences.auto_next);
-    let mut thumbnail_file_id = use_signal(|| 0_i64);
-    let Some(torrent) = torrent else {
-        return rsx! { section { class: "page", div { class: "empty", {language.pick("Раздача не выбрана", "No torrent selected")} } } };
-    };
-    let mut title_edit = use_signal(|| {
-        metadata
-            .as_ref()
-            .map_or_else(|| torrent.title.clone(), |item| item.title.clone())
-    });
-    let needle = file_filter().trim().to_lowercase();
-    let mut seasons = files
-        .iter()
-        .filter_map(|item| file_season(&item.file.path))
-        .collect::<Vec<_>>();
-    seasons.sort_unstable();
-    seasons.dedup();
-    let season_progress = seasons
-        .iter()
-        .map(|number| {
-            let episodes = files
-                .iter()
-                .filter(|item| file_season(&item.file.path) == Some(*number))
-                .collect::<Vec<_>>();
-            (
-                *number,
-                episodes.iter().filter(|item| item.viewed).count(),
-                episodes.len(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let mut episodes = files
-        .iter()
-        .filter(|item| {
-            season() == "all"
-                || file_season(&item.file.path)
-                    .map(|value| value.to_string())
-                    .as_deref()
-                    == Some(season().as_str())
-        })
-        .filter_map(|item| file_episode(&item.file.path))
-        .collect::<Vec<_>>();
-    episodes.sort_unstable();
-    episodes.dedup();
-    let has_movies = files.iter().any(|item| !is_episode(&item.file.path));
-    let has_episodes = files.iter().any(|item| is_episode(&item.file.path));
-    let files_empty = files.is_empty();
-    let thumbnail_source = files
-        .iter()
-        .find(|item| item.file.id == thumbnail_file_id())
-        .or_else(|| files.first())
-        .map(|item| item.file.clone());
-    let thumbnail_source_id = thumbnail_source.as_ref().map_or(0, |file| file.id);
-    let display_poster = thumbnail_preview.as_ref().or(poster.as_ref()).cloned();
-    let has_next_file = files.len() > 1;
-    let mut visible_files = files
-        .iter()
-        .filter(|item| {
-            (needle.is_empty()
-                || item.file.name.to_lowercase().contains(&needle)
-                || item.file.path.to_lowercase().contains(&needle))
-                && (season() == "all"
-                    || file_season(&item.file.path)
-                        .map(|value| value.to_string())
-                        .as_deref()
-                        == Some(season().as_str()))
-                && (episode() == "all"
-                    || file_episode(&item.file.path)
-                        .map(|value| value.to_string())
-                        .as_deref()
-                        == Some(episode().as_str()))
-                && match file_kind().as_str() {
-                    "movies" => !is_episode(&item.file.path),
-                    "episodes" => is_episode(&item.file.path),
-                    _ => true,
-                }
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    visible_files.sort_by_key(|item| {
-        (
-            is_episode(&item.file.path),
-            file_season(&item.file.path).unwrap_or(0),
-            file_episode(&item.file.path).unwrap_or(0),
-            item.file.path.to_lowercase(),
-        )
-    });
-    rsx! {
-        section { class: "page",
-            div { class: "detail-hero", style: if let Some(image) = display_poster.as_ref() { format!("--detail-art:url('{}')", image) } else { String::new() },
-            div { class: "detail-layout",
-                div { class: "detail-artwork",
-                    div { class: "detail-cover-wrap",
-                        if let Some(poster) = display_poster.as_ref() { img { class: "detail-cover", src: "{poster}", alt: "" } } else { div { class: "detail-cover poster", "▶" } }
-                        if thumbnail_preview.is_some() { span { class: "preview-badge", {language.pick("Предпросмотр", "Preview")} } }
-                    }
-                    div { class: "thumbnail-panel",
-                        strong { {language.pick("Обложка из видео", "Cover from video")} }
-                        if files.len() > 1 {
-                            select { value: "{thumbnail_source_id}", disabled: thumbnail_busy, onchange: move |event| thumbnail_file_id.set(event.value().parse().unwrap_or(0)),
-                                for item in files.iter() { option { value: "{item.file.id}", "{item.file.name}" } }
-                            }
-                        }
-                        div { class: "thumbnail-actions",
-                            if thumbnail_busy {
-                                button { class: "secondary", onclick: move |event| on_cancel_thumbnail.call(event), {language.pick("Отменить", "Cancel")} }
-                            } else if let Some(source) = thumbnail_source.as_ref() {
-                                button { class: "primary", onclick: { let source = source.clone(); move |_| on_generate_thumbnail.call(source.clone()) }, {language.pick("Сгенерировать обложку", "Generate cover")} }
-                            }
-                            if thumbnail_preview.is_some() {
-                                button { class: "primary", onclick: move |event| on_apply_thumbnail.call(event), {language.pick("Применить", "Apply")} }
-                            }
-                            if generated_applied || thumbnail_preview.is_some() {
-                                button { class: "secondary", onclick: move |event| on_restore_thumbnail.call(event), {language.pick("Вернуть оригинал", "Use original")} }
-                            }
-                        }
-                        if thumbnail_busy { div { class: "thumbnail-progress", span {} } }
-                        if !thumbnail_status.is_empty() { small { "{thumbnail_status}" } }
-                    }
-                }
-                div {
-                    div { class: "detail-head",
-                        div { h1 { "{metadata.as_ref().map(|item| item.title.as_str()).unwrap_or(&torrent.title)}" } span { class: "media-hash", "BTIH · {short_hash(&torrent.hash)}" } }
-                        button { class: "secondary", onclick: move |event| on_back.call(event), {language.pick("Назад к медиатеке", "Back to library")} }
-                    }
-                    if let Some(item) = metadata.as_ref() {
-                        p { class: "lead",
-                            if let Some(year) = item.year { "{year}" }
-                            if let Some(rating) = item.rating { " · ★ {rating:.1}" }
-                        }
-                        if let Some(overview) = item.overview.as_ref() { p { class: "overview", "{overview}" } }
-                    } else { p { class: "lead", {language.pick("Локальное описание ещё не загружено.", "The local description has not been loaded yet.")} } }
-                    div { class: "filters",
-                        button { class: if media_type.as_deref() == Some("movie") { "primary" } else { "secondary" }, onclick: move |_| on_media_type.call("movie".into()), {language.pick("Фильм", "Movie")} }
-                        button { class: if media_type.as_deref() == Some("series") { "primary" } else { "secondary" }, onclick: move |_| on_media_type.call("series".into()), {language.pick("Сериал", "Series")} }
-                    }
-                    div { class: "filters",
-                        input { value: "{title_edit}", placeholder: language.pick("Название в медиатеке", "Library title"), oninput: move |event| title_edit.set(event.value()) }
-                        button { class: "secondary", onclick: move |_| on_title.call(title_edit()), {language.pick("Сохранить название", "Save title")} }
-                        button { class: "secondary", disabled: busy, onclick: move |event| on_refresh_metadata.call(event), {language.pick("Обновить описание и постер", "Refresh description and poster")} }
-                    }
-                    if !metadata_status.is_empty() { div { class: "notice", "{metadata_status}" } }
-                    if confirm_remove() {
-                        div { class: "notice",
-                            {language.pick("Убрать раздачу из медиатеки? История просмотра останется локально. ", "Remove this torrent from the library? Playback history will remain local. ")}
-                            button { class: "secondary", onclick: move |event| on_remove.call(event), {language.pick("Удалить", "Remove")} }
-                            button { class: "secondary", onclick: move |_| confirm_remove.set(false), {language.pick("Отмена", "Cancel")} }
-                        }
-                    } else {
-                        button { class: "secondary", onclick: move |_| confirm_remove.set(true), {language.pick("Убрать из медиатеки", "Remove from library")} }
-                    }
-                }
-            }
-            }
-            h2 { {language.pick("Выберите файл", "Choose a file")} }
-            if has_next_file { label { class: "auto-next", input { r#type: "checkbox", checked: auto_next(), onchange: { let hash = torrent.hash.clone(); move |event| { auto_next.set(event.checked()); save_detail_preferences(&hash, &season(), &episode(), auto_next()); } } } {language.pick(" Автопереход к следующей серии", " Play the next episode automatically")} } }
-            if media_type.as_deref() == Some("series") && !season_progress.is_empty() {
-                div { class: "season-progress",
-                    for (number, watched, total) in season_progress {
-                        span { if number == 0 { {language.pick("Спецвыпуски", "Specials")} } else if language == Language::Russian { "Сезон {number}" } else { "Season {number}" } " · {watched}/{total}" }
-                    }
-                }
-            }
-            if media_type.as_deref() == Some("series") {
-                if let Some(next) = visible_files.iter().find(|item| !item.viewed) {
-                    button { class: "primary", style: "min-height:42px; margin-bottom:16px", onclick: { let file = next.file.clone(); move |_| on_play.call((file.clone(), true, auto_next())) }, if language == Language::Russian { "Следующая непросмотренная: {next.file.name}" } else { "Next unwatched: {next.file.name}" } }
-                }
-            }
-            if visible_files.len() > 1 || !needle.is_empty() || !seasons.is_empty() {
-                div { class: "filters",
-                    input { value: "{file_filter}", placeholder: language.pick("Найти фильм или серию", "Find a movie or episode"), oninput: move |event| file_filter.set(event.value()) }
-                    if has_movies && has_episodes {
-                        select { value: "{file_kind}", onchange: move |event| { file_kind.set(event.value()); season.set("all".into()); episode.set("all".into()); },
-                            option { value: "all", {language.pick("Фильмы и серии", "Movies and episodes")} }
-                            option { value: "movies", {language.pick("Только фильмы", "Movies only")} }
-                            option { value: "episodes", {language.pick("Только серии", "Episodes only")} }
-                        }
-                    }
-                    if seasons.len() > 1 {
-                        select { value: "{season}", onchange: { let hash = torrent.hash.clone(); move |event| { season.set(event.value()); episode.set("all".into()); save_detail_preferences(&hash, &season(), &episode(), auto_next()); } },
-                            option { value: "all", {language.pick("Все сезоны", "All seasons")} }
-                            for number in seasons { option { value: "{number}", if number == 0 { {language.pick("Спецвыпуски", "Specials")} } else if language == Language::Russian { "Сезон {number}" } else { "Season {number}" } } }
-                        }
-                    }
-                    if !episodes.is_empty() {
-                        select { value: "{episode}", onchange: { let hash = torrent.hash.clone(); move |event| { episode.set(event.value()); save_detail_preferences(&hash, &season(), &episode(), auto_next()); } },
-                            option { value: "all", {language.pick("Все серии", "All episodes")} }
-                            for number in episodes { option { value: "{number}", if language == Language::Russian { "Серия {number}" } else { "Episode {number}" } } }
-                        }
-                    }
-                }
-            }
-            if busy && files_empty {
-                div { class: "panel", {language.pick("Получаем список файлов…", "Loading the file list…")} }
-            } else if files_empty {
-                div { class: "empty", {language.pick("Видеофайлы пока недоступны. Повторно откройте карточку через несколько секунд.", "Video files are not available yet. Reopen the card in a few seconds.")} }
-            } else {
-                div { class: "files",
-                    for item in visible_files {
-                        article { class: "file",
-                            div { strong { title: "{item.file.path}", "{item.file.name}" } small { if item.position > 0 { if language == Language::Russian { "Сохранено: {clock(item.position)} / {clock(item.duration)}" } else { "Saved: {clock(item.position)} / {clock(item.duration)}" } } else if item.viewed { {language.pick("Просмотрено", "Viewed")} } else { {language.pick("Не запускался", "Not started")} } } }
-                            button { class: "primary launch-button", onclick: { let file = item.file.clone(); move |_| on_play.call((file.clone(), true, auto_next())) }, {language.pick("Запустить", "Play")} }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn Settings(
-    mut language: Signal<Language>,
-    busy: Signal<bool>,
-    server: Signal<ServerState>,
-    cards: Signal<Vec<LibraryCard>>,
-    recent: Signal<Vec<ContinueItem>>,
-    metadata_status: Signal<String>,
-    online_icon: String,
-    on_sync: EventHandler<MouseEvent>,
-) -> Element {
-    let initial = INITIAL_PREFERENCES
-        .get()
-        .cloned()
-        .unwrap_or_else(default_preferences);
-    let mut torznab_url = use_signal(|| initial.torznab_url);
-    let mut torznab_api_key = use_signal(|| initial.torznab_api_key);
-    let mut close_to_tray = use_signal(|| initial.close_to_tray);
-    let mut status = use_signal(String::new);
-    let mut diagnostics = use_signal(Vec::<String>::new);
-    let mut maintenance_busy = use_signal(|| false);
-    let mut update_status = use_signal(String::new);
-    let mut available_update = use_signal(|| None::<ReleaseUpdate>);
-    let mut remote_info = use_signal(remote_control::info);
-    let mut remote_message = use_signal(String::new);
-    let window = dioxus::desktop::use_window();
-
-    let save = move |_| {
-        let next = Preferences {
-            language: language(),
-            onboarding_complete: true,
-            torznab_url: torznab_url(),
-            torznab_api_key: torznab_api_key(),
-            close_to_tray: close_to_tray(),
-        };
-        status.set(
-            match settings_path().and_then(|path| settings::save_preferences(&path, &next)) {
-                Ok(()) => language()
-                    .pick("Настройки сохранены", "Settings saved")
-                    .into(),
-                Err(error) => error,
-            },
-        );
-    };
-
-    let run_diagnostics = move |_| {
-        if maintenance_busy() {
-            return;
-        }
-        maintenance_busy.set(true);
-        diagnostics.set(vec!["Выполняем проверки…".into()]);
-        spawn(async move {
-            let result = tokio::task::spawn_blocking(system_diagnostics).await;
-            diagnostics.set(match result {
-                Ok(items) => items,
-                Err(error) => vec![format!("✕ Диагностика: {error}")],
-            });
-            maintenance_busy.set(false);
-        });
-    };
-
-    let create_backup = move |_| {
-        if maintenance_busy() {
-            return;
-        }
-        let Some(directory) = rfd::FileDialog::new()
-            .set_title("Папка для резервной копии Pirate Cinema")
-            .pick_folder()
-        else {
-            return;
-        };
-        maintenance_busy.set(true);
-        spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                create_local_backup(
-                    &history_path()?,
-                    settings_path().ok().as_deref(),
-                    None,
-                    &directory,
-                )
-            })
-            .await;
-            status.set(match result {
-                Ok(Ok(path)) => format!("Копия создана: {}", path.display()),
-                Ok(Err(error)) => error,
-                Err(error) => error.to_string(),
-            });
-            maintenance_busy.set(false);
-        });
-    };
-
-    let check_update = move |_| {
-        if maintenance_busy() {
-            return;
-        }
-        maintenance_busy.set(true);
-        update_status.set("Проверяем GitHub Releases…".into());
-        spawn(async move {
-            let result = tokio::task::spawn_blocking(|| check_rust_update(VERSION)).await;
-            match result {
-                Ok(Ok(Some(update))) => {
-                    update_status.set(format!("Доступна версия {}", update.version));
-                    available_update.set(Some(update));
-                }
-                Ok(Ok(None)) => update_status.set("Установлена актуальная версия".into()),
-                Ok(Err(error)) => update_status.set(error),
-                Err(error) => update_status.set(error.to_string()),
-            }
-            maintenance_busy.set(false);
-        });
-    };
-
-    let install_update = move |_| {
-        let Some(update) = available_update() else {
-            return;
-        };
-        maintenance_busy.set(true);
-        spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                let installer = download_rust_update(&update)?;
-                launch_update_installer(&installer)?;
-                Ok::<_, String>(installer)
-            })
-            .await;
-            update_status.set(match result {
-                Ok(Ok(path)) => format!("Установщик запущен: {}", path.display()),
-                Ok(Err(error)) => error,
-                Err(error) => error.to_string(),
-            });
-            maintenance_busy.set(false);
-        });
-    };
-
-    let exit_fullscreen = move |_| {
-        window.set_fullscreen(false);
-        spawn(async move {
-            let mut eval = document::eval(
-                r#"const art=window.__pirateCinemaArt;if(art){art.fullscreen=false;art.fullscreenWeb=false;}if(document.fullscreenElement){await document.exitFullscreen().catch(()=>{});}dioxus.send(true);"#,
-            );
-            let _ = eval.recv::<bool>().await;
-        });
-    };
-
-    rsx! {
-        section { class: "page settings",
-            h1 { {language().pick("Настройки", "Settings")} }
-            p { class: "lead", "Pirate Cinema · {VERSION}. " {language().pick("Все данные хранятся на этом компьютере.", "All data stays on this computer.")} }
-
-            section { class: "settings-card",
-                h2 { {language().pick("Интерфейс и плеер", "Interface and player")} }
-                div { class: "setting-row",
-                    span { {language().pick("Язык", "Language")} }
-                    select { value: if language() == Language::English { "en" } else { "ru" }, onchange: move |event| language.set(if event.value() == "en" { Language::English } else { Language::Russian }),
-                        option { value: "ru", "Русский" }
-                        option { value: "en", "English" }
-                    }
-                }
-                p { "ArtPlayer · локальный HLS · librqbit" }
-                p { class: "hint", {language().pick("Воспроизведение работает через встроенный движок.", "Playback uses the embedded engine.")} }
-                button { class: "secondary", onclick: exit_fullscreen, {language().pick("Выйти из полноэкранного режима", "Exit fullscreen")} }
-                div { class: "setting-row",
-                    span { {language().pick("При закрытии", "When closing")} }
-                    div { class: "stacked-options",
-                        label { class: "auto-next", input { r#type: "checkbox", checked: close_to_tray(), onchange: move |event| close_to_tray.set(event.checked()) } {language().pick(" Сворачивать в трей", " Minimize to tray")} }
-                        label { class: "auto-next", input { r#type: "checkbox", checked: !close_to_tray(), onchange: move |event| close_to_tray.set(!event.checked()) } {language().pick(" Закрывать приложение", " Exit application")} }
-                    }
-                }
-            }
-
-            section { class: "settings-card",
-                h2 { {language().pick("Поиск", "Search")} }
-                label { {language().pick("Адрес Jackett/Torznab", "Jackett/Torznab URL")} input { value: "{torznab_url}", oninput: move |event| torznab_url.set(event.value()) } }
-                label { {language().pick("API-ключ", "API key")} input { r#type: "password", value: "{torznab_api_key}", oninput: move |event| torznab_api_key.set(event.value()) } }
-                button { class: "primary", onclick: save, {language().pick("Сохранить", "Save")} }
-                if !status().is_empty() { div { class: "notice", "{status}" } }
-            }
-
-            section { class: "settings-card",
-                h2 { {language().pick("Веб-пульт", "Web remote")} }
-                p { class: "hint", {language().pick("Управляет только текущим плеером в локальной сети. Медиатека и поиск недоступны с телефона.", "Controls only the active player on your local network. The library and search stay unavailable from the phone.")} }
-                if let Some(info) = remote_info() {
-                    img { class: "remote-qr", src: "{info.qr_data_uri}", alt: language().pick("QR-код веб-пульта", "Web remote QR code") }
-                    label { {language().pick("Адрес для телефона", "Phone URL")}
-                        input { readonly: true, value: "{info.url}", onclick: move |event| event.stop_propagation() }
-                    }
-                    p { class: "hint", {language().pick("Телефон и компьютер должны быть в одной Wi-Fi сети. При желании добавьте страницу на главный экран через меню браузера.", "The phone and computer must use the same Wi-Fi network. You can add the page to the home screen from the browser menu.")} }
-                    button { class: "secondary", onclick: move |_| { remote_control::stop(); remote_info.set(None); remote_message.set(language().pick("Веб-пульт выключен", "Web remote stopped").into()); }, {language().pick("Выключить пульт", "Stop remote")} }
-                } else {
-                    button { class: "primary", onclick: move |_| match remote_control::start() { Ok(info) => { remote_info.set(Some(info)); remote_message.set(language().pick("Откройте адрес на телефоне в той же Wi-Fi сети", "Open the address on a phone on the same Wi-Fi network").into()); }, Err(error) => remote_message.set(error) }, {language().pick("Включить веб-пульт", "Start web remote")} }
-                }
-                if !remote_message().is_empty() { div { class: "notice", "{remote_message}" } }
-            }
-
-            section { class: "settings-card",
-                h2 { {language().pick("Обслуживание", "Maintenance")} }
-                div { class: "settings-facts",
-                    article { span { {language().pick("Торрент-движок", "Torrent engine")} } strong { "{server().version}" } small { if language() == Language::Russian { "Раздач: {server().torrents.len()}" } else { "Torrents: {server().torrents.len()}" } } }
-                    article { span { {language().pick("Локальная база", "Local database")} } strong { "SQLite" } small { if language() == Language::Russian { "Карточек: {cards().len()}, недавних: {recent().len()}" } else { "Items: {cards().len()}, recent: {recent().len()}" } } }
-                }
-                button { class: "primary", disabled: busy(), onclick: move |event| on_sync.call(event), {language().pick("Обновить описания и постеры", "Refresh descriptions and posters")} }
-                if !metadata_status().is_empty() { div { class: "notice", "{metadata_status}" } }
-                div { class: "settings-actions",
-                    button { class: "secondary", disabled: maintenance_busy(), onclick: run_diagnostics, {language().pick("Диагностика", "Diagnostics")} }
-                    button { class: "secondary", disabled: maintenance_busy(), onclick: create_backup, {language().pick("Создать резервную копию", "Create backup")} }
-                    button { class: "secondary", disabled: maintenance_busy(), onclick: check_update, {language().pick("Проверить обновления", "Check updates")} }
-                }
-                if !diagnostics().is_empty() { div { class: "panel", for item in diagnostics() { div { style: "white-space:pre-wrap", "{item}" } } } }
-                if !update_status().is_empty() { div { class: "notice", "{update_status}" if available_update().is_some() { button { class: "primary", onclick: install_update, {language().pick("Установить", "Install")} } } } }
-            }
-
-            section { class: "settings-card server-summary",
-                img { src: "{online_icon}", alt: "" }
-                div { h2 { "librqbit" } strong { "{server().version}" } small { "Локальный встроенный движок" } }
-            }
-        }
-    }
 }
 
 fn short_hash(hash: &str) -> String {
@@ -2852,6 +2273,7 @@ fn default_preferences() -> Preferences {
         torznab_url: String::new(),
         torznab_api_key: String::new(),
         close_to_tray: true,
+        cover_mode: pirate_cinema_core::settings::CoverMode::Auto,
     }
 }
 
@@ -3032,34 +2454,6 @@ fn launch_playback(
     });
 }
 
-fn remove_generated_poster_file(name: &str) {
-    let Ok(path) = history_path() else {
-        return;
-    };
-    let Some(parent) = path.parent() else {
-        return;
-    };
-    if let Some(path) = ThumbnailCache::new(parent.join("cache").join("posters")).path(name) {
-        let _ = std::fs::remove_file(path);
-    }
-}
-
-fn poster_data_uri(poster_dir: &Path, name: &str) -> Option<String> {
-    let bytes = std::fs::read(poster_dir.join(name)).ok()?;
-    if bytes.len() > 8 * 1024 * 1024 {
-        return None;
-    }
-    let mime = if name.ends_with(".webp") {
-        "image/webp"
-    } else {
-        "image/jpeg"
-    };
-    Some(format!(
-        "data:{mime};base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    ))
-}
-
 fn load_library_cards(torrents: &[Torrent]) -> Result<Vec<LibraryCard>, String> {
     let history_path = history_path()?;
     let history = HistoryStore::open(&history_path).map_err(|error| error.to_string())?;
@@ -3068,6 +2462,17 @@ fn load_library_cards(torrents: &[Torrent]) -> Result<Vec<LibraryCard>, String> 
         .ok_or_else(|| "Не удалось определить каталог локального кэша постеров".to_owned())?
         .join("cache")
         .join("posters");
+    let favorites = history
+        .collection_hashes(CollectionList::Favorites)
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let watch_later = history
+        .collection_hashes(CollectionList::WatchLater)
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let recent = history.recent(50).unwrap_or_default();
     Ok(torrents
         .iter()
         .cloned()
@@ -3075,30 +2480,30 @@ fn load_library_cards(torrents: &[Torrent]) -> Result<Vec<LibraryCard>, String> 
             let metadata = history.metadata(&torrent.hash).ok().flatten();
             let media_type = history.media_type(&torrent.hash).ok().flatten();
             let viewed = history.has_viewed_file(&torrent.hash).unwrap_or(false);
-            let generated_poster = history.generated_poster(&torrent.hash).ok().flatten();
-            let original_name = metadata
+            let progress = recent.iter().find(|item| item.torrent_hash == torrent.hash);
+            let poster = metadata
                 .as_ref()
-                .and_then(|item| item.poster_file.as_deref());
-            let poster_name = ThumbnailResolver::selected(
-                generated_poster
-                    .as_ref()
-                    .map(|poster| (poster.file_name.as_str(), poster.applied)),
-                original_name,
-            );
-            let poster = poster_name
-                .and_then(|name| poster_data_uri(&poster_dir, name))
-                .or_else(|| {
-                    original_name
-                        .filter(|name| Some(*name) != poster_name)
-                        .and_then(|name| poster_data_uri(&poster_dir, name))
+                .and_then(|item| item.poster_file.as_ref())
+                .and_then(|name| {
+                    let path = poster_dir.join(name);
+                    let bytes = std::fs::read(path).ok()?;
+                    (bytes.len() <= 8 * 1024 * 1024).then(|| {
+                        format!(
+                            "data:image/jpeg;base64,{}",
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        )
+                    })
                 });
             LibraryCard {
+                favorite: favorites.contains(&torrent.hash),
+                watch_later: watch_later.contains(&torrent.hash),
+                position: progress.map_or(0, |item| item.playback_timecode),
+                duration: progress.map_or(0, |item| item.playback_duration),
                 torrent,
                 metadata,
                 media_type,
                 viewed,
                 poster,
-                generated_poster,
             }
         })
         .collect())
@@ -3108,7 +2513,7 @@ fn load_continue_items(torrents: &[Torrent]) -> Result<Vec<ContinueItem>, String
     let history = HistoryStore::open(&history_path()?).map_err(|error| error.to_string())?;
     let mut seen = HashSet::new();
     Ok(history
-        .recently_played(24)
+        .recently_played(48)
         .map_err(|error| error.to_string())?
         .into_iter()
         .filter_map(|item| {
@@ -3128,11 +2533,12 @@ fn load_continue_items(torrents: &[Torrent]) -> Result<Vec<ContinueItem>, String
                 torrent,
                 title,
                 file_name: item.file_name,
+                file_index: item.file_index,
                 position: item.playback_timecode,
                 duration: item.playback_duration,
             })
         })
-        .take(12)
+        .take(36)
         .collect())
 }
 
@@ -3467,7 +2873,10 @@ mod tests {
             media_type: Some("movie".into()),
             viewed: false,
             poster: Some("data:image/jpeg;base64,x".into()),
-            generated_poster: None,
+            position: 0,
+            duration: 0,
+            favorite: false,
+            watch_later: false,
         };
         let incomplete = LibraryCard {
             torrent: Torrent {
@@ -3478,7 +2887,10 @@ mod tests {
             media_type: Some("movie".into()),
             viewed: false,
             poster: None,
-            generated_poster: None,
+            position: 0,
+            duration: 0,
+            favorite: false,
+            watch_later: false,
         };
         assert_eq!(
             missing_metadata_torrents(&[complete, incomplete])[0].title,

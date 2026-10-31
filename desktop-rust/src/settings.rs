@@ -15,6 +15,35 @@ impl Language {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CoverMode {
+    /// Clean generated art when metadata is present, cached poster otherwise.
+    #[default]
+    Auto,
+    /// Always build a deterministic local cover from the best available title.
+    Generated,
+    /// Prefer the cached provider poster, using generated art only as a fallback.
+    Poster,
+}
+
+impl CoverMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Generated => "generated",
+            Self::Poster => "poster",
+        }
+    }
+
+    pub fn from_setting(value: &str) -> Self {
+        match value {
+            "generated" => Self::Generated,
+            "poster" => Self::Poster,
+            _ => Self::Auto,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Preferences {
     pub language: Language,
@@ -22,6 +51,7 @@ pub struct Preferences {
     pub torznab_url: String,
     pub torznab_api_key: String,
     pub close_to_tray: bool,
+    pub cover_mode: CoverMode,
 }
 
 pub fn load_preferences(path: &Path) -> Result<Preferences, String> {
@@ -49,6 +79,11 @@ pub fn load_preferences(path: &Path) -> Result<Preferences, String> {
             .get("close_to_tray")
             .and_then(|value| value.as_bool())
             .unwrap_or(true),
+        cover_mode: value
+            .get("cover_mode")
+            .and_then(|value| value.as_str())
+            .map(CoverMode::from_setting)
+            .unwrap_or_default(),
     })
 }
 
@@ -74,6 +109,15 @@ pub fn save_preferences(path: &Path, preferences: &Preferences) -> Result<(), St
     value["torznab_url"] = serde_json::json!(preferences.torznab_url.trim());
     value["torznab_api_key"] = serde_json::json!(preferences.torznab_api_key.trim());
     value["close_to_tray"] = serde_json::json!(preferences.close_to_tray);
+    value["cover_mode"] = serde_json::json!(preferences.cover_mode.as_str());
+    write_settings(path, &value)
+}
+
+/// Persist only the cover choice so changing it never overwrites unsaved
+/// Torznab fields in the settings form.
+pub fn save_cover_mode(path: &Path, mode: CoverMode) -> Result<(), String> {
+    let mut value = read_settings(path)?;
+    value["cover_mode"] = serde_json::json!(mode.as_str());
     write_settings(path, &value)
 }
 
@@ -142,6 +186,7 @@ mod tests {
             torznab_url: "http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/".into(),
             torznab_api_key: "secret".into(),
             close_to_tray: false,
+            cover_mode: CoverMode::Generated,
         };
         save_preferences(&path, &preferences).unwrap();
         let loaded = load_preferences(&path).unwrap();
@@ -149,6 +194,7 @@ mod tests {
         assert!(loaded.onboarding_complete);
         assert_eq!(loaded.torznab_api_key, "secret");
         assert!(!loaded.close_to_tray);
+        assert_eq!(loaded.cover_mode, CoverMode::Generated);
         assert_eq!(
             loaded.torznab_url,
             "http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/"
@@ -169,5 +215,24 @@ mod tests {
         assert!(validate_torznab("http://127.0.0.1:9117/api", "").is_err());
         assert!(validate_torznab("", "secret").is_err());
         assert!(validate_torznab("", "").is_ok());
+    }
+
+    #[test]
+    fn cover_mode_is_independent_and_defaults_to_auto() {
+        let path = std::env::temp_dir().join(format!(
+            "pirate-cinema-cover-mode-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            r#"{"language":"en","torznab_url":"http://127.0.0.1:9117/api","torznab_api_key":"secret"}"#,
+        )
+        .unwrap();
+        assert_eq!(load_preferences(&path).unwrap().cover_mode, CoverMode::Auto);
+        save_cover_mode(&path, CoverMode::Poster).unwrap();
+        let loaded = load_preferences(&path).unwrap();
+        assert_eq!(loaded.cover_mode, CoverMode::Poster);
+        assert_eq!(loaded.torznab_api_key, "secret");
+        assert!(std::fs::remove_file(path).is_ok());
     }
 }

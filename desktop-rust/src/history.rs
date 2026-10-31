@@ -33,6 +33,21 @@ pub struct PlaybackPreferences {
     pub auto_next: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CollectionList {
+    Favorites,
+    WatchLater,
+}
+
+impl CollectionList {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Favorites => "favorites",
+            Self::WatchLater => "watch_later",
+        }
+    }
+}
+
 pub struct HistoryStore {
     db: Connection,
 }
@@ -56,12 +71,6 @@ pub struct MediaMetadata {
     pub genres: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GeneratedPoster {
-    pub file_name: String,
-    pub applied: bool,
-}
-
 fn parse_genres(raw: &str) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(raw)
         .unwrap_or_default()
@@ -73,14 +82,12 @@ fn parse_genres(raw: &str) -> Vec<String> {
 }
 
 fn valid_poster_name(name: &str) -> bool {
-    name.strip_suffix(".jpg")
-        .or_else(|| name.strip_suffix(".webp"))
-        .is_some_and(|stem| {
-            !stem.is_empty()
-                && stem
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        })
+    name.strip_suffix(".jpg").is_some_and(|stem| {
+        !stem.is_empty()
+            && stem
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    })
 }
 
 #[cfg(not(target_os = "android"))]
@@ -272,6 +279,9 @@ impl HistoryStore {
                 DELETE FROM engine_library; INSERT INTO engine_library SELECT hash,title FROM temp.pc_engine_catalog;
                 DROP TABLE temp.pc_engine_catalog;").map_err(|e| e.to_string())?;
         }
+        // Older backups do not contain newer local-only tables. Apply the
+        // additive schema after every restore so collections remain usable.
+        Self::initialize_schema(&self.db).map_err(|error| error.to_string())?;
 
         if let Some(path) = settings_path {
             let parent = path.parent().ok_or("Некорректный путь настроек")?;
@@ -512,6 +522,11 @@ impl HistoryStore {
 
     fn from_connection(db: Connection) -> rusqlite::Result<Self> {
         db.busy_timeout(std::time::Duration::from_secs(3))?;
+        Self::initialize_schema(&db)?;
+        Ok(Self { db })
+    }
+
+    fn initialize_schema(db: &Connection) -> rusqlite::Result<()> {
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS media_file_history (
                 torrent_hash TEXT NOT NULL,
@@ -558,12 +573,14 @@ impl HistoryStore {
                 poster_file TEXT,
                 genres_json TEXT NOT NULL DEFAULT '[]'
             );
-            CREATE TABLE IF NOT EXISTS generated_posters (
-                torrent_hash TEXT PRIMARY KEY,
-                file_name TEXT NOT NULL,
-                applied INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-            );",
+            CREATE TABLE IF NOT EXISTS media_collections (
+                torrent_hash TEXT NOT NULL,
+                list_name TEXT NOT NULL CHECK(list_name IN ('favorites','watch_later')),
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (torrent_hash,list_name)
+            );
+            CREATE INDEX IF NOT EXISTS media_collections_list
+                ON media_collections(list_name,added_at DESC);",
         )?;
         let has_genres: bool = db.query_row(
             "SELECT EXISTS(SELECT 1 FROM pragma_table_info('media_metadata') WHERE name='genres_json')",
@@ -575,7 +592,7 @@ impl HistoryStore {
                 [],
             )?;
         }
-        Ok(Self { db })
+        Ok(())
     }
 
     pub fn mark_played(
@@ -720,52 +737,6 @@ impl HistoryStore {
                 genres: parse_genres(&row.get::<_, String>(5)?),
             }),
         ).optional()
-    }
-
-    pub fn generated_poster(&self, hash: &str) -> rusqlite::Result<Option<GeneratedPoster>> {
-        let hash = checked_key(hash, 0)?;
-        self.db
-            .query_row(
-                "SELECT file_name,applied FROM generated_posters WHERE torrent_hash=?1",
-                [hash],
-                |row| {
-                    Ok(GeneratedPoster {
-                        file_name: row.get(0)?,
-                        applied: row.get::<_, i64>(1)? != 0,
-                    })
-                },
-            )
-            .optional()
-    }
-
-    pub fn set_generated_poster(
-        &self,
-        hash: &str,
-        file_name: &str,
-        applied: bool,
-    ) -> rusqlite::Result<()> {
-        let hash = checked_key(hash, 0)?;
-        if !file_name.starts_with("generated-") || !valid_poster_name(file_name) {
-            return Err(rusqlite::Error::InvalidParameterName(
-                "generated poster".into(),
-            ));
-        }
-        self.db.execute(
-            "INSERT INTO generated_posters(torrent_hash,file_name,applied) VALUES(?1,?2,?3)
-             ON CONFLICT(torrent_hash) DO UPDATE SET file_name=excluded.file_name,
-             applied=excluded.applied,created_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
-            params![hash, file_name, i64::from(applied)],
-        )?;
-        Ok(())
-    }
-
-    pub fn use_original_poster(&self, hash: &str) -> rusqlite::Result<()> {
-        let hash = checked_key(hash, 0)?;
-        self.db.execute(
-            "UPDATE generated_posters SET applied=0 WHERE torrent_hash=?1",
-            [hash],
-        )?;
-        Ok(())
     }
 
     pub fn set_title(&self, hash: &str, title: &str) -> rusqlite::Result<()> {
@@ -984,6 +955,49 @@ impl HistoryStore {
         )?;
         Ok(())
     }
+
+    pub fn set_collection(
+        &self,
+        hash: &str,
+        list: CollectionList,
+        included: bool,
+    ) -> rusqlite::Result<()> {
+        let hash = checked_key(hash, 0)?;
+        if included {
+            self.db.execute(
+                "INSERT INTO media_collections(torrent_hash,list_name,added_at)
+                 VALUES(?1,?2,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                 ON CONFLICT(torrent_hash,list_name) DO NOTHING",
+                params![hash, list.as_str()],
+            )?;
+        } else {
+            self.db.execute(
+                "DELETE FROM media_collections WHERE torrent_hash=?1 AND list_name=?2",
+                params![hash, list.as_str()],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn collection_contains(&self, hash: &str, list: CollectionList) -> rusqlite::Result<bool> {
+        let hash = checked_key(hash, 0)?;
+        self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM media_collections WHERE torrent_hash=?1 AND list_name=?2)",
+            params![hash, list.as_str()],
+            |row| row.get(0),
+        )
+    }
+
+    pub fn collection_hashes(&self, list: CollectionList) -> rusqlite::Result<Vec<String>> {
+        let mut statement = self.db.prepare(
+            "SELECT torrent_hash FROM media_collections WHERE list_name=?1
+             ORDER BY added_at DESC,torrent_hash ASC",
+        )?;
+        let hashes = statement
+            .query_map([list.as_str()], |row| row.get(0))?
+            .collect();
+        hashes
+    }
 }
 
 fn checked_key(hash: &str, file_index: i64) -> rusqlite::Result<String> {
@@ -1120,6 +1134,53 @@ mod tests {
         let metadata = history.metadata(&"a".repeat(40)).unwrap().unwrap();
         assert_eq!(metadata.title, "Старое название");
         assert!(metadata.genres.is_empty());
+    }
+
+    #[test]
+    fn collections_are_additive_idempotent_and_removable() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE media_metadata (torrent_hash TEXT PRIMARY KEY,title TEXT NOT NULL);",
+        )
+        .unwrap();
+        let history = HistoryStore::from_connection(db).unwrap();
+        let hash = "1".repeat(40);
+        assert!(!history
+            .collection_contains(&hash, CollectionList::Favorites)
+            .unwrap());
+        history
+            .set_collection(&hash, CollectionList::Favorites, true)
+            .unwrap();
+        history
+            .set_collection(&hash, CollectionList::Favorites, true)
+            .unwrap();
+        history
+            .set_collection(&hash, CollectionList::WatchLater, true)
+            .unwrap();
+        assert!(history
+            .collection_contains(&hash, CollectionList::Favorites)
+            .unwrap());
+        assert_eq!(
+            history
+                .collection_hashes(CollectionList::WatchLater)
+                .unwrap(),
+            vec![hash.clone()]
+        );
+        assert_eq!(
+            history
+                .collection_hashes(CollectionList::Favorites)
+                .unwrap(),
+            vec![hash.clone()]
+        );
+        history
+            .set_collection(&hash, CollectionList::Favorites, false)
+            .unwrap();
+        assert!(!history
+            .collection_contains(&hash, CollectionList::Favorites)
+            .unwrap());
+        assert!(history
+            .set_collection("not-a-hash", CollectionList::Favorites, true)
+            .is_err());
     }
 
     #[test]
@@ -1417,26 +1478,5 @@ mod tests {
         db.save_progress(&hash, 1, 995, 1000).unwrap();
         assert!(db.recent(10).unwrap().is_empty());
         assert_eq!(db.recently_played(10).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn generated_poster_choice_persists_and_can_restore_original() {
-        let store = HistoryStore::open_in_memory().unwrap();
-        let hash = "abcdef1234567890abcdef1234567890abcdef12";
-        store
-            .set_generated_poster(hash, "generated-abcdef1234567890.webp", true)
-            .unwrap();
-        assert_eq!(
-            store.generated_poster(hash).unwrap(),
-            Some(GeneratedPoster {
-                file_name: "generated-abcdef1234567890.webp".into(),
-                applied: true,
-            })
-        );
-        store.use_original_poster(hash).unwrap();
-        assert!(!store.generated_poster(hash).unwrap().unwrap().applied);
-        assert!(store
-            .set_generated_poster(hash, "../escape.webp", true)
-            .is_err());
     }
 }

@@ -4432,7 +4432,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pirate-cinema-core"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "axum",
  "base64 0.23.1",

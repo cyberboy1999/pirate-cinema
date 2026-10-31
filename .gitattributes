@@ -1,0 +1,4 @@
+# Keep the Impeccable launchers usable across checkouts.
+.agents/skills/impeccable/scripts/impeccable text eol=lf
+.agents/skills/impeccable/scripts/impeccable.cmd text eol=crlf
+.agents/skills/impeccable/scripts/*.js text eol=lf

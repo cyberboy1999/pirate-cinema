@@ -1,27 +1,53 @@
 # Pirate Cinema — project context
 
-2026-10-31 manual video-cover prototype: the desktop detail page now offers an
-explicit `Сгенерировать обложку` action for a selected video file. It samples a
-bounded set of frames through the already bundled FFmpeg, rejects dark, flat and
-low-detail frames, selects the strongest candidate, center-crops it to a 600×900
-WebP and shows a preview before any library state changes. Apply persists only
-the generated file name and active/original choice in SQLite; restore keeps the
-provider poster and description intact. Cancellation kills the owned FFmpeg
-process, generation is limited to one job, loopback/local-file inputs only, 24
-seconds per frame and 75 seconds overall, and uncommitted files are removed when
-leaving the title. A missing generated file falls back to the original cached
-poster. Cinemeta, TVmaze and Russian Wikipedia/Wikidata remain the independent
-metadata pipeline; no automatic frame generation was added.
+## Current state — 0.8.1 (2026-10-31)
 
-The same local prototype receives a restrained Apple TV/Plex-inspired Dioxus
-polish: immersive artwork on the detail surface, larger poster-first browsing,
-one amber action/selection accent, familiar dense controls and responsive
-layouts. The reference `sadCTNBEH/pirate-cinema-2` was reviewed for compatible
-presentation ideas only. Its Python/FastAPI, TorrServer, MPV and user-list paths
-are intentionally not imported because the current desktop architecture is
-Rust/Dioxus, embedded librqbit and ArtPlayer, and user lists were previously
-rejected. Real FFmpeg integration covers both generated MP4 and MKV fixtures in
-addition to deterministic analysis, cache, cancellation and SQLite tests.
+Pirate Cinema 0.8.1 is prepared for publication. The production desktop app is
+Rust/Dioxus with embedded librqbit 9.0.1, the local FFmpeg/HLS bridge,
+ArtPlayer/hls.js and SQLite. It does not use Electron, TorrServer or MPV. The
+window title is `Pirate Cinema 0.8.1`.
+
+Release assets remain one Windows x64 installer and one Linux x86_64 AppImage
+plus `SHA256SUMS` and `THIRD_PARTY_NOTICES.md`.
+
+The 0.8.1 desktop UI is split into a dedicated component module and stylesheet.
+It adds deterministic local typographic covers, selectable Auto/Local/Poster
+cover modes, Favorites and Watch Later collections, and the Apple TV/Plex-style
+cinematic shell prepared in the OpenCode workspace. Cover generation uses only
+local title/year/genre/hash data and does not upload library information.
+The release gate passes formatting, all-target/all-feature checks, clippy with
+warnings denied, 63 deterministic Rust tests, all six JavaScript controller
+suites, a Windows release build and a live responsive-window visual smoke.
+Eight public-network tests remain explicit opt-in checks.
+
+The dated entries below are an engineering log. Sections describing Electron,
+TorrServer or MPV are historical and do not describe the current desktop
+architecture.
+
+## Design skills (2026-10-31)
+
+Two project-local instruction skills are vendored under `.agents/skills/` and
+are discovered by OpenCode and Codex:
+
+- `impeccable` 4.8.0 from `pbakaus/impeccable`, commit
+  `df3a4abe7d0840d5f60324812c432e00b66a4e75`, Apache-2.0. It provides the
+  design direction, critique, audit, polish, motion, typography,
+  accessibility and responsive/edge-case workflows. Invoke it with the native
+  `skill` tool or `/impeccable` in OpenCode.
+- `frontend-design` from `dobromirdikov/codex-frontend-design-skill`, commit
+  `983119775a936d123df9fbfbc3821bdee5bb58fd`, Apache-2.0. It is a
+  Codex-focused port of Anthropic's `frontend-design` skill and covers
+  distinctive production-grade frontend work plus browser-based visual QA.
+  Invoke it with the native `skill` tool as `frontend-design`.
+
+Each skill carries its upstream license, `NOTICE.md` and `UPSTREAM.md`.
+The Impeccable engine is not committed: its launchers download the pinned
+0.1.18 binary into `~/.impeccable/bin/<version>/` and verify it against
+`scripts/engine-checksums.txt`. `.opencode/commands/impeccable.md` exposes the
+OpenCode command. Project telemetry is disabled in `.impeccable/config.json`;
+the optional design-catalog request never includes the library, history,
+local files or `PRODUCT.md`. Engine binaries, hooks, provider trees and
+`.impeccable` runtime state are ignored by Git.
 
 2026-10-26 librqbit 9 upgrade: the pinned in-process engine was upgraded to
 librqbit 9.0.1 (Rust TLS and HTTP API features unchanged). The
@@ -31,10 +57,11 @@ and `create_torrent`/`torrent_from_bytes` were adapted to their v9 signatures.
 The persisted `session.json` schema and file-sharing IDs are unchanged, so
 existing libraries resume paused without data loss. `health_version()` now
 reports `librqbit::version()` instead of a hardcoded string. Verified with
-55 deterministic Rust tests across all targets (51 core, 4 example), 8 opt-in
-public-network tests left ignored, clippy with warnings denied, the JavaScript
-controller suite, the owned two-episode librqbit/FFmpeg/HLS smoke and the
-desktop GUI on both isolated and existing profiles.
+55 deterministic Rust tests across all targets (40 library, 11 binary,
+4 example), 8 opt-in public-network tests left ignored, clippy with warnings
+denied, the JavaScript controller suite, the owned two-episode
+librqbit/FFmpeg/HLS smoke and the desktop GUI on both isolated and existing
+profiles.
 
 2026-10-25 desktop restored-torrent launch fix: `play_url` now waits up to
 60 seconds for the selected librqbit handle to finish initialization before
@@ -233,16 +260,12 @@ Local Electron app: React/vinext renderer (3000) → Node API (3001) → TorrSer
 
 Use the project Ponytail skill at .agents/skills/ponytail/SKILL.md. Its source is DietrichGebert/ponytail, commit 2ed6c52c9d7e5e56942508591085fd45dea277d3 (MIT). It is instruction-only: no runtime dependency, hooks, telemetry or code graph.
 
-Project-local UI guidance is also available under `.agents/skills/impeccable`
-from [pbakaus/impeccable](https://github.com/pbakaus/impeccable) and
-`.agents/skills/frontend-design` from
-[dobromirdikov/codex-frontend-design-skill](https://github.com/dobromirdikov/codex-frontend-design-skill).
-Both are Apache-2.0 instruction/tooling assets for development only; neither is
-linked into, shipped with, or executed by the Pirate Cinema application.
-
 MEX is retired. Historical notes and graph are archived under docs/archive/mex-2026-08-28 and are not active instructions. Do not run MEX or load the archive by default.
 
-## Rust desktop
+## Rust desktop — historical TorrServer/MPV notes
+
+The 0.6/0.7 desktop architecture below is retired. Current desktop uses the
+embedded librqbit engine and ArtPlayer; see “Current state” above.
 
 `desktop-rust/` is the production desktop application. Dioxus provides the Rust UI; TorrServer ownership, MPV IPC, SQLite history, metadata, backup/restore, updates and tray integration are implemented in Rust. The release replaces Electron program files and performs a one-time, non-destructive import of the Electron 0.5.8 profile. Windows ships one offline NSIS installer; Linux ships one x86_64 AppImage. The retired egui application is not built or packaged.
 

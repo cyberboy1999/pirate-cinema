@@ -12,6 +12,7 @@ pub mod web_stream;
 #[cfg(all(feature = "torrent-engine", not(target_os = "android")))]
 pub use desktop_engine::stream_url;
 pub mod catalog;
+pub mod covers;
 pub mod history;
 pub mod metadata;
 #[cfg(not(target_os = "android"))]
@@ -19,8 +20,6 @@ pub mod migration;
 pub mod mobile;
 #[cfg(not(target_os = "android"))]
 pub mod settings;
-#[cfg(feature = "desktop")]
-pub mod thumbnail;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Torrent {
