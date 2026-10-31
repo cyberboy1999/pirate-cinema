@@ -1,24 +1,24 @@
 # Pirate Cinema — project context
 
-## Current state — 0.8.1 (2026-10-31)
+## 0.8.2 — Cinemeta Home
 
-Pirate Cinema 0.8.1 is prepared for publication. The production desktop app is
+Home includes a compact horizontal shelf of up to 18 popular Cinemeta movies.
+The request runs in a blocking worker, so rendering stays responsive. Each
+poster opens the existing torrent search with its movie title. Loading and
+retry states are localized. Library and history are never sent to Cinemeta.
+
+## Current state — 0.8.0 (2026-10-26)
+
+Pirate Cinema 0.8.0 is published on GitHub. The production desktop app is
 Rust/Dioxus with embedded librqbit 9.0.1, the local FFmpeg/HLS bridge,
 ArtPlayer/hls.js and SQLite. It does not use Electron, TorrServer or MPV. The
-window title is `Pirate Cinema 0.8.1`.
+window title is `Pirate Cinema 0.8.0`.
 
-Release assets remain one Windows x64 installer and one Linux x86_64 AppImage
-plus `SHA256SUMS` and `THIRD_PARTY_NOTICES.md`.
-
-The 0.8.1 desktop UI is split into a dedicated component module and stylesheet.
-It adds deterministic local typographic covers, selectable Auto/Local/Poster
-cover modes, Favorites and Watch Later collections, and the Apple TV/Plex-style
-cinematic shell prepared in the OpenCode workspace. Cover generation uses only
-local title/year/genre/hash data and does not upload library information.
-The release gate passes formatting, all-target/all-feature checks, clippy with
-warnings denied, 63 deterministic Rust tests, all six JavaScript controller
-suites, a Windows release build and a live responsive-window visual smoke.
-Eight public-network tests remain explicit opt-in checks.
+Release assets: `Pirate-Cinema-Setup-0.8.0-win-x64.exe`,
+`Pirate-Cinema-0.8.0-x86_64.AppImage`, `SHA256SUMS` and
+`THIRD_PARTY_NOTICES.md`. `docs/RELEASE_0.8.0.md` is the bilingual release
+description (Russian and English). GitHub Actions built and tested both
+packages and passed the Arch Linux smoke test.
 
 The dated entries below are an engineering log. Sections describing Electron,
 TorrServer or MPV are historical and do not describe the current desktop

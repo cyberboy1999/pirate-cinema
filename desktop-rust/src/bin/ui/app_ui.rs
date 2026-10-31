@@ -487,7 +487,13 @@ pub fn Home(
     on_collection: EventHandler<(Torrent, CollectionList, bool)>,
     on_browse: EventHandler<()>,
     on_search: EventHandler<()>,
+    on_popular: EventHandler<String>,
 ) -> Element {
+    let mut popular = use_resource(|| async {
+        tokio::task::spawn_blocking(pirate_cinema_core::catalog::popular)
+            .await
+            .unwrap_or_else(|error| Err(error.to_string()))
+    });
     let cover_mode = use_context::<Signal<CoverMode>>();
     let available = cards.clone();
     let recently_played = recent
@@ -694,6 +700,36 @@ pub fn Home(
                 }
             }
 
+            section { class: "shelf",
+                div { class: "shelf-head",
+                    h2 { {language.pick("Популярные фильмы", "Popular movies")} }
+                    span { class: "meta-pill", "Cinemeta" }
+                }
+                match popular.read().as_ref() {
+                    None => rsx! { p { class: "hint", {language.pick("Загрузка фильмов…", "Loading movies…")} } },
+                    Some(Err(_)) => rsx! {
+                        button { class: "button secondary", onclick: move |_| popular.restart(),
+                            {language.pick("Повторить загрузку", "Retry loading")}
+                        }
+                    },
+                    Some(Ok(movies)) => rsx! {
+                        div { class: "shelf-rail posters",
+                            for movie in movies.iter().take(18) {
+                                article { class: "media-card", key: "popular-{movie.id}",
+                                    button { class: "popular-poster", title: "{movie.title}",
+                                        onclick: { let title = movie.title.clone(); move |_| on_popular.call(title.clone()) },
+                                        if let Some(poster) = &movie.poster_url {
+                                            img { src: "{poster}", alt: "{movie.title}", loading: "lazy" }
+                                        }
+                                        strong { "{movie.title}" }
+                                        if let Some(year) = movie.year { small { "{year}" } }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                }
+            }
             if !favorites.is_empty() {
                 section { class: "shelf",
                     div { class: "shelf-head",

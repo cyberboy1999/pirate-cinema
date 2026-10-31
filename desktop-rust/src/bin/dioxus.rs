@@ -1875,6 +1875,10 @@ fn App() -> Element {
                                     on_collection: toggle_collection,
                                     on_browse: move |_| page.set(Page::Library),
                                     on_search: move |_| page.set(Page::Search),
+                                    on_popular: move |title: String| {
+                                        query.set(title);
+                                        run_search();
+                                    },
                                 }
                             },
                             Page::Search => rsx! {

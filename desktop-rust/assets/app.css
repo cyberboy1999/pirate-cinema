@@ -3066,3 +3066,7 @@ svg {
     transform: none;
   }
 }
+:root .popular-poster { display: flex; flex-direction: column; gap: 8px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+:root .popular-poster img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 12px; background: var(--surface, #171719); }
+:root .popular-poster strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
+:root .popular-poster:focus-visible { outline: 2px solid white; outline-offset: 5px; }
