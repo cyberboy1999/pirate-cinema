@@ -67,7 +67,7 @@ AppImage содержит Pirate Cinema, а FFmpeg, GTK и WebKitGTK испол�
 Debian и Ubuntu:
 
 ```sh
-sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool libfuse2
+sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool libfuse2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
 ```
 
 Fedora, RHEL и совместимые системы:
@@ -79,7 +79,7 @@ sudo dnf install ffmpeg gtk3 webkit2gtk4.1 libayatana-appindicator xdotool fuse-
 Arch Linux и CachyOS:
 
 ```sh
-sudo pacman -S --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool fuse2
+sudo pacman -Syu --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool fuse2 gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav
 ```
 
 После установки зависимостей разрешите запуск AppImage:
@@ -170,7 +170,7 @@ The AppImage contains Pirate Cinema and uses the system FFmpeg, GTK, and WebKitG
 Debian and Ubuntu:
 
 ```sh
-sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool libfuse2
+sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool libfuse2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
 ```
 
 Fedora, RHEL, and compatible distributions:
@@ -182,7 +182,7 @@ sudo dnf install ffmpeg gtk3 webkit2gtk4.1 libayatana-appindicator xdotool fuse-
 Arch Linux and CachyOS:
 
 ```sh
-sudo pacman -S --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool fuse2
+sudo pacman -Syu --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool fuse2 gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav
 ```
 
 Then make the AppImage executable:
@@ -215,7 +215,7 @@ Ubuntu / Debian:
 
 ```sh
 sudo apt update
-sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 xdotool libfuse2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 xdotool libfuse2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
 ```
 
 В новых Ubuntu пакет FUSE может называться `libfuse2t64`.
@@ -223,7 +223,7 @@ sudo apt install ffmpeg libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-
 Arch Linux / CachyOS:
 
 ```sh
-sudo pacman -Syu --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator librsvg xdotool fuse2 gst-plugins-base gst-plugins-good gst-plugins-bad gst-libav
+sudo pacman -Syu --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator librsvg xdotool fuse2 gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav
 chmod +x Pirate-Cinema-*-x86_64.AppImage
 ```
 
@@ -244,3 +244,13 @@ EGL/Mesa failures require checking GPU drivers and access to `/dev/dri/renderD*`
 Package references: [Arch WebKitGTK](https://archlinux.org/packages/extra/x86_64/webkit2gtk-4.1/),
 [Arch gst-libav](https://archlinux.org/packages/extra/x86_64/gst-libav/),
 [Ubuntu GStreamer packages](https://packages.ubuntu.com/search?keywords=gstreamer).
+
+## Fedora codecs / Кодеки Fedora
+
+Enable [RPM Fusion](https://rpmfusion.org/Configuration) first / Сначала подключите RPM Fusion.
+
+```sh
+sudo dnf install gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugins-bad-freeworld gstreamer1-plugins-ugly gstreamer1-libav
+```
+
+Restart the app after installing codecs / После установки перезапустите приложение.
