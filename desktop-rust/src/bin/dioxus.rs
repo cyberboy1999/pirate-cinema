@@ -828,10 +828,13 @@ fn App() -> Element {
                     dioxus.send({{kind:'audio_preference',...audioPreference}});
                 }}
                 selectedAudio=audioSelect.value;
+                const restoringSavedAudio=restoringAudio;
                 restoringAudio=false;
                 const next = new URL(container.dataset.hlsUrl);
                 next.searchParams.set('audio', audioSelect.value);
-                next.searchParams.set('seconds', String(Math.floor(art.currentTime || 0)));
+                const savedStart=Number(next.searchParams.get('seconds')) || 0;
+                const audioPosition=restoringSavedAudio && !sourceReady ? savedStart : (art.currentTime || 0);
+                next.searchParams.set('seconds', String(Math.floor(audioPosition)));
                 switchSource(next.toString())
                     .catch(error => {{ if(window.__pirateCinemaArt !== art) return; showStatus(String(error),true); dioxus.send({{ kind: 'error', message: String(error) }}); }});
             }});
@@ -1819,6 +1822,12 @@ fn App() -> Element {
                                 div {
                                     class: if page() == Page::Player { "web-player" } else { "web-player mini" },
                                     header {
+                                        ondoubleclick: move |_| {
+                                            if page() != Page::Player {
+                                                return_page.set(page());
+                                                page.set(Page::Player);
+                                            }
+                                        },
                                         div { class: "player-heading",
                                             small { {language().pick("Сейчас играет", "Now playing")} }
                                             strong { title: "{playback.file.name}", "{playback.file.name}" }
@@ -2294,6 +2303,66 @@ fn shutdown_owned_processes() {
 
 fn system_diagnostics() -> Vec<String> {
     let mut checks = Vec::new();
+    if let Ok(path) = history_path() {
+        if let Some(root) = path.parent() {
+            let db_bytes = [
+                path.clone(),
+                path.with_extension("sqlite-wal"),
+                path.with_extension("sqlite-shm"),
+            ]
+            .iter()
+            .filter_map(|file| std::fs::metadata(file).ok())
+            .map(|meta| meta.len())
+            .sum::<u64>();
+            checks.push(format!("SQLite: {:.1} MiB", db_bytes as f64 / 1048576.0));
+            let cache_bytes = std::fs::read_dir(root.join("cache/posters"))
+                .ok()
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.metadata().ok())
+                .filter(|meta| meta.is_file())
+                .map(|meta| meta.len())
+                .sum::<u64>();
+            checks.push(format!(
+                "Кэш постеров: {:.1} MiB",
+                cache_bytes as f64 / 1048576.0
+            ));
+            #[cfg(target_os = "linux")]
+            {
+                if let Ok(output) = std::process::Command::new("df")
+                    .args(["-Pk", "--"])
+                    .arg(root)
+                    .output()
+                {
+                    let text = String::from_utf8_lossy(&output.stdout);
+                    if let Some(free) = text
+                        .lines()
+                        .nth(1)
+                        .and_then(|line| line.split_whitespace().nth(3))
+                        .and_then(|value| value.parse::<u64>().ok())
+                    {
+                        checks.push(format!(
+                            "Свободно на диске: {:.1} GiB",
+                            free as f64 / 1048576.0
+                        ));
+                    }
+                }
+                for codec in ["avdec_h264", "h264parse", "aacparse"] {
+                    let available = std::process::Command::new("gst-inspect-1.0")
+                        .arg(codec)
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .is_ok_and(|status| status.success());
+                    checks.push(format!(
+                        "{} GStreamer: {codec}",
+                        if available { "✓" } else { "✕" }
+                    ));
+                }
+            }
+        }
+    }
     checks.push(match desktop_engine::health_version("") {
         Ok(version) => format!("✓ Торрент-движок: {version}"),
         Err(error) => format!("✕ Торрент-движок: {error}"),

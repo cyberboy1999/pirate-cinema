@@ -1,5 +1,26 @@
 # Pirate Cinema — project context
 
+Resume race: restoring a saved audio preference before loadedmetadata used
+currentTime=0 and replaced the resume URL. Automatic audio restoration now
+retains the saved URL position until the source is ready; manual switching
+continues to use current playback time.
+
+Diagnostics now includes SQLite/WAL/SHM size, poster-cache size and Linux free
+disk space plus installed H.264/AAC GStreamer parser/decoder checks. Year-range
+filtering and ArtPlayer native PiP already exist in the current workspace;
+their behavior still needs interactive verification before claiming parity.
+
+Home popular cards now reuse the library poster/copy classes, constrain content
+to their grid tracks and use 24px spacing. Mini-player header double-click
+restores the player page without recreating playback. External project review
+identified separate always-on-top PiP, year-range filtering and expanded disk/
+error diagnostics as follow-up candidates; no unlicensed source was copied.
+
+Audio labels: FFmpeg probe parsing now preserves each audio stream's title
+and language metadata instead of always returning a numbered placeholder.
+Missing titles retain the numbered fallback; original stream indices remain
+unchanged. Regression coverage prevents video/subtitle titles leaking into audio.
+
 Linux fix preparation: popular artwork now has a fixed 2:3 clipping wrapper,
 independent of source-image intrinsic dimensions. Linux updater selects x86_64
 AppImage, validates ELF and sets executable permissions. Release publication

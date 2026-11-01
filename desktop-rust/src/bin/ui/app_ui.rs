@@ -712,18 +712,20 @@ pub fn Home(
                         }
                     },
                     Some(Ok(movies)) => rsx! {
-                        div { class: "shelf-rail posters",
+                        div { class: "shelf-rail posters popular-shelf",
                             for movie in movies.iter().take(18) {
                                 article { class: "media-card", key: "popular-{movie.id}",
                                     button { class: "popular-poster", title: "{movie.title}",
                                         onclick: { let title = movie.title.clone(); move |_| on_popular.call(title.clone()) },
                                         if let Some(poster) = &movie.poster_url {
-                                            span { class: "popular-artwork",
+                                            span { class: "media-poster popular-artwork",
                                                 img { src: "{poster}", alt: "{movie.title}", loading: "lazy", decoding: "async" }
                                             }
                                         }
-                                        strong { "{movie.title}" }
-                                        if let Some(year) = movie.year { small { "{year}" } }
+                                        div { class: "media-copy",
+                                            span { class: "media-title", "{movie.title}" }
+                                            if let Some(year) = movie.year { small { class: "media-subtitle", "{year}" } }
+                                        }
                                     }
                                 }
                             }

@@ -3098,7 +3098,9 @@ svg {
     transform: none;
   }
 }
-:root .popular-poster { display: flex; flex-direction: column; gap: 8px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+:root .popular-shelf { gap: 24px; align-items: start; }
+:root .popular-shelf .media-card { width: 100%; min-width: 0; overflow: hidden; }
+:root .popular-poster { display: flex; flex-direction: column; align-items: stretch; gap: 10px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 :root .popular-artwork { display: block; position: relative; width: 100%; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 12px; background: var(--surface, #171719); }
 :root .popular-artwork img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
 :root .popular-poster strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }

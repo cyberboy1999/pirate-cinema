@@ -218,7 +218,12 @@ fn parse_probe(text: &str) -> Result<Probe, String> {
         return Err("Неподдерживаемая длительность видео".into());
     }
     let mut tracks = Vec::new();
-    for line in text.lines().filter(|s| s.contains(": Audio:")) {
+    let lines = text.lines().collect::<Vec<_>>();
+    for (line_number, line) in lines
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.contains(": Audio:"))
+    {
         let Some(rest) = line.split("Stream #0:").nth(1) else {
             continue;
         };
@@ -233,7 +238,43 @@ fn parse_probe(text: &str) -> Result<Probe, String> {
             .nth(1)
             .and_then(|s| s.split(')').next())
             .unwrap_or("");
-        tracks.push(serde_json::json!({"Type":"audio","Index":index,"Language":lang,"Title":format!("Дорожка {}",tracks.len()+1)}));
+        let mut title = None;
+        let mut language = lang.to_owned();
+        let mut metadata = false;
+        for next in lines.iter().skip(line_number + 1) {
+            let next = next.trim();
+            if next.starts_with("Stream #")
+                || next.starts_with("Chapter #")
+                || next.starts_with("Output #")
+            {
+                break;
+            }
+            if next == "Metadata:" {
+                metadata = true;
+                continue;
+            }
+            if next == "Side data:" {
+                break;
+            }
+            if !metadata {
+                continue;
+            }
+            if let Some((key, value)) = next.split_once(':') {
+                let value = value.trim();
+                if value.is_empty() {
+                    continue;
+                }
+                match key.trim().to_ascii_lowercase().as_str() {
+                    "title" => title = Some(value.chars().take(256).collect::<String>()),
+                    "language" => language = value.chars().take(32).collect(),
+                    _ => {}
+                }
+            }
+        }
+        let title = title.unwrap_or_else(|| format!("Дорожка {}", tracks.len() + 1));
+        tracks.push(
+            serde_json::json!({"Type":"audio","Index":index,"Language":language,"Title":title}),
+        );
     }
     if !text.contains(": Video:") {
         return Err("В раздаче не найден видеопоток".into());
@@ -649,6 +690,15 @@ pub fn close() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn audio_titles_belong_to_their_streams() {
+        let info = parse_probe("Duration: 00:01:00.00, start: 0\nStream #0:0: Video: h264\n    Metadata:\n      title : Video title\nStream #0:2(rus): Audio: aac\n    Metadata:\n      title : Студия: Дубляж\nStream #0:4(eng): Audio: ac3\n    Metadata:\n      title : Original\nStream #0:5: Audio: aac\nStream #0:6: Subtitle: srt\n    Metadata:\n      title : Subtitles").unwrap();
+        assert_eq!(info.tracks[0]["Title"], "Студия: Дубляж");
+        assert_eq!(info.tracks[0]["Language"], "rus");
+        assert_eq!(info.tracks[1]["Title"], "Original");
+        assert_eq!(info.tracks[1]["Index"], 4);
+        assert_eq!(info.tracks[2]["Title"], "Дорожка 3");
+    }
     #[test]
     fn probe_and_vod_seek_timeline() {
         let info=parse_probe("Duration: 00:01:02.50, start: 0\nStream #0:0: Video: h264\nStream #0:2(rus): Audio: aac").unwrap();
