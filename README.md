@@ -82,6 +82,17 @@ Arch Linux и CachyOS:
 sudo pacman -Syu --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool fuse2 gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav
 ```
 
+**РЕД ОС / RED OS**
+
+```sh
+sudo dnf install -y \
+  gtk3 librsvg2 \
+  'libwebkit2gtk-4.1.so.0()(64bit)' \
+  'libayatana-appindicator3.so.1()(64bit)' \
+  'libxdo.so.3()(64bit)' \
+  ffmpeg gstreamer1-plugin-libav
+```
+
 После установки зависимостей разрешите запуск AppImage:
 
 ```sh
@@ -185,6 +196,17 @@ Arch Linux and CachyOS:
 sudo pacman -Syu --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool fuse2 gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav
 ```
 
+**РЕД ОС / RED OS**
+
+```sh
+sudo dnf install -y \
+  gtk3 librsvg2 \
+  'libwebkit2gtk-4.1.so.0()(64bit)' \
+  'libayatana-appindicator3.so.1()(64bit)' \
+  'libxdo.so.3()(64bit)' \
+  ffmpeg gstreamer1-plugin-libav
+```
+
 Then make the AppImage executable:
 
 ```sh
@@ -227,6 +249,17 @@ sudo pacman -Syu --needed ffmpeg gtk3 webkit2gtk-4.1 libayatana-appindicator lib
 chmod +x Pirate-Cinema-*-x86_64.AppImage
 ```
 
+**РЕД ОС / RED OS**
+
+```sh
+sudo dnf install -y \
+  gtk3 librsvg2 \
+  'libwebkit2gtk-4.1.so.0()(64bit)' \
+  'libayatana-appindicator3.so.1()(64bit)' \
+  'libxdo.so.3()(64bit)' \
+  ffmpeg gstreamer1-plugin-libav
+```
+
 После установки декодеров полностью закройте и снова запустите приложение.
 При ошибках EGL/Mesa проверьте драйвер GPU и доступ текущего пользователя
 к `/dev/dri/renderD*`. Программная отрисовка пригодна для диагностики,
@@ -255,13 +288,3 @@ sudo dnf install gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstr
 
 Restart the app after installing codecs / После установки перезапустите приложение.
 
-## РЕД ОС / RED OS
-
-```sh
-sudo dnf install -y \
-  gtk3 librsvg2 \
-  'libwebkit2gtk-4.1.so.0()(64bit)' \
-  'libayatana-appindicator3.so.1()(64bit)' \
-  'libxdo.so.3()(64bit)' \
-  ffmpeg gstreamer1-plugin-libav
-```
