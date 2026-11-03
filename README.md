@@ -254,3 +254,14 @@ sudo dnf install gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstr
 ```
 
 Restart the app after installing codecs / После установки перезапустите приложение.
+
+## РЕД ОС / RED OS
+
+```sh
+sudo dnf install -y \
+  gtk3 librsvg2 \
+  'libwebkit2gtk-4.1.so.0()(64bit)' \
+  'libayatana-appindicator3.so.1()(64bit)' \
+  'libxdo.so.3()(64bit)' \
+  ffmpeg gstreamer1-plugin-libav
+```
