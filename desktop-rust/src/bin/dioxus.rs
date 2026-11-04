@@ -1903,6 +1903,7 @@ fn App() -> Element {
                                     results: results(),
                                     busy: busy(),
                                     on_add: add_result,
+                                    on_source_change: move |_| run_search(),
                                 }
                             },
                             Page::Library => rsx! {
@@ -2099,6 +2100,8 @@ fn refresh_server(
 }
 
 #[allow(clippy::too_many_arguments)]
+static SEARCH_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[allow(clippy::too_many_arguments)]
 fn start_search(
     value: String,
     endpoint: String,
@@ -2109,6 +2112,12 @@ fn start_search(
     mut poster: Signal<String>,
     mut server: Signal<ServerState>,
 ) {
+    let generation = SEARCH_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    let current = move || SEARCH_GENERATION.load(std::sync::atomic::Ordering::SeqCst) == generation;
+    let source = settings_path()
+        .and_then(|p| settings::search_source(&p))
+        .unwrap_or_else(|_| "rutor".into());
+    results.set(Vec::new());
     page.set(Page::Search);
     busy.set(true);
     metadata.set(None);
@@ -2116,9 +2125,13 @@ fn start_search(
     spawn(async move {
         let metadata_query = value.clone();
         let request_endpoint = endpoint.clone();
-        let result =
-            tokio::task::spawn_blocking(move || search_all_sources(&request_endpoint, "", &value))
-                .await;
+        let result = tokio::task::spawn_blocking(move || {
+            search_all_sources(&request_endpoint, &source, &value)
+        })
+        .await;
+        if !current() {
+            return;
+        }
         match result {
             Ok(Ok(found)) => {
                 results.set(found);
@@ -2139,6 +2152,9 @@ fn start_search(
                 Ok(None) | Err(_) => metadata::lookup(&metadata_query, true),
             })
             .await;
+        if !current() {
+            return;
+        }
         if let Ok(Ok(Some(item))) = lookup {
             let poster_item = item.clone();
             metadata.set(Some(item));
@@ -2147,6 +2163,9 @@ fn start_search(
             })
             .await
             {
+                if !current() {
+                    return;
+                }
                 poster.set(jpeg_data_uri(&bytes));
             }
         }

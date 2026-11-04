@@ -765,7 +765,15 @@ pub fn SearchPage(
     results: Vec<SearchResult>,
     busy: bool,
     on_add: EventHandler<(SearchResult, bool)>,
+    on_source_change: EventHandler<()>,
 ) -> Element {
+    let mut search_source = use_signal(|| {
+        settings_path()
+            .and_then(|p| settings::search_source(&p))
+            .unwrap_or_else(|_| "rutor".into())
+    });
+    let mut source_error = use_signal(String::new);
+    let has_query = !query.trim().is_empty();
     let cover_mode = use_context::<Signal<CoverMode>>();
     let mut quality = use_signal(|| "all".to_owned());
     let mut source_filter = use_signal(|| "all".to_owned());
@@ -852,7 +860,25 @@ pub fn SearchPage(
                             }
                         }
                     }
+            select {
+                class: "select search-source-select", aria_label: "Источник поиска", value: "{search_source}", disabled: busy,
+                onchange: move |event| {
+                    let next = event.value();
+                    match settings_path().and_then(|p| settings::select_search_source(&p, &next)) {
+                        Ok(()) => {
+                            search_source.set(next);
+                            source_error.set(String::new());
+                            if has_query { on_source_change.call(()); }
+                        }
+                        Err(error) => source_error.set(error),
+                    }
+                },
+                option { value: "rutor", "RuTor" }
+                option { value: "torznab", "Torznab" }
+                option { value: "torrents_csv", "Torrents.csv" }
+            }
                 }
+                if !source_error().is_empty() { p { role: "alert", "{source_error}" } }
                 if !results.is_empty() {
                     div { class: "search-filters",
                         div { class: "chip-row",

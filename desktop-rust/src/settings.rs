@@ -165,6 +165,31 @@ pub fn validate_media_endpoint(endpoint: &str) -> Result<String, String> {
     Ok(endpoint.into())
 }
 
+pub fn search_source(path: &Path) -> Result<String, String> {
+    let value = read_settings(path)?;
+    Ok(value
+        .get("search_source")
+        .and_then(|v| v.as_str())
+        .unwrap_or("rutor")
+        .to_owned())
+}
+
+pub fn select_search_source(path: &Path, source: &str) -> Result<(), String> {
+    let mut value = read_settings(path)?;
+    if !["rutor", "torznab", "torrents_csv"].contains(&source) {
+        return Err("Unknown search source".into());
+    }
+    if source == "torznab" {
+        let preferences = load_preferences(path)?;
+        if preferences.torznab_url.trim().is_empty() {
+            return Err("Сначала настройте Torznab в настройках поиска".into());
+        }
+        validate_torznab(&preferences.torznab_url, &preferences.torznab_api_key)?;
+    }
+    value["search_source"] = serde_json::json!(source);
+    write_settings(path, &value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

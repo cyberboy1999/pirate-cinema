@@ -171,6 +171,40 @@ pub fn is_active(hash: &str) -> Result<bool, String> {
     engine()?.is_active(hash)
 }
 pub fn add_magnet(_: &str, magnet: &str, title: &str) -> Result<AddResult, String> {
+    if magnet.starts_with("http://") || magnet.starts_with("https://") {
+        let preferences = crate::settings::load_preferences(&profile_dir()?.join("settings.json"))?;
+        let origin = |url: &str| url.split('/').take(3).collect::<Vec<_>>().join("/");
+        if preferences.torznab_url.is_empty() || origin(magnet) != origin(&preferences.torznab_url)
+        {
+            return Err("Ссылка загрузки не принадлежит настроенному Torznab".into());
+        }
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(20)))
+            .build()
+            .into();
+        let mut response = agent
+            .get(magnet)
+            .call()
+            .map_err(|_| "Torznab: не удалось скачать torrent")?;
+        let bytes = response
+            .body_mut()
+            .with_config()
+            .limit(8 * 1024 * 1024)
+            .read_to_vec()
+            .map_err(|_| "Torznab: ошибка чтения torrent")?;
+        let hash = librqbit::torrent_from_bytes(&bytes)
+            .map_err(|_| "Torznab вернул некорректный torrent")?
+            .info_hash
+            .as_string();
+        let engine = engine()?;
+        let already_exists = engine.list().iter().any(|item| item.hash == hash);
+        runtime()?.block_on(engine.add_torrent_file(bytes))?;
+        catalog()?.execute("INSERT INTO engine_library(hash,title) VALUES(?1,?2) ON CONFLICT(hash) DO UPDATE SET title=excluded.title", (&hash, title)).map_err(|e| e.to_string())?;
+        return Ok(AddResult {
+            hash,
+            already_exists,
+        });
+    }
     let hash = magnet_info_hash(magnet).ok_or("Нужна корректная magnet-ссылка")?;
     let engine = engine()?;
     let already_exists = engine.list().iter().any(|item| item.hash == hash);
@@ -209,30 +243,63 @@ pub fn remove_torrent(_: &str, hash: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     Ok(())
 }
-pub fn search_all_sources(_: &str, _: &str, query: &str) -> Result<Vec<SearchResult>, String> {
+pub fn search_all_sources(
+    _: &str,
+    selected_source: &str,
+    query: &str,
+) -> Result<Vec<SearchResult>, String> {
     let root = profile_dir()?;
-    let local = crate::embedded::search(&root, query);
-    let preferences = crate::settings::load_preferences(&root.join("settings.json"))?;
-    if preferences.torznab_url.trim().is_empty() {
-        return local;
-    }
-    let extra = search_torznab(
-        &preferences.torznab_url,
-        &preferences.torznab_api_key,
-        query,
-    );
-    match (local, extra) {
-        (Err(a), Err(b)) => Err(format!("{a}; {b}")),
-        (left, right) => {
-            let mut results = left.unwrap_or_default();
-            for item in right.unwrap_or_default() {
-                if !results.iter().any(|saved| saved.hash == item.hash) {
-                    results.push(item);
-                }
+    let path = root.join("settings.json");
+    let source = if selected_source.is_empty() {
+        crate::settings::search_source(&path)?
+    } else {
+        selected_source.to_owned()
+    };
+    let preferences = crate::settings::load_preferences(&path)?;
+    let mut queries = vec![query.trim().to_owned()];
+    let movie = crate::metadata::lookup(query, false)
+        .ok()
+        .flatten()
+        .or_else(|| crate::metadata::lookup(query, true).ok().flatten());
+    if let Some(movie) = movie {
+        for title in [movie.title, movie.original_title] {
+            if !title.trim().is_empty() && !queries.iter().any(|q| q.eq_ignore_ascii_case(&title)) {
+                queries.push(title);
             }
-            Ok(results)
         }
     }
+    let mut found = Vec::new();
+    let mut errors = Vec::new();
+    let mut succeeded = false;
+    for query in queries.iter().take(3) {
+        let response = match source.as_str() {
+            "torrents_csv" => search_torrents_csv(query),
+            "torznab" => search_torznab(
+                &preferences.torznab_url,
+                &preferences.torznab_api_key,
+                query,
+            ),
+            _ => crate::embedded::search(&root, query),
+        };
+        match response {
+            Ok(items) => {
+                succeeded = true;
+                found.extend(items);
+            }
+            Err(error) => errors.push(error),
+        }
+    }
+    if !succeeded {
+        return Err(errors.join("; "));
+    }
+    let wanted_year = crate::catalog::clean_title(query).1;
+    let mut seen = std::collections::HashSet::new();
+    found.retain(|item| {
+        let year = crate::catalog::clean_title(&item.title).1;
+        !wanted_year.is_some_and(|wanted| year.is_some_and(|actual| actual != wanted))
+            && seen.insert(item.hash.clone())
+    });
+    Ok(found)
 }
 pub fn shutdown() {
     // Kill/wait only children created here before stopping the owned torrent session.
@@ -257,10 +324,176 @@ fn encode(value: &str) -> String {
         .collect()
 }
 
+fn relevant_results(results: Vec<SearchResult>, query: &str) -> Vec<SearchResult> {
+    let words = |text: &str| {
+        text.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let wanted = words(query);
+    let mut seen = std::collections::HashSet::new();
+    results
+        .into_iter()
+        .filter(|item| {
+            let title = words(&item.title);
+            wanted.iter().all(|word| title.contains(word))
+                && !title.iter().any(|word| {
+                    [
+                        "mp3",
+                        "flac",
+                        "repack",
+                        "fitgirl",
+                        "igruha",
+                        "soundtrack",
+                        "ost",
+                    ]
+                    .contains(&word.as_str())
+                })
+                && seen.insert(item.hash.clone())
+        })
+        .collect()
+}
+fn search_torrents_csv(query: &str) -> Result<Vec<SearchResult>, String> {
+    if query.trim().chars().count() < 3 {
+        return Err("Torrents.csv: минимум 3 символа".into());
+    }
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(15)))
+        .build()
+        .into();
+    let mut response = agent
+        .get(format!(
+            "https://torrents-csv.com/service/search?size=100&q={}",
+            encode(query.trim())
+        ))
+        .call()
+        .map_err(|_| "Torrents.csv: сервис недоступен")?;
+    let body = response
+        .body_mut()
+        .with_config()
+        .limit(4 * 1024 * 1024)
+        .read_to_string()
+        .map_err(|_| "Torrents.csv: не удалось прочитать ответ")?;
+    let mut found = parse_torrents_csv(&body)?;
+    let mut next = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("next").and_then(|n| n.as_u64()));
+    for _ in 0..3 {
+        let Some(cursor) = next else {
+            break;
+        };
+        let mut response = agent
+            .get(format!(
+                "https://torrents-csv.com/service/search?q={}&after={cursor}",
+                encode(query.trim())
+            ))
+            .call()
+            .map_err(|_| "Torrents.csv: ошибка следующей страницы")?;
+        let body = response
+            .body_mut()
+            .with_config()
+            .limit(4 * 1024 * 1024)
+            .read_to_string()
+            .map_err(|_| "Torrents.csv: ошибка чтения страницы")?;
+        for item in parse_torrents_csv(&body)? {
+            if !found.iter().any(|saved| saved.hash == item.hash) {
+                found.push(item);
+            }
+        }
+        let following = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("next").and_then(|n| n.as_u64()));
+        if following == next || found.len() >= 100 {
+            break;
+        }
+        next = following;
+    }
+    Ok(relevant_results(found, query))
+}
+
+fn parse_torrents_csv(body: &str) -> Result<Vec<SearchResult>, String> {
+    let value: serde_json::Value = serde_json::from_str(body)
+        .map_err(|_| "Torrents.csv: ожидался JSON, возможно включена защита сайта")?;
+    let torrents = value
+        .get("torrents")
+        .and_then(|v| v.as_array())
+        .ok_or("Torrents.csv: неверный формат ответа")?;
+    Ok(torrents
+        .iter()
+        .filter_map(|item| {
+            let hash = item.get("infohash")?.as_str()?.to_ascii_lowercase();
+            let title = item.get("name")?.as_str()?.trim();
+            if hash.len() != 40 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) || title.is_empty()
+            {
+                return None;
+            }
+            Some(SearchResult {
+                magnet: format!("magnet:?xt=urn:btih:{hash}&dn={}", encode(title)),
+                hash,
+                title: title.to_owned(),
+                size: format!(
+                    "{:.2} GiB",
+                    item.get("size_bytes").and_then(|v| v.as_u64()).unwrap_or(0) as f64
+                        / 1073741824.0
+                ),
+                seeders: item
+                    .get("seeders")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0)
+                    .min(i64::MAX as u64) as i64,
+                source: "Torrents.csv".into(),
+                tracker: String::new(),
+            })
+        })
+        .take(100)
+        .collect())
+}
+fn video_categories(xml: &str) -> Result<Vec<String>, String> {
+    use quick_xml::{events::Event, Reader};
+    let mut reader = Reader::from_str(xml);
+    let mut categories = Vec::new();
+    loop {
+        match reader
+            .read_event()
+            .map_err(|_| "Torznab: некорректный t=caps")?
+        {
+            Event::Start(tag) | Event::Empty(tag)
+                if matches!(tag.local_name().as_ref(), b"category" | b"subcat") =>
+            {
+                for attribute in tag.attributes().flatten() {
+                    if attribute.key.as_ref() == b"id" {
+                        let id = attribute
+                            .unescape_value()
+                            .map_err(|_| "Torznab: неверная категория")?;
+                        if let Ok(number) = id.parse::<u32>() {
+                            if ((2000..3000).contains(&number)
+                                || (5000..6000).contains(&number)
+                                || (8000..8100).contains(&number))
+                                && !categories.iter().any(|saved| saved == id.as_ref())
+                            {
+                                categories.push(id.into_owned());
+                            }
+                        }
+                    }
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if categories.is_empty() {
+        return Err("Torznab: индексер не сообщил категории видео".into());
+    }
+    Ok(categories)
+}
 fn search_torznab(host: &str, key: &str, query: &str) -> Result<Vec<SearchResult>, String> {
     crate::settings::validate_torznab(host, key)?;
     let host = host.trim();
-    let endpoint = if host.to_ascii_lowercase().contains("/api/v2.0/indexers/") {
+    let endpoint = if host.to_ascii_lowercase().contains("/api/v2.0/indexers/")
+        && !host.trim_end_matches('/').ends_with("/api")
+    {
         format!("{}/api", host.trim_end_matches('/'))
     } else {
         host.to_owned()
@@ -270,9 +503,21 @@ fn search_torznab(host: &str, key: &str, query: &str) -> Result<Vec<SearchResult
         .timeout_global(Some(std::time::Duration::from_secs(15)))
         .build()
         .into();
+    let caps_url = format!("{endpoint}{separator}t=caps&apikey={}", encode(key.trim()));
+    let mut caps_response = agent
+        .get(caps_url)
+        .call()
+        .map_err(|_| "Torznab: не удалось получить категории t=caps")?;
+    let caps = caps_response
+        .body_mut()
+        .with_config()
+        .limit(1024 * 1024)
+        .read_to_string()
+        .map_err(|_| "Torznab: ошибка чтения t=caps")?;
+    let categories = video_categories(&caps)?.join(",");
     let mut response = agent
         .get(format!(
-            "{endpoint}{separator}t=search&apikey={}&q={}",
+            "{endpoint}{separator}t=search&cat={categories}&limit=100&apikey={}&q={}",
             encode(key.trim()),
             encode(query)
         ))
@@ -289,7 +534,7 @@ fn search_torznab(host: &str, key: &str, query: &str) -> Result<Vec<SearchResult
     if body.len() > 4 * 1024 * 1024 {
         return Err("Jackett/Torznab: слишком большой ответ".into());
     }
-    parse_torznab(&body)
+    Ok(relevant_results(parse_torznab(&body)?, query))
 }
 
 fn parse_torznab(body: &str) -> Result<Vec<SearchResult>, String> {
@@ -326,6 +571,7 @@ fn parse_torznab(body: &str) -> Result<Vec<SearchResult>, String> {
             Event::Empty(tag) if item.is_some() => {
                 let mut name = String::new();
                 let mut value = String::new();
+                let mut enclosure_size = None;
                 for attribute in tag.attributes() {
                     let attribute = attribute.map_err(|_| "Некорректные атрибуты Torznab")?;
                     let text = attribute
@@ -335,17 +581,25 @@ fn parse_torznab(body: &str) -> Result<Vec<SearchResult>, String> {
                     match attribute.key.as_ref() {
                         b"name" => name = text,
                         b"value" | b"url" => value = text,
+                        b"length" => enclosure_size = text.parse::<u64>().ok(),
                         _ => {}
                     }
                 }
                 let item = item.as_mut().unwrap();
+                if item.size.is_empty() {
+                    if let Some(bytes) = enclosure_size {
+                        item.size = bytes.to_string();
+                    }
+                }
                 match name.as_str() {
                     "magneturl" => item.magnet = value,
                     "infohash" => item.hash = value,
                     "seeders" => item.seeders = value.parse::<i64>().unwrap_or(0).max(0),
                     "size" => item.size = value,
                     _ if tag.local_name().as_ref() == b"enclosure"
-                        && value.starts_with("magnet:?") =>
+                        && (value.starts_with("magnet:?")
+                            || value.starts_with("http://")
+                            || value.starts_with("https://")) =>
                     {
                         item.magnet = value
                     }
@@ -357,7 +611,13 @@ fn parse_torznab(body: &str) -> Result<Vec<SearchResult>, String> {
                 let item = item.as_mut().unwrap();
                 match field.as_slice() {
                     b"title" => item.title.push_str(&text),
-                    b"link" if text.starts_with("magnet:?") => item.magnet = text.into_owned(),
+                    b"link"
+                        if text.starts_with("magnet:?")
+                            || text.starts_with("http://")
+                            || text.starts_with("https://") =>
+                    {
+                        item.magnet = text.into_owned()
+                    }
                     b"size" => item.size = text.into_owned(),
                     _ => {}
                 }
@@ -365,6 +625,13 @@ fn parse_torznab(body: &str) -> Result<Vec<SearchResult>, String> {
             Event::End(tag) => {
                 if tag.local_name().as_ref() == b"item" {
                     if let Some(mut item) = item.take() {
+                        if let Ok(bytes) = item.size.trim().parse::<u64>() {
+                            item.size = if bytes >= 1073741824 {
+                                format!("{:.2} GiB", bytes as f64 / 1073741824.0)
+                            } else {
+                                format!("{:.1} MiB", bytes as f64 / 1048576.0)
+                            };
+                        }
                         if let Some(hash) = magnet_info_hash(&item.magnet)
                             .or_else(|| crate::normalize_info_hash(&item.hash))
                         {
@@ -373,6 +640,19 @@ fn parse_torznab(body: &str) -> Result<Vec<SearchResult>, String> {
                                 item.magnet = format!("magnet:?xt=urn:btih:{hash}");
                             }
                             if !found.iter().any(|saved: &SearchResult| saved.hash == hash) {
+                                found.push(item);
+                            }
+                        } else if item.magnet.starts_with("http://")
+                            || item.magnet.starts_with("https://")
+                        {
+                            use std::hash::{Hash, Hasher};
+                            let mut id = std::collections::hash_map::DefaultHasher::new();
+                            item.magnet.hash(&mut id);
+                            item.hash = format!("torznab:{:016x}", id.finish());
+                            if !found
+                                .iter()
+                                .any(|saved: &SearchResult| saved.hash == item.hash)
+                            {
                                 found.push(item);
                             }
                         }
@@ -437,5 +717,56 @@ mod tests {
         assert!(result[0].magnet.contains("&tr="));
         assert!(parse_torznab("<html>Login</html>").is_err());
         assert_eq!(encode("Тачки &"), "%D0%A2%D0%B0%D1%87%D0%BA%D0%B8%20%26");
+    }
+    #[test]
+    fn caps_keep_video_animation_and_unknown_but_exclude_games_audio() {
+        let xml = r#"<caps><categories><category id="2000"><subcat id="2040"/></category><category id="5000"><subcat id="5070"/></category><category id="8010"/><category id="4000"/><category id="3000"/></categories></caps>"#;
+        assert_eq!(
+            video_categories(xml).unwrap(),
+            ["2000", "2040", "5000", "5070", "8010"]
+        );
+        assert!(video_categories("<html>Login</html>").is_err());
+    }
+
+    #[test]
+    fn relevance_rejects_substring_games_and_audio_and_deduplicates() {
+        let rows = [
+            "Cars (2006)",
+            "My Summer Car",
+            "Cars FitGirl Repack",
+            "Cars soundtrack mp3",
+            "Cars (2006)",
+        ];
+        let items = rows
+            .iter()
+            .map(|title| SearchResult {
+                title: (*title).into(),
+                hash: (*title).into(),
+                magnet: String::new(),
+                size: String::new(),
+                seeders: 1,
+                source: String::new(),
+                tracker: String::new(),
+            })
+            .collect();
+        let found = relevant_results(items, "Cars");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].title, "Cars (2006)");
+    }
+    #[test]
+    fn torznab_keeps_download_links_without_infohash() {
+        let xml = r#"<rss><channel><item><title>Тачки (2006)</title><link>http://127.0.0.1:9117/dl/test</link><enclosure url="http://127.0.0.1:9117/dl/test" type="application/x-bittorrent"/></item></channel></rss>"#;
+        let found = parse_torznab(xml).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].title, "Тачки (2006)");
+        assert!(found[0].hash.starts_with("torznab:"));
+        assert!(found[0].magnet.starts_with("http://"));
+    }
+    #[test]
+    fn torznab_formats_byte_sizes_and_reads_enclosure_length() {
+        let xml = r#"<rss><channel><item><title>Film</title><enclosure url="http://127.0.0.1/dl" length="2147483648"/></item><item><title>Other</title><size>104857600</size><link>http://127.0.0.1/other</link></item></channel></rss>"#;
+        let found = parse_torznab(xml).unwrap();
+        assert_eq!(found[0].size, "2.00 GiB");
+        assert_eq!(found[1].size, "100.0 MiB");
     }
 }
