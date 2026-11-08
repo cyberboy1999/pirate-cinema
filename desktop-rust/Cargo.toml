@@ -1,6 +1,6 @@
 [package]
 name = "pirate-cinema-core"
-version = "0.8.5"
+version = "0.8.6"
 edition = "2021"
 publish = false
 
@@ -39,3 +39,10 @@ path = "src/lib.rs"
 name = "pirate-cinema"
 path = "src/bin/dioxus.rs"
 required-features = ["desktop"]
+
+[patch.crates-io]
+librqbit-dht = { path = "patches/librqbit-dht" }
+
+[[example]]
+name = "dht_probe"
+required-features = ["torrent-engine"]

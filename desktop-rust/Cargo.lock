@@ -3275,8 +3275,6 @@ dependencies = [
 [[package]]
 name = "librqbit-dht"
 version = "9.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "575f94f543c16de3088f8aa84175203d65437c8886dc24d383941f408dc26488"
 dependencies = [
  "anyhow",
  "backon",
@@ -4432,7 +4430,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pirate-cinema-core"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "axum",
  "base64 0.23.1",
