@@ -1,6 +1,6 @@
 [package]
 name = "pirate-cinema-core"
-version = "0.8.6"
+version = "0.9.0"
 edition = "2021"
 publish = false
 
@@ -40,9 +40,22 @@ name = "pirate-cinema"
 path = "src/bin/dioxus.rs"
 required-features = ["desktop"]
 
+[[example]]
+name = "preflight_smoke"
+required-features = ["desktop"]
+
+[[example]]
+name="adblock_sources_smoke"
+required-features=["desktop"]
+
+[[example]]
+name="vpn_torrent_probe"
+required-features=["desktop"]
+
 [patch.crates-io]
 librqbit-dht = { path = "patches/librqbit-dht" }
 
 [[example]]
 name = "dht_probe"
 required-features = ["torrent-engine"]
+

@@ -417,17 +417,12 @@ fn read_request(stream: &mut TcpStream) -> Result<Vec<u8>, ()> {
         };
         let header_end = header_end + 4;
         let headers = String::from_utf8_lossy(&input[..header_end]);
-        let content_length = headers
-            .lines()
-            .filter_map(|line| line.split_once(':'))
-            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-            .and_then(|(_, value)| value.trim().parse::<usize>().ok())
-            .unwrap_or(0);
+        let content_length = checked_content_length(&headers, LIMIT - header_end)?;
         if input.len() >= header_end + content_length {
             return Ok(input);
         }
     }
-    Ok(input)
+    Err(())
 }
 
 fn respond(stream: &mut TcpStream, status: u16, content_type: &str, body: &str) {
@@ -551,5 +546,44 @@ mod tests {
         );
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(root).unwrap();
+    }
+}
+
+fn checked_content_length(headers: &str, remaining: usize) -> Result<usize, ()> {
+    let mut length = None;
+    for (name, value) in headers.lines().filter_map(|line| line.split_once(':')) {
+        if name.eq_ignore_ascii_case("transfer-encoding") {
+            return Err(());
+        }
+        if name.eq_ignore_ascii_case("content-length") {
+            let value = value.trim();
+            if length.is_some() || value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(());
+            }
+            let parsed = value.parse::<usize>().map_err(|_| ())?;
+            if parsed > remaining {
+                return Err(());
+            }
+            length = Some(parsed);
+        }
+    }
+    Ok(length.unwrap_or(0))
+}
+#[cfg(test)]
+mod request_length_tests {
+    use super::*;
+    #[test]
+    fn rejects_overflow_malformed_and_ambiguous_lengths() {
+        for headers in [
+            "Content-Length: 18446744073709551615",
+            "Content-Length: nope",
+            "Content-Length: -1",
+            "Content-Length: 1\r\nContent-Length: 1",
+            "Transfer-Encoding: chunked",
+        ] {
+            assert!(checked_content_length(headers, 100).is_err());
+        }
+        assert_eq!(checked_content_length("Content-Length: 12", 100), Ok(12));
+        assert_eq!(checked_content_length("Host: localhost", 100), Ok(0));
     }
 }

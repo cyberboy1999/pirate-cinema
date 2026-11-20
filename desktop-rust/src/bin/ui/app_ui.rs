@@ -1367,6 +1367,7 @@ pub fn Detail(
     metadata_status: String,
     on_back: EventHandler<MouseEvent>,
     on_play: EventHandler<(VideoFile, bool, bool)>,
+    shared_busy: Signal<bool>,
     on_media_type: EventHandler<String>,
     on_title: EventHandler<String>,
     on_refresh_metadata: EventHandler<MouseEvent>,
@@ -1483,6 +1484,7 @@ pub fn Detail(
         .cloned();
     let season_hash = torrent.hash.clone();
     let episode_hash = torrent.hash.clone();
+    let check_hash = torrent.hash.clone();
     let collection_torrent = torrent.clone();
     let later_torrent = torrent.clone();
     let year = metadata.as_ref().and_then(|item| item.year);
@@ -1513,6 +1515,7 @@ pub fn Detail(
                     } else {
                         p { class: "detail-overview", {language.pick("Локальное описание ещё не загружено. Обновите карточку в разделе управления.", "The local description has not been loaded yet. Refresh the title under management.")} }
                     }
+                    if let Some(item) = next_file.clone() { TorrentPreflight { key: "{check_hash}-{item.file.id}", hash: check_hash.clone(), file: item.file.clone(), candidates: visible_files.iter().map(|item| item.file.clone()).collect::<Vec<_>>(), shared_busy } }
                     div { class: "detail-actions",
                         if let Some(file) = next_file.clone() {
                             button { class: "button primary", disabled: busy, onclick: { let file = file.file.clone(); move |_| on_play.call((file.clone(), true, auto_next())) },
@@ -1875,6 +1878,7 @@ pub fn Settings(
                 div { class: "settings-panel",
                     match current_section {
                         SettingsSection::General => rsx! {
+                            AdblockSettings {}
                             section { class: "settings-card",
                                 h2 { {language().pick("Интерфейс и окно", "Interface and window")} }
                                 div { class: "settings-grid",
@@ -2038,4 +2042,89 @@ pub fn Settings(
             }
         }
     }
+}
+
+#[component]
+fn TorrentPreflight(
+    hash: String,
+    file: VideoFile,
+    candidates: Vec<VideoFile>,
+    mut shared_busy: Signal<bool>,
+) -> Element {
+    let mut chosen = use_signal(move || file.clone());
+    let file = chosen();
+    let selected_id = file.id;
+    let check = use_hook(pirate_cinema_core::preflight::Check::default);
+    let cleanup = check.clone();
+    use_drop(move || cleanup.cancel());
+    let mut running = use_signal(|| false);
+    let mut message = use_signal(String::new);
+    let options = candidates.clone();
+    let cancel = check.clone();
+    let worker = check.clone();
+    rsx! { section { class: "settings-card", aria_label: "Проверка раздачи до просмотра",
+        h3 { "Проверка перед просмотром" }
+        p { "Проверим получение данных, дорожки и подготовку видеопотока. До 90 секунд; история просмотра не изменится." }
+        label { "Файл для проверки"
+            select { class: "select", aria_label: "Файл для проверки", disabled: shared_busy(), value: "{selected_id}", onchange: move |event| {
+                if let Ok(id)=event.value().parse::<i64>() {if let Some(file)=candidates.iter().find(|file| file.id==id) {chosen.set(file.clone());message.set(String::new());}}
+            }, for item in options.iter() { option { value: "{item.id}", "{item.name}" } } }
+        }
+        if running() {
+            p { role: "status", "{message}" }
+            button { class: "button secondary", onclick: move |_| cancel.cancel(), "Отменить проверку" }
+        } else {
+            button { class: "button secondary", disabled: shared_busy(), onclick: move |_| {
+                worker.cancelled.store(false,std::sync::atomic::Ordering::Release);
+                running.set(true);shared_busy.set(true);message.set(String::new());
+                let check=worker.clone();let hash=hash.clone();let file=file.clone();
+                dioxus::dioxus_core::spawn_forever(async move {
+                    let progress=check.clone();
+                    let mut task=tokio::task::spawn_blocking(move ||pirate_cinema_core::preflight::run(&hash,&file,&check));
+                    let result=loop {
+                        tokio::select! {
+                            result=&mut task => break result,
+                            _=tokio::time::sleep(std::time::Duration::from_millis(250)) => {
+                                if message.try_read().is_ok() { let text=progress.stage.lock().map(|s|s.clone()).unwrap_or_default();message.set(text); }
+                            }
+                        }
+                    };
+                    let text=match result {Ok(Ok(report))=>report,Ok(Err(error))=>error,Err(_)=>"Не удалось завершить проверку".into()};
+                    shared_busy.set(false);
+                    if running.try_read().is_ok() {message.set(text);running.set(false);}
+                });
+            }, "Проверить раздачу" }
+        }
+        if !message().is_empty() { p { role: "status", style: "white-space:pre-wrap;overflow-wrap:anywhere", "{message}" } }
+    } }
+}
+
+#[component]
+fn AdblockSettings() -> Element {
+    let mut enabled = use_signal(|| {
+        settings_path()
+            .ok()
+            .and_then(|p| settings::adblock_enabled(&p).ok())
+            .unwrap_or(true)
+    });
+    let mut status = use_signal(pirate_cinema_core::adblock::status);
+    let mut updating = use_signal(|| false);
+    rsx! {section{class:"settings-card",
+        h2{"Блокировка рекламы RuTube"}
+        label{class:"field-label",
+            input{r#type:"checkbox",checked:enabled(),onchange:move |event|{
+                let next=event.checked();match settings_path().and_then(|p|settings::save_adblock(&p,next)){Ok(())=>{enabled.set(next);status.set(if next{"Блокировка включена"}else{"Блокировка выключена"}.into());},Err(error)=>status.set(error)}
+            }}"Блокировать рекламные запросы"
+        }
+        p{"Переключение сохраняется сразу и действует на следующие запросы. Источники: uBlock filters — Ads и RU AdList из каталога uBlock Origin."}
+        p{"Поддерживаются простые сетевые правила и исключения. CSS, скриптлеты и правила с дополнительными условиями пропускаются. Реклама внутри самого видео не удаляется."}
+        button{class:"button secondary",disabled:updating(),onclick:move |_|{
+            updating.set(true);status.set("Загружаем списки…".into());
+            dioxus::dioxus_core::spawn_forever(async move{
+                let result=tokio::task::spawn_blocking(pirate_cinema_core::adblock::update).await;
+                if status.try_read().is_ok(){status.set(match result{Ok(Ok(text))=>text,Ok(Err(error))=>error,Err(_)=>"Не удалось обновить списки".into()});updating.set(false);}
+            });
+        },if updating(){"Обновляем…"}else{"Обновить списки"}}
+        p{role:"status",style:"overflow-wrap:anywhere","{status}"}
+    }}
 }

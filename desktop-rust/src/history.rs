@@ -254,8 +254,11 @@ impl HistoryStore {
         drop(source_db);
         let settings = std::fs::read_to_string(source.join("settings.json"))
             .map_err(|_| "В резервной копии нет settings.json".to_owned())?;
-        serde_json::from_str::<serde_json::Value>(&settings)
+        let settings_value = serde_json::from_str::<serde_json::Value>(&settings)
             .map_err(|_| "Некорректный settings.json в резервной копии".to_owned())?;
+        if !settings_value.is_object() {
+            return Err("settings.json в резервной копии должен содержать JSON-объект".into());
+        }
 
         #[cfg(feature = "torrent-engine")]
         let preserve_engine_catalog = {
@@ -286,7 +289,7 @@ impl HistoryStore {
         if let Some(path) = settings_path {
             let parent = path.parent().ok_or("Некорректный путь настроек")?;
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-            std::fs::write(path, settings).map_err(|error| error.to_string())?;
+            crate::atomic_file::write(path, settings.as_bytes())?;
         }
         let mut posters = 0;
         let source_posters = source.join("cache").join("posters");
@@ -1478,5 +1481,36 @@ mod tests {
         db.save_progress(&hash, 1, 995, 1000).unwrap();
         assert!(db.recent(10).unwrap().is_empty());
         assert_eq!(db.recently_played(10).unwrap().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod invalid_restore_settings_tests {
+    use super::*;
+    #[test]
+    fn non_object_backup_settings_do_not_restore_database() {
+        let root = std::env::temp_dir().join(format!(
+            "pc-restore-shape-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("history.sqlite");
+        let mut history = HistoryStore::open(&path).unwrap();
+        history
+            .mark_played(&"a".repeat(40), 1, "before.mkv", None)
+            .unwrap();
+        let backup = create_local_backup(&path, None, None, &root.join("backups")).unwrap();
+        history
+            .mark_played(&"b".repeat(40), 2, "after.mkv", None)
+            .unwrap();
+        std::fs::write(backup.join("settings.json"), "[]").unwrap();
+        assert!(history
+            .restore_local_backup(&backup, None, &root, None)
+            .is_err());
+        assert!(history.get(&"b".repeat(40), 2).unwrap().is_some());
     }
 }

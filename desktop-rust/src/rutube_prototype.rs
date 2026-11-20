@@ -280,12 +280,34 @@ fn hls_from_options(value: &Value) -> Result<String, String> {
     }
     let url = value["video_balancer"]["m3u8"]
         .as_str()
+        .filter(|url| !url.trim().is_empty())
+        .or_else(|| value["video_balancer"]["default"].as_str())
         .ok_or("Открытый HLS недоступен. Посмотрите ролик на Rutube.")?;
     validate_media_url(url)?;
     Ok(url.into())
 }
 
+// Narrow network rules adapted from RU AdList advblock/specific_block.txt.
+// Only dedicated advertising endpoints: never guess from segment names or duration.
+#[cfg(test)]
+fn blocked_rutube_ad(url: &str) -> bool {
+    let Ok(uri) = url.parse::<ureq::http::Uri>() else {
+        return false;
+    };
+    let host = uri.host().unwrap_or_default().to_ascii_lowercase();
+    let rutube = host == "rutube.ru" || host.ends_with(".rutube.ru");
+    (rutube && uri.path().starts_with("/api/advert/"))
+        || (host == "ac.rutube.ru"
+            && uri.path().starts_with("/api/")
+            && uri.path().ends_with("/banner_rules")
+            && uri.query().is_some())
+}
+
 fn validate_media_url(url: &str) -> Result<(), String> {
+    #[cfg(not(target_os = "android"))]
+    if pirate_cinema_core::adblock::blocked(url) {
+        return Err("Рекламный запрос RuTube заблокирован локальным фильтром".into());
+    }
     let parsed: ureq::http::Uri = url.parse().map_err(|_| "Некорректный адрес HLS")?;
     let host = parsed.host().unwrap_or_default();
     if parsed.scheme_str() != Some("https")
@@ -941,8 +963,34 @@ mod tests {
         }
         let good = serde_json::json!({"acl_access":{"allowed":true},"video_balancer":{"m3u8":"https://bl.rutube.ru/a.m3u8?token=temporary"}});
         assert!(hls_from_options(&good).is_ok());
+        assert!(hls_from_options(
+            &serde_json::json!({"video_balancer":{"default":"https://bl.rutube.ru/fallback.m3u8"}})
+        )
+        .is_ok());
+        assert!(hls_from_options(
+            &serde_json::json!({"video_balancer":{"default":"https://evil.test/a.m3u8"}})
+        )
+        .is_err());
         let mut blocked = good;
         blocked["acl_access"]["allowed"] = false.into();
         assert!(hls_from_options(&blocked).is_err());
+    }
+    #[test]
+    fn rutube_network_ad_rules_are_scoped() {
+        assert!(blocked_rutube_ad("https://rutube.ru/api/advert/vast/123"));
+        assert!(blocked_rutube_ad(
+            "https://ac.rutube.ru/api/v1/banner_rules?video=123"
+        ));
+        for url in [
+            "https://bl.rutube.ru/video/adventures/segment.ts",
+            "https://rutube.ru/api/play/options/123/",
+            "https://rutube.ru/api/advertisement/video",
+            "https://rutube.ru.evil.test/api/advert/a",
+            "https://bl.rutube.ru/a.m3u8?next=/api/advert/",
+        ] {
+            assert!(!blocked_rutube_ad(url), "{url}");
+        }
+
+        assert!(validate_media_url("https://bl.rutube.ru/content/video.m3u8").is_ok());
     }
 }

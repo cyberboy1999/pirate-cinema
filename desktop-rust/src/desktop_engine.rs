@@ -770,3 +770,70 @@ mod tests {
         assert_eq!(found[1].size, "100.0 MiB");
     }
 }
+
+pub fn torrent_diagnostics(hash: &str) -> Result<serde_json::Value, String> {
+    engine()?.diagnostics(hash)
+}
+
+/// Cancellable preparation for a diagnostics operation; dropping the future is
+/// followed by the caller's StreamLease cleanup, so the swarm is paused.
+pub fn checked_stream_url(
+    hash: &str,
+    file: &VideoFile,
+    cancelled: &std::sync::atomic::AtomicBool,
+    deadline: std::time::Instant,
+) -> Result<String, String> {
+    let engine = engine()?;
+    runtime()?.block_on(async {
+        let prepare = engine.play_url(hash, file);
+        tokio::pin!(prepare);
+        loop {
+            if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                return Err("Проверка отменена".into());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(
+                    "Пока не удалось подготовить поток за 90 секунд. Повторите проверку позже."
+                        .into(),
+                );
+            }
+            tokio::select! {
+                result=&mut prepare => return result,
+                _=tokio::time::sleep(std::time::Duration::from_millis(100))=>{}
+            }
+        }
+    })
+}
+
+pub(crate) fn network_diagnostic(hash: &str) -> String {
+    torrent_diagnostics(hash)
+        .map(|stats| format_network_diagnostic(&stats))
+        .unwrap_or_default()
+}
+fn format_network_diagnostic(stats: &serde_json::Value) -> String {
+    let peers = &stats["live"]["snapshot"]["peer_stats"];
+    let seen = peers["seen"].as_u64().unwrap_or(0);
+    let live = peers["live"].as_u64().unwrap_or(0);
+    let bytes = stats["progress_bytes"].as_u64().unwrap_or(0);
+    let dht = stats["dht"]["routing_table_size"].as_u64().unwrap_or(0);
+    let mut text = format!(
+        "Найдено пиров: {seen}; соединений: {live}; получено: {} КиБ; узлов DHT: {dht}.",
+        bytes / 1024
+    );
+    if seen > 0 && live == 0 && bytes == 0 {
+        text.push_str(" Адреса пиров найдены, но соединения не установлены. Если включён VPN/TUN, проверьте его маршрут и поддержку P2P. Приложение не обходит VPN автоматически.");
+    }
+    text
+}
+#[cfg(test)]
+mod network_diagnostic_tests {
+    use super::*;
+    #[test]
+    fn distinguishes_peer_discovery_from_connections() {
+        let stats = serde_json::json!({"progress_bytes":0,"live":{"snapshot":{"peer_stats":{"seen":350,"live":0}}},"dht":{"routing_table_size":70}});
+        let text = format_network_diagnostic(&stats);
+        assert!(text.contains("VPN/TUN"));
+        assert!(text.contains("350"));
+        assert!(text.contains("70"));
+    }
+}

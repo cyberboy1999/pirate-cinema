@@ -122,6 +122,7 @@ pub fn executable() -> Result<PathBuf, String> {
 }
 fn command() -> Result<Command, String> {
     let mut cmd = Command::new(executable()?);
+    configure_local_transport(&mut cmd);
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -139,7 +140,7 @@ fn probe(source: &str, epoch: usize) -> Result<Probe, String> {
             "-hide_banner",
             "-nostdin",
             "-rw_timeout",
-            "15000000",
+            "60000000",
             "-i",
             source,
         ])
@@ -161,7 +162,7 @@ fn probe(source: &str, epoch: usize) -> Result<Probe, String> {
         }
         String::from_utf8_lossy(&text).into_owned()
     });
-    let deadline = Instant::now() + Duration::from_secs(35);
+    let deadline = Instant::now() + Duration::from_secs(90);
     loop {
         if child.try_wait().map_err(|e| e.to_string())?.is_some() {
             break;
@@ -176,12 +177,16 @@ fn probe(source: &str, epoch: usize) -> Result<Probe, String> {
             let _ = child.kill();
             let _ = child.wait();
             let _ = reader.join();
-            return Err("Не получены параметры видео за 35 секунд".into());
+            return Err("Не получены параметры видео за 90 секунд. Раздача не успела отдать данные для запуска.".into());
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     let output = reader.join().map_err(|_| "Ошибка чтения FFmpeg")?;
     parse_probe(&output).map_err(|error| {
+        if output.contains("Error number -138") || output.to_ascii_lowercase().contains("connection timed out") {
+            let details=source.split("/torrents/").nth(1).and_then(|tail|tail.split('/').next()).map(desktop_engine::network_diagnostic).unwrap_or_default();
+            return format!("Тайм-аут чтения торрент-потока: за 60 секунд не поступили необходимые данные видео. {details}");
+        }
         let tail = output
             .lines()
             .rev()
@@ -721,5 +726,38 @@ mod tests {
                 .map(|pair| pair[1]),
             Some("18")
         );
+    }
+}
+
+/// FFmpeg input is always our numeric loopback server, never a public URL.
+pub(crate) fn configure_local_transport(command: &mut Command) {
+    for name in [
+        "http_proxy",
+        "HTTP_PROXY",
+        "https_proxy",
+        "HTTPS_PROXY",
+        "all_proxy",
+        "ALL_PROXY",
+    ] {
+        command.env_remove(name);
+    }
+    command.env("no_proxy", "127.0.0.1,localhost,::1");
+    command.env("NO_PROXY", "127.0.0.1,localhost,::1");
+}
+
+#[cfg(test)]
+mod local_transport_tests {
+    use super::*;
+    #[test]
+    fn ffmpeg_loopback_does_not_inherit_proxy() {
+        let mut command = Command::new("ffmpeg");
+        command.env("http_proxy", "http://127.0.0.1:9");
+        configure_local_transport(&mut command);
+        let value = command
+            .get_envs()
+            .find(|(name, _)| *name == std::ffi::OsStr::new("http_proxy"))
+            .unwrap()
+            .1;
+        assert!(value.is_none());
     }
 }

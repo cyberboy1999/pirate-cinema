@@ -125,8 +125,13 @@ fn read_settings(path: &Path) -> Result<serde_json::Value, String> {
     if !path.exists() {
         return Ok(serde_json::json!({}));
     }
-    serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?)
-        .map_err(|error| error.to_string())
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?)
+            .map_err(|error| error.to_string())?;
+    if !value.is_object() {
+        return Err("settings.json должен содержать JSON-объект; исходный файл не изменён".into());
+    }
+    Ok(value)
 }
 
 fn write_settings(path: &Path, value: &serde_json::Value) -> Result<(), String> {
@@ -134,7 +139,7 @@ fn write_settings(path: &Path, value: &serde_json::Value) -> Result<(), String> 
         .parent()
         .ok_or("Не удалось определить папку настроек")?;
     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    std::fs::write(path, value.to_string()).map_err(|error| error.to_string())
+    crate::atomic_file::write(path, value.to_string().as_bytes())
 }
 
 pub fn validate_torznab(url: &str, api_key: &str) -> Result<(), String> {
@@ -259,5 +264,61 @@ mod tests {
         assert_eq!(loaded.cover_mode, CoverMode::Poster);
         assert_eq!(loaded.torznab_api_key, "secret");
         assert!(std::fs::remove_file(path).is_ok());
+    }
+}
+
+/// Independent setting: general form saves preserve this key.
+pub fn adblock_enabled(path: &Path) -> Result<bool, String> {
+    Ok(read_settings(path)?["rutube_adblock"]
+        .as_bool()
+        .unwrap_or(true))
+}
+pub fn save_adblock(path: &Path, enabled: bool) -> Result<(), String> {
+    let mut value = read_settings(path)?;
+    value["rutube_adblock"] = serde_json::json!(enabled);
+    write_settings(path, &value)
+}
+
+#[cfg(test)]
+mod adblock_tests {
+    use super::*;
+    #[test]
+    fn toggle_preserves_other_settings() {
+        let path = std::env::temp_dir().join(format!(
+            "pirate-adblock-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        assert!(adblock_enabled(&path).unwrap());
+        std::fs::write(&path, r#"{"torznab_api_key":"test-only","other":7}"#).unwrap();
+        save_adblock(&path, false).unwrap();
+        assert!(!adblock_enabled(&path).unwrap());
+        assert_eq!(read_settings(&path).unwrap()["other"], 7);
+        assert_eq!(
+            read_settings(&path).unwrap()["torznab_api_key"],
+            "test-only"
+        );
+        save_adblock(&path, true).unwrap();
+        assert!(adblock_enabled(&path).unwrap());
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod malformed_settings_tests {
+    use super::*;
+    #[test]
+    fn non_object_settings_are_rejected_without_overwrite() {
+        let path =
+            std::env::temp_dir().join(format!("pc-invalid-settings-{}.json", std::process::id()));
+        for value in ["[]", "true", "42", "null"] {
+            std::fs::write(&path, value).unwrap();
+            assert!(save_adblock(&path, false).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), value);
+        }
+        std::fs::remove_file(path).unwrap();
     }
 }

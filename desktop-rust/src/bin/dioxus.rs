@@ -1961,6 +1961,7 @@ fn App() -> Element {
                                     metadata_status: metadata_status(),
                                     on_back: move |_| page.set(Page::Library),
                                     on_play: play_file,
+                                    shared_busy: busy,
                                     on_media_type: update_media_type,
                                     on_title: update_title,
                                     on_refresh_metadata: refresh_selected_metadata,
@@ -2459,6 +2460,10 @@ fn launch_playback(
     mut web_player: Signal<Option<WebPlayback>>,
     mut server: Signal<ServerState>,
 ) {
+    if pirate_cinema_core::preflight::is_checking() {
+        server.write().error = "Дождитесь завершения проверки раздачи или отмените её".into();
+        return;
+    }
     let window = dioxus::desktop::window();
     if window.window.is_minimized() || !window.window.is_visible() {
         server.write().error = "Восстановите окно приложения, чтобы начать воспроизведение".into();

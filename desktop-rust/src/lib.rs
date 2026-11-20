@@ -69,11 +69,11 @@ pub fn check_rust_update(current: &str) -> Result<Option<ReleaseUpdate>, String>
         .get("https://api.github.com/repos/cyberboy1999/pirate-cinema/releases?per_page=12")
         .header("accept", "application/vnd.github+json")
         .call()
-        .map_err(|error| format!("GitHub не ответил: {error}"))?;
+        .map_err(|error| format!("GitHub РЅРµ РѕС‚РІРµС‚РёР»: {error}"))?;
     let releases: serde_json::Value = response
         .body_mut()
         .read_json()
-        .map_err(|error| format!("Некорректный ответ GitHub: {error}"))?;
+        .map_err(|error| format!("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ РѕС‚РІРµС‚ GitHub: {error}"))?;
     let update = releases
         .as_array()
         .into_iter()
@@ -123,27 +123,29 @@ pub fn download_rust_update(update: &ReleaseUpdate) -> Result<std::path::PathBuf
         "-win-x64.exe"
     };
     if !update.download_url.starts_with(expected_prefix) || !update.download_url.ends_with(suffix) {
-        return Err("GitHub вернул недопустимый адрес установщика".into());
+        return Err(
+            "GitHub РІРµСЂРЅСѓР» РЅРµРґРѕРїСѓСЃС‚РёРјС‹Р№ Р°РґСЂРµСЃ СѓСЃС‚Р°РЅРѕРІС‰РёРєР°".into(),
+        );
     }
     let directory = std::env::temp_dir().join("Pirate Cinema Updates");
-    std::fs::create_dir_all(&directory)
-        .map_err(|error| format!("Не удалось создать папку обновления: {error}"))?;
+    std::fs::create_dir_all(&directory).map_err(|error| {
+        format!("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РїР°РїРєСѓ РѕР±РЅРѕРІР»РµРЅРёСЏ: {error}")
+    })?;
     let destination = directory.join(
         update
             .download_url
             .rsplit('/')
             .next()
-            .ok_or("Нет имени пакета")?,
+            .ok_or("РќРµС‚ РёРјРµРЅРё РїР°РєРµС‚Р°")?,
     );
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(180)))
         .user_agent("Pirate-Cinema-Rust")
         .build()
         .into();
-    let mut response = agent
-        .get(&update.download_url)
-        .call()
-        .map_err(|error| format!("Не удалось скачать обновление: {error}"))?;
+    let mut response = agent.get(&update.download_url).call().map_err(|error| {
+        format!("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєР°С‡Р°С‚СЊ РѕР±РЅРѕРІР»РµРЅРёРµ: {error}")
+    })?;
     if response
         .headers()
         .get("content-length")
@@ -151,11 +153,14 @@ pub fn download_rust_update(update: &ReleaseUpdate) -> Result<std::path::PathBuf
         .and_then(|value| value.parse::<u64>().ok())
         .is_some_and(|size| size > MAX_INSTALLER_BYTES)
     {
-        return Err("Установщик обновления слишком большой".into());
+        return Err(
+            "РЈСЃС‚Р°РЅРѕРІС‰РёРє РѕР±РЅРѕРІР»РµРЅРёСЏ СЃР»РёС€РєРѕРј Р±РѕР»СЊС€РѕР№".into(),
+        );
     }
     let temporary = destination.with_extension("exe.part");
-    let mut file = std::fs::File::create(&temporary)
-        .map_err(|error| format!("Не удалось сохранить обновление: {error}"))?;
+    let mut file = std::fs::File::create(&temporary).map_err(|error| {
+        format!("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РѕР±РЅРѕРІР»РµРЅРёРµ: {error}")
+    })?;
     let copied = std::io::copy(
         &mut response
             .body_mut()
@@ -163,13 +168,16 @@ pub fn download_rust_update(update: &ReleaseUpdate) -> Result<std::path::PathBuf
             .take(MAX_INSTALLER_BYTES + 1),
         &mut file,
     )
-    .map_err(|error| format!("Загрузка обновления прервана: {error}"))?;
+    .map_err(|error| format!("Р—Р°РіСЂСѓР·РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РїСЂРµСЂРІР°РЅР°: {error}"))?;
     if copied > MAX_INSTALLER_BYTES {
         let _ = std::fs::remove_file(&temporary);
-        return Err("Установщик обновления слишком большой".into());
+        return Err(
+            "РЈСЃС‚Р°РЅРѕРІС‰РёРє РѕР±РЅРѕРІР»РµРЅРёСЏ СЃР»РёС€РєРѕРј Р±РѕР»СЊС€РѕР№".into(),
+        );
     }
-    let header = std::fs::read(&temporary)
-        .map_err(|error| format!("Не удалось проверить обновление: {error}"))?;
+    let header = std::fs::read(&temporary).map_err(|error| {
+        format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ РѕР±РЅРѕРІР»РµРЅРёРµ: {error}")
+    })?;
     let valid_header = if cfg!(target_os = "linux") {
         header.starts_with(b"\x7fELF")
     } else {
@@ -177,10 +185,11 @@ pub fn download_rust_update(update: &ReleaseUpdate) -> Result<std::path::PathBuf
     };
     if !valid_header {
         let _ = std::fs::remove_file(&temporary);
-        return Err("Загруженный файл не является установщиком Windows".into());
+        return Err("Р—Р°РіСЂСѓР¶РµРЅРЅС‹Р№ С„Р°Р№Р» РЅРµ СЏРІР»СЏРµС‚СЃСЏ СѓСЃС‚Р°РЅРѕРІС‰РёРєРѕРј Windows".into());
     }
-    std::fs::rename(&temporary, &destination)
-        .map_err(|error| format!("Не удалось подготовить обновление: {error}"))?;
+    std::fs::rename(&temporary, &destination).map_err(|error| {
+        format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РѕР±РЅРѕРІР»РµРЅРёРµ: {error}")
+    })?;
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -207,7 +216,7 @@ fn newer_version(candidate: &str, current: &str) -> bool {
 
 #[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn torrent_video_files(base_url: &str, hash: &str) -> Result<Vec<VideoFile>, String> {
-    let hash = normalize_info_hash(hash).ok_or("Некорректный хеш раздачи")?;
+    let hash = normalize_info_hash(hash).ok_or("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С…РµС€ СЂР°Р·РґР°С‡Рё")?;
     let base_url = base_url.trim_end_matches('/');
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(10)))
@@ -252,17 +261,22 @@ pub fn torrent_video_files(base_url: &str, hash: &str) -> Result<Vec<VideoFile>,
             Err(error) if attempt < 1 && retryable_details_error(&error) => {
                 std::thread::sleep(std::time::Duration::from_secs(attempt + 1));
             }
-            Err(error) => return Err(format!("Не удалось получить файлы раздачи: {error}")),
+            Err(error) => {
+                return Err(format!(
+                    "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ С„Р°Р№Р»С‹ СЂР°Р·РґР°С‡Рё: {error}"
+                ))
+            }
         }
     }
-    let mut response = response.ok_or("TorrServer не ответил после повторных запросов")?;
+    let mut response = response
+        .ok_or("TorrServer РЅРµ РѕС‚РІРµС‚РёР» РїРѕСЃР»Рµ РїРѕРІС‚РѕСЂРЅС‹С… Р·Р°РїСЂРѕСЃРѕРІ")?;
     let details: serde_json::Value = response
         .body_mut()
         .read_json()
-        .map_err(|error| format!("Некорректный список файлов: {error}"))?;
+        .map_err(|error| format!("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ СЃРїРёСЃРѕРє С„Р°Р№Р»РѕРІ: {error}"))?;
     let videos = parse_video_files(&details);
     if videos.is_empty() {
-        return Err("TorrServer ещё не получил список видеофайлов. Повторите позже".into());
+        return Err("TorrServer РµС‰С‘ РЅРµ РїРѕР»СѓС‡РёР» СЃРїРёСЃРѕРє РІРёРґРµРѕС„Р°Р№Р»РѕРІ. РџРѕРІС‚РѕСЂРёС‚Рµ РїРѕР·Р¶Рµ".into());
     }
     Ok(videos)
 }
@@ -381,9 +395,9 @@ fn retryable_details_error(error: &ureq::Error) -> bool {
 
 #[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn stream_url(base_url: &str, hash: &str, file: &VideoFile) -> Result<String, String> {
-    let hash = normalize_info_hash(hash).ok_or("Некорректный хеш раздачи")?;
+    let hash = normalize_info_hash(hash).ok_or("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С…РµС€ СЂР°Р·РґР°С‡Рё")?;
     if file.id < 1 {
-        return Err("Некорректный индекс файла".into());
+        return Err("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ РёРЅРґРµРєСЃ С„Р°Р№Р»Р°".into());
     }
     let encoded: String = file
         .name
@@ -415,17 +429,19 @@ pub fn probe_stream(base_url: &str, hash: &str, file: &VideoFile) -> Result<(), 
         .call()
         .map_err(|error| match error {
             ureq::Error::StatusCode(status) => {
-                format!("TorrServer вернул HTTP {status}: видеоданные пока недоступны")
+                format!("TorrServer РІРµСЂРЅСѓР» HTTP {status}: РІРёРґРµРѕРґР°РЅРЅС‹Рµ РїРѕРєР° РЅРµРґРѕСЃС‚СѓРїРЅС‹")
             }
-            ureq::Error::Timeout(_) => "TorrServer не отдал видеоданные за 10 секунд".into(),
-            other => format!("Поток недоступен: {other}"),
+            ureq::Error::Timeout(_) => "TorrServer РЅРµ РѕС‚РґР°Р» РІРёРґРµРѕРґР°РЅРЅС‹Рµ Р·Р° 10 СЃРµРєСѓРЅРґ".into(),
+            other => format!("РџРѕС‚РѕРє РЅРµРґРѕСЃС‚СѓРїРµРЅ: {other}"),
         })?;
     use std::io::Read;
     let mut first = [0_u8; 1];
     match response.body_mut().as_reader().read(&mut first) {
         Ok(1) => Ok(()),
-        Ok(_) => Err("TorrServer вернул пустой поток".into()),
-        Err(error) => Err(format!("Не удалось прочитать видеопоток: {error}")),
+        Ok(_) => Err("TorrServer РІРµСЂРЅСѓР» РїСѓСЃС‚РѕР№ РїРѕС‚РѕРє".into()),
+        Err(error) => Err(format!(
+            "РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ РІРёРґРµРѕРїРѕС‚РѕРє: {error}"
+        )),
     }
 }
 
@@ -466,11 +482,12 @@ pub fn read_torznab_config(base_url: &str) -> Result<Option<(String, String)>, S
     let mut response = agent
         .post(format!("{}/settings", base_url.trim_end_matches('/')))
         .send_json(serde_json::json!({"action":"get"}))
-        .map_err(|error| format!("Не удалось прочитать настройки TorrServer: {error}"))?;
-    let sets: serde_json::Value = response
-        .body_mut()
-        .read_json()
-        .map_err(|error| format!("Некорректные настройки TorrServer: {error}"))?;
+        .map_err(|error| {
+            format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ РЅР°СЃС‚СЂРѕР№РєРё TorrServer: {error}")
+        })?;
+    let sets: serde_json::Value = response.body_mut().read_json().map_err(|error| {
+        format!("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё TorrServer: {error}")
+    })?;
     if !sets
         .get("EnableTorznabSearch")
         .and_then(serde_json::Value::as_bool)
@@ -504,11 +521,12 @@ pub fn configure_torznab(base_url: &str, host: &str, key: &str) -> Result<(), St
     let mut response = agent
         .post(&endpoint)
         .send_json(serde_json::json!({"action":"get"}))
-        .map_err(|error| format!("Не удалось прочитать настройки TorrServer: {error}"))?;
-    let mut sets: serde_json::Value = response
-        .body_mut()
-        .read_json()
-        .map_err(|error| format!("Некорректные настройки TorrServer: {error}"))?;
+        .map_err(|error| {
+            format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ РЅР°СЃС‚СЂРѕР№РєРё TorrServer: {error}")
+        })?;
+    let mut sets: serde_json::Value = response.body_mut().read_json().map_err(|error| {
+        format!("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё TorrServer: {error}")
+    })?;
     sets["EnableTorznabSearch"] = serde_json::json!(!host.trim().is_empty());
     sets["TorznabUrls"] = if host.trim().is_empty() {
         serde_json::json!([])
@@ -523,7 +541,9 @@ pub fn configure_torznab(base_url: &str, host: &str, key: &str) -> Result<(), St
     agent
         .post(endpoint)
         .send_json(serde_json::json!({"action":"set", "sets":sets}))
-        .map_err(|error| format!("Не удалось настроить Jackett/Torznab в TorrServer: {error}"))?;
+        .map_err(|error| {
+            format!("РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°СЃС‚СЂРѕРёС‚СЊ Jackett/Torznab РІ TorrServer: {error}")
+        })?;
     Ok(())
 }
 
@@ -557,12 +577,14 @@ pub fn test_torznab(host: &str, key: &str) -> Result<(), String> {
     let body = agent
         .get(format!("{endpoint}{separator}apikey={encoded_key}&t=caps"))
         .call()
-        .map_err(|error| format!("Jackett/Torznab не отвечает: {error}"))?
+        .map_err(|error| format!("Jackett/Torznab РЅРµ РѕС‚РІРµС‡Р°РµС‚: {error}"))?
         .body_mut()
         .read_to_string()
-        .map_err(|error| format!("Не удалось прочитать ответ Jackett/Torznab: {error}"))?;
+        .map_err(|error| {
+            format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ РѕС‚РІРµС‚ Jackett/Torznab: {error}")
+        })?;
     if !body.contains("<caps") {
-        return Err("Jackett/Torznab вернул ответ без описания возможностей".into());
+        return Err("Jackett/Torznab РІРµСЂРЅСѓР» РѕС‚РІРµС‚ Р±РµР· РѕРїРёСЃР°РЅРёСЏ РІРѕР·РјРѕР¶РЅРѕСЃС‚РµР№".into());
     }
     Ok(())
 }
@@ -626,7 +648,7 @@ fn search_torrserver_path(
 ) -> Result<Vec<SearchResult>, String> {
     let query = query.trim();
     if query.chars().count() < 2 {
-        return Err("Введите минимум 2 символа".into());
+        return Err("Р’РІРµРґРёС‚Рµ РјРёРЅРёРјСѓРј 2 СЃРёРјРІРѕР»Р°".into());
     }
     let encoded: String = query
         .bytes()
@@ -648,13 +670,13 @@ fn search_torrserver_path(
             path
         ))
         .call()
-        .map_err(|error| format!("Поиск TorrServer не ответил: {error}"))?
+        .map_err(|error| format!("РџРѕРёСЃРє TorrServer РЅРµ РѕС‚РІРµС‚РёР»: {error}"))?
         .body_mut()
         .read_json()
-        .map_err(|error| format!("Некорректный ответ поиска: {error}"))?;
-    let items = response
-        .as_array()
-        .ok_or("TorrServer вернул некорректный список результатов")?;
+        .map_err(|error| format!("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ РѕС‚РІРµС‚ РїРѕРёСЃРєР°: {error}"))?;
+    let items = response.as_array().ok_or(
+        "TorrServer РІРµСЂРЅСѓР» РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ СЃРїРёСЃРѕРє СЂРµР·СѓР»СЊС‚Р°С‚РѕРІ",
+    )?;
     let mut seen = std::collections::HashSet::new();
     Ok(items
         .iter()
@@ -692,7 +714,7 @@ fn search_torrserver_path(
                 .iter()
                 .find_map(|key| item.get(*key).and_then(|value| value.as_str()))
                 .filter(|value| !value.trim().is_empty())
-                .unwrap_or("Без названия")
+                .unwrap_or("Р‘РµР· РЅР°Р·РІР°РЅРёСЏ")
                 .to_owned();
             let size = ["Size", "size"]
                 .iter()
@@ -703,7 +725,7 @@ fn search_torrserver_path(
                         .map(str::to_owned)
                         .unwrap_or_else(|| value.to_string())
                 })
-                .unwrap_or_else(|| "—".to_owned());
+                .unwrap_or_else(|| "вЂ”".to_owned());
             let seeders = ["Seed", "seed", "seeders"]
                 .iter()
                 .find_map(|key| item.get(*key).and_then(|value| value.as_i64()))
@@ -772,12 +794,17 @@ pub fn add_magnet(base_url: &str, magnet: &str, title: &str) -> Result<AddResult
         .trim_matches(['\'', '"'])
         .replace("&amp;", "&");
     let hash = if link.to_ascii_lowercase().starts_with("magnet:?") {
-        magnet_info_hash(&link).ok_or("Magnet-ссылка не содержит корректный BTIH")?
+        magnet_info_hash(&link)
+            .ok_or("Magnet-СЃСЃС‹Р»РєР° РЅРµ СЃРѕРґРµСЂР¶РёС‚ РєРѕСЂСЂРµРєС‚РЅС‹Р№ BTIH")?
     } else {
-        let uri = ureq::http::Uri::try_from(&link)
-            .map_err(|_| "Нужна magnet-ссылка или HTTP(S)-ссылка на torrent-файл")?;
+        let uri = ureq::http::Uri::try_from(&link).map_err(|_| {
+            "РќСѓР¶РЅР° magnet-СЃСЃС‹Р»РєР° РёР»Рё HTTP(S)-СЃСЃС‹Р»РєР° РЅР° torrent-С„Р°Р№Р»"
+        })?;
         if !matches!(uri.scheme_str(), Some("http" | "https")) || uri.authority().is_none() {
-            return Err("Нужна magnet-ссылка или HTTP(S)-ссылка на torrent-файл".into());
+            return Err(
+                "РќСѓР¶РЅР° magnet-СЃСЃС‹Р»РєР° РёР»Рё HTTP(S)-СЃСЃС‹Р»РєР° РЅР° torrent-С„Р°Р№Р»"
+                    .into(),
+            );
         }
         String::new()
     };
@@ -789,7 +816,7 @@ pub fn add_magnet(base_url: &str, magnet: &str, title: &str) -> Result<AddResult
         });
     }
     let title = if title.trim().is_empty() {
-        "Раздача"
+        "Р Р°Р·РґР°С‡Р°"
     } else {
         title.trim()
     };
@@ -802,7 +829,7 @@ pub fn add_magnet(base_url: &str, magnet: &str, title: &str) -> Result<AddResult
         .send_json(serde_json::json!({
             "action": "add", "link": link, "title": title, "save_to_db": true
         }))
-        .map_err(|error| format!("Не удалось добавить раздачу: {error}"))?;
+        .map_err(|error| format!("РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕР±Р°РІРёС‚СЊ СЂР°Р·РґР°С‡Сѓ: {error}"))?;
     let response_hash = response
         .body_mut()
         .read_json::<serde_json::Value>()
@@ -822,7 +849,7 @@ pub fn add_magnet(base_url: &str, magnet: &str, title: &str) -> Result<AddResult
 
 #[cfg(all(not(target_os = "android"), not(feature = "torrent-engine")))]
 pub fn remove_torrent(base_url: &str, hash: &str) -> Result<(), String> {
-    let hash = normalize_info_hash(hash).ok_or("Некорректный хеш раздачи")?;
+    let hash = normalize_info_hash(hash).ok_or("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С…РµС€ СЂР°Р·РґР°С‡Рё")?;
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(20)))
         .build()
@@ -830,7 +857,9 @@ pub fn remove_torrent(base_url: &str, hash: &str) -> Result<(), String> {
     agent
         .post(format!("{}/torrents", base_url.trim_end_matches('/')))
         .send_json(serde_json::json!({"action": "rem", "hash": hash}))
-        .map_err(|error| format!("Не удалось удалить раздачу из TorrServer: {error}"))?;
+        .map_err(|error| {
+            format!("РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ СЂР°Р·РґР°С‡Сѓ РёР· TorrServer: {error}")
+        })?;
     Ok(())
 }
 
@@ -838,7 +867,10 @@ pub fn remove_torrent(base_url: &str, hash: &str) -> Result<(), String> {
 pub fn read_torrserver(base_url: &str) -> Result<(String, Vec<Torrent>), String> {
     let base_url = base_url.trim().trim_end_matches('/');
     if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
-        return Err("Адрес TorrServer должен начинаться с http:// или https://".into());
+        return Err(
+            "РђРґСЂРµСЃ TorrServer РґРѕР»Р¶РµРЅ РЅР°С‡РёРЅР°С‚СЊСЃСЏ СЃ http:// РёР»Рё https://"
+                .into(),
+        );
     }
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(6)))
@@ -847,22 +879,26 @@ pub fn read_torrserver(base_url: &str) -> Result<(String, Vec<Torrent>), String>
     let version = agent
         .get(format!("{base_url}/echo"))
         .call()
-        .map_err(|error| format!("TorrServer не отвечает: {error}"))?
+        .map_err(|error| format!("TorrServer РЅРµ РѕС‚РІРµС‡Р°РµС‚: {error}"))?
         .body_mut()
         .read_to_string()
-        .map_err(|error| format!("Не удалось прочитать ответ TorrServer: {error}"))?;
+        .map_err(|error| {
+            format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ РѕС‚РІРµС‚ TorrServer: {error}")
+        })?;
     let response: serde_json::Value = agent
         .post(format!("{base_url}/torrents"))
         .send_json(serde_json::json!({"action": "list"}))
-        .map_err(|error| format!("Не удалось получить медиатеку: {error}"))?
+        .map_err(|error| {
+            format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РјРµРґРёР°С‚РµРєСѓ: {error}")
+        })?
         .body_mut()
         .read_json()
-        .map_err(|error| format!("Некорректный ответ TorrServer: {error}"))?;
+        .map_err(|error| format!("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ РѕС‚РІРµС‚ TorrServer: {error}"))?;
     let items = response
         .as_array()
         .or_else(|| response.get("torrents").and_then(|value| value.as_array()))
         .or_else(|| response.get("items").and_then(|value| value.as_array()))
-        .ok_or("TorrServer вернул некорректный список раздач")?;
+        .ok_or("TorrServer РІРµСЂРЅСѓР» РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ СЃРїРёСЃРѕРє СЂР°Р·РґР°С‡")?;
     let torrents = items
         .iter()
         .filter_map(|item| {
@@ -873,7 +909,7 @@ pub fn read_torrserver(base_url: &str) -> Result<(String, Vec<Torrent>), String>
             let title = ["title", "Title", "name", "Name"]
                 .iter()
                 .find_map(|key| item.get(*key).and_then(|value| value.as_str()))
-                .unwrap_or("Без названия")
+                .unwrap_or("Р‘РµР· РЅР°Р·РІР°РЅРёСЏ")
                 .to_owned();
             Some(Torrent { title, hash })
         })
@@ -1030,7 +1066,7 @@ mod tests {
                 ("/echo", "MatriX.135".to_owned()),
                 (
                     "/torrents",
-                    format!(r#"[{{"hash":"{}","title":"Фильм"}}]"#, "a".repeat(40)),
+                    format!(r#"[{{"hash":"{}","title":"Р¤РёР»СЊРј"}}]"#, "a".repeat(40)),
                 ),
             ] {
                 let (mut stream, _) = listener.accept().unwrap();
@@ -1065,7 +1101,7 @@ mod tests {
         let (version, torrents) = read_torrserver(&format!("http://{address}")).unwrap();
         server.join().unwrap();
         assert_eq!(version, "MatriX.135");
-        assert_eq!(torrents[0].title, "Фильм");
+        assert_eq!(torrents[0].title, "Р¤РёР»СЊРј");
         assert_eq!(torrents[0].hash, "a".repeat(40));
     }
 
@@ -1079,7 +1115,7 @@ mod tests {
             let size = stream.read(&mut request).unwrap();
             assert!(String::from_utf8_lossy(&request[..size]).contains("/search?query=%D1%84"));
             let body = format!(
-                r#"[{{"Title":"Фильм","Hash":"{}","Seed":5}},{{"Title":"Дубликат","Hash":"{}"}},{{"Title":"Bad","Magnet":"magnet:?dn=NoHash"}}]"#,
+                r#"[{{"Title":"Р¤РёР»СЊРј","Hash":"{}","Seed":5}},{{"Title":"Р”СѓР±Р»РёРєР°С‚","Hash":"{}"}},{{"Title":"Bad","Magnet":"magnet:?dn=NoHash"}}]"#,
                 "b".repeat(40),
                 "b".repeat(40)
             );
@@ -1090,10 +1126,10 @@ mod tests {
             )
             .unwrap();
         });
-        let results = search_torrserver(&format!("http://{address}"), "фильм").unwrap();
+        let results = search_torrserver(&format!("http://{address}"), "С„РёР»СЊРј").unwrap();
         server.join().unwrap();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "Фильм");
+        assert_eq!(results[0].title, "Р¤РёР»СЊРј");
         assert_eq!(results[0].seeders, 5);
         assert_eq!(
             results[0].magnet,
@@ -1271,7 +1307,7 @@ mod tests {
                     if body == "{}" {
                         assert_eq!(payload["action"], "add");
                         assert_eq!(payload["save_to_db"], true);
-                        assert_eq!(payload["title"], "Фильм");
+                        assert_eq!(payload["title"], "Р¤РёР»СЊРј");
                         assert!(!payload["link"].as_str().unwrap().contains("&amp;"));
                     } else {
                         assert_eq!(payload["action"], "list");
@@ -1289,7 +1325,7 @@ mod tests {
         let result = add_magnet(
             &format!("http://{address}"),
             &format!("magnet:?xt=urn:btih:{}&amp;dn=Movie", "c".repeat(40)),
-            "Фильм",
+            "Р¤РёР»СЊРј",
         )
         .unwrap();
         server.join().unwrap();
@@ -1324,7 +1360,7 @@ mod tests {
             }
             assert!(String::from_utf8_lossy(&request[..size]).contains("POST /torrents"));
             let body = format!(
-                r#"[{{"hash":"{expected_hash}","file_stats":[{{"id":7,"path":"Шоу/Сезон 2/Серия 3.mkv","length":123456789}},{{"id":8,"path":"readme.txt","length":12}}]}}]"#
+                r#"[{{"hash":"{expected_hash}","file_stats":[{{"id":7,"path":"РЁРѕСѓ/РЎРµР·РѕРЅ 2/РЎРµСЂРёСЏ 3.mkv","length":123456789}},{{"id":8,"path":"readme.txt","length":12}}]}}]"#
             );
             write!(
                 stream,
@@ -1337,7 +1373,7 @@ mod tests {
         server.join().unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].id, 7);
-        assert_eq!(files[0].name, "Серия 3.mkv");
+        assert_eq!(files[0].name, "РЎРµСЂРёСЏ 3.mkv");
         let url = stream_url("http://127.0.0.1:8090", &hash, &files[0]).unwrap();
         assert!(url.contains("index=7&play"));
         assert!(url.contains("%D0%A1%D0%B5%D1%80%D0%B8%D1%8F"));
@@ -1345,7 +1381,11 @@ mod tests {
 
     #[test]
     fn orders_episodes_naturally_without_changing_ids() {
-        assert!(natural_path_cmp("Сезон 2/Серия 2.mkv", "Сезон 2/Серия 10.mkv").is_lt());
+        assert!(natural_path_cmp(
+            "РЎРµР·РѕРЅ 2/РЎРµСЂРёСЏ 2.mkv",
+            "РЎРµР·РѕРЅ 2/РЎРµСЂРёСЏ 10.mkv"
+        )
+        .is_lt());
         assert!(natural_path_cmp("Season 9/E1.mkv", "Season 10/E1.mkv").is_lt());
     }
 
@@ -1459,3 +1499,11 @@ mod tests {
         assert!(remove_torrent("http://127.0.0.1:8090", "bad").is_err());
     }
 }
+
+#[cfg(feature = "desktop")]
+pub mod preflight;
+
+#[cfg(feature = "desktop")]
+pub mod adblock;
+
+mod atomic_file;

@@ -325,6 +325,18 @@ impl Engine {
         Ok(files)
     }
 
+    pub fn diagnostics(&self, hash: &str) -> Result<serde_json::Value, String> {
+        let stats = self
+            .api
+            .api_stats_v1(Self::id(hash)?)
+            .map_err(|e| e.to_string())?;
+        let mut value = serde_json::to_value(stats).map_err(|e| e.to_string())?;
+        if let Ok(dht) = self.api.api_dht_stats() {
+            value["dht"] = serde_json::to_value(dht).map_err(|e| e.to_string())?;
+        }
+        Ok(value)
+    }
+
     pub fn is_active(&self, hash: &str) -> Result<bool, String> {
         Ok(self
             .api

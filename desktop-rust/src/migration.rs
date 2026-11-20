@@ -36,7 +36,16 @@ pub fn migrate_legacy_profiles(
             .map(|root| root.join("history.sqlite"))
             .filter(|path| path.is_file())
         {
-            std::fs::copy(source, &history_path).map_err(|error| error.to_string())?;
+            let snapshot = destination.join("history-migration.sqlite.part");
+            let source_db = rusqlite::Connection::open_with_flags(
+                &source,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .map_err(|e| e.to_string())?;
+            source_db
+                .backup(rusqlite::MAIN_DB, &snapshot, None)
+                .map_err(|e| e.to_string())?;
+            crate::atomic_file::replace(&snapshot, &history_path)?;
             summary.prototype_history = true;
         }
     }
@@ -231,5 +240,32 @@ mod tests {
             MigrationSummary::default()
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod wal_snapshot_tests {
+    use super::*;
+    #[test]
+    fn migration_keeps_committed_wal_rows() {
+        let root = std::env::temp_dir().join(format!(
+            "pc-wal-migration-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source = root.join("source");
+        let destination = root.join("destination");
+        std::fs::create_dir_all(&source).unwrap();
+        let db = rusqlite::Connection::open(source.join("history.sqlite")).unwrap();
+        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE wal_evidence(value TEXT); INSERT INTO wal_evidence VALUES('committed');").unwrap();
+        migrate_legacy_profiles(&destination, None, Some(&source)).unwrap();
+        let copied = rusqlite::Connection::open(destination.join("history.sqlite")).unwrap();
+        let value: String = copied
+            .query_row("SELECT value FROM wal_evidence", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(value, "committed");
     }
 }
